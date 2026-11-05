@@ -106,6 +106,10 @@ impl PlanCache {
     }
 
     pub fn get(&self, key: &PlanCacheKey) -> Option<TranslationResult> {
+        // 容量 0 = 关闭：既不命中，也不记"未命中"——关掉的缓存不该出现在命中率里
+        if self.capacity == 0 {
+            return None;
+        }
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         // 先把结果 clone 出来再计数：`map.get` 的不可变借用与 `hits += 1` 冲突
         let hit = inner.map.get(key).cloned();

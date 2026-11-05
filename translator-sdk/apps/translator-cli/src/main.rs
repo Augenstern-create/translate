@@ -485,6 +485,20 @@ fn register_nmt(
     Ok((builder, RuntimeBanner::default()))
 }
 
+/// 平台一行诊断（不依赖 feature：没有 `nmt` 时也说得清）。
+fn platform_line() -> String {
+    let os = std::env::consts::OS;
+    #[cfg(feature = "nmt")]
+    {
+        let support = translator_api::nmt_bergamot::platform::current();
+        format!("{os}（{}）", support.reason())
+    }
+    #[cfg(not(feature = "nmt"))]
+    {
+        format!("{os}（本次构建未启用 nmt feature，未挂载真实引擎）")
+    }
+}
+
 fn cmd_translate(
     translator: &translator_api::Translator,
     args: &[String],
@@ -643,6 +657,10 @@ fn cmd_translate(
                 println!("警告    {:?}", result.warnings);
             }
             if diagnose {
+                // 平台门禁：非 Linux 上真实 NMT 会明确报 CapabilityUnavailable，
+                // 所以诊断输出必须把"当前平台是否被验证过"直接写出来（P3.4）
+                println!();
+                println!("平台    {}", platform_line());
                 // 再跑一次只是为了拿诊断；缓存命中所以没有额外计算成本
                 if !banner.lines.is_empty() {
                     println!();

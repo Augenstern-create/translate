@@ -26,11 +26,13 @@ use translator_core::plan_cache::{PlanCache, PlanCacheKey, PlanCacheStats};
 use translator_core::protection::{ProtectionPlan, STRATEGY_VERSION};
 // 宿主选保护策略要能拿到这个类型的名字，因此在 crate 根部重新导出。
 pub use translator_core::protection::ProtectionMode;
+// 平台门禁与运行时同源：引擎能不能用，取决于 `translator-runtime` 的证据表。
 use translator_plugin_api::BoxFuture;
 use translator_plugin_api::TranslationEngine;
 use translator_runtime::model::{
     sha256_file, FileRole, FileSpec, ModelInfo, ModelManifest, TranslationJob,
 };
+pub use translator_runtime::platform;
 use translator_runtime::transport::{ProcessTransport, RuntimeTransport};
 use translator_runtime::WorkerConfig;
 use translator_types::{

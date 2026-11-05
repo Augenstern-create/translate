@@ -1,0 +1,19 @@
+{
+  "after": {
+    "processes": 2,
+    "pss_mib": 3.07,
+    "rss_mib": 6.89
+  },
+  "before": {
+    "processes": 3,
+    "pss_mib": 340.3,
+    "rss_mib": 347.51
+  },
+  "caliber": "同一进程内：翻译一次（含加载）→ 卸载 → 再测内存；PSS 为全树（自己 + worker + native）",
+  "case": "unload",
+  "first_translate_ms": 1076.03,
+  "load_state": "Some(false)",
+  "snapshot_dirs_left": 0,
+  "snapshot_root": "/tmp/p3_snap_p33b",
+  "unload_ms": 42.87
+}

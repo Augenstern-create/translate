@@ -12,6 +12,7 @@ members = [
     "crates/translator-runtime",
     "crates/translator-nmt-bergamot",
     "tools/pack-dictionary",
+    "tools/p33-bench",
     "tools/migrate-rules",
     "apps/translator-cli",
 ]
@@ -21,6 +22,8 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.80"
 license = "Apache-2.0 OR MIT"
+# 内部 crate 一律不发布：仓库 URL 还是占位符，且 path 依赖无法 package（详见 docs/21）
+publish = false
 authors = ["translator-sdk contributors"]
 repository = "https://example.invalid/translator-sdk"
 
@@ -37,6 +40,7 @@ translator-resource = { path = "crates/translator-resource" }
 translator-runtime = { path = "crates/translator-runtime" }
 translator-nmt-bergamot = { path = "crates/translator-nmt-bergamot" }
 pack-dictionary = { path = "tools/pack-dictionary" }
+p33-bench = { path = "tools/p33-bench" }
 migrate-rules = { path = "tools/migrate-rules" }
 
 # 外部依赖（P1 新增，全部为轻量或按 feature 隔离）

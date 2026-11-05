@@ -1,7 +1,7 @@
 # 轻量跨平台混合翻译 SDK — 完整软件开发设计文档
 
-> 文档版本：v1.6（架构基线；ADR 增补见 §14 与文末修订记录）  
-> 编写日期：2026-11-05（v1.6 修订 2026-11-05）  
+> 文档版本：v1.9（架构基线；ADR 增补见 §14 与文末修订记录）  
+> 编写日期：2026-11-05（v1.9 修订 2026-11-05）  
 > 交付形式：Rust Library SDK；**不实现 UI**，但预留桌面、Android、命令行及服务端适配接口  
 > 目标平台：Windows x86_64、Ubuntu Linux x86_64/aarch64、macOS aarch64/x86_64、Android arm64-v8a
 
@@ -523,7 +523,7 @@ P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运
 - ADR-018（Accepted，P2.3 已实现）：租约是**协作式**的，不是内核强制锁。每个使用方一个文件（`leases/<id>/<version>/<pid>-<nonce>.json`），检查即列目录。诚实边界：绕过本 SDK 直接 `open()` 资源文件的程序检测不到；无法判定进程存活时按"占用"处理。
 - ADR-019（Accepted；v0.x 部分落地）：术语按**请求级解析出的不可变快照**生效。每次翻译只绑定一份有效术语表（`id` + `version`，内容摘要 `content_digest` 随后续执行计划一起进缓存键）；`glossary_id` 只用于**选择**，不承诺多表叠加，不存在表时返回明确错误而不是静默退回默认表。理由：多表叠加需要优先级、同源短语冲突检测与合并哈希，属于独立设计，先不做半成品。现状：`id@version` 指纹已进键（P2.5），`content_digest` 未实现（P3.1 与本条一起收口）。
 - ADR-020（Accepted，P2-S 已实现）：字典 `lookup()` 永远返回原始释义，**不受输出侧术语约束改写**；`translate()` 的词典直出也不默认套用强制替换（最多给非破坏性警告）。完整句子的 NMT 译文才进入术语验证。理由：`lookup()` 是"查词"，用户要的是资源真实内容；把词典释义替换成"更喜欢的说法"会让查词结果不可追溯。
-- ADR-021（Accepted，未实现）：**预算记账与平台内存观测分离**。`MemoryBudget`（CAS 记账）负责装配期准入与协作式估算，对外一律称 accounted/estimated bytes，不得称 RSS 或硬上限；另设可选 `ProcessMetricsProvider`（Linux `/proc`/`smaps_rollup`、Windows 进程 API、macOS `task_info`、Android 平台回调）负责真实占用观测，测不到时返回 `Unavailable` 而不是 0。两条数值不得互相冒充（`docs/08` D-04）。
+- ADR-021（Accepted，P3.3 已实现观测部分）：**预算记账与平台内存观测分离**。`MemoryBudget`（CAS 记账）负责装配期准入与协作式估算，对外一律称 accounted/estimated bytes，不得称 RSS 或硬上限；另设可选 `ProcessMetricsProvider`（Linux `/proc`/`smaps_rollup`、Windows 进程 API、macOS `task_info`、Android 平台回调）负责真实占用观测，测不到时返回 `Unavailable` 而不是 0。两条数值不得互相冒充（`docs/08` D-04）。现状（`docs/20`）：测量侧已落地——`tools/p33-bench` 读 `/proc/<pid>/status`（RSS/VmHWM）与 `/proc/<pid>/smaps_rollup`（PSS），并按 `PPid` 建进程树把 native 一起算进去；`MemoryBudget` 仍是自报下界，**没有**接上 RSS 硬上限。首次 PSS 数据：native RSS 340.80 vs PSS 332.56 MiB（差 2.4%），全树卸载后 PSS 340.30 → 3.07 MiB。库内仍**没有** `ProcessMetricsProvider` trait，观测代码只在测量工具里。
 - ADR-022（Accepted，P2-S 已实现）：**租约登记与卸载/清理必须在同一跨进程临界区内完成**「检查安装状态 + 登记/删除」。`acquire_lease` 与 `uninstall`/`cleanup` 共用进程内 `Mutex` + 同一个 `state.lock`，锁内重读状态（锁顺序一致，先 Mutex 后文件锁）。状态锁的陈旧判定用「pid + 进程启动标识」：确定持有者已死才回收，无法判定时按占用处理并报 `LockTimeout`（带锁文件路径与持有者）。
 - ADR-023（Accepted，P3.1-D + P3.2 已实现）：真实模型接入时必须同时实现 single-flight 加载、热模型租约与卸载保护、`ResolvedExecutionPlan`（engine / runtime / model revision / tokenizer / 规则与术语指纹 / 解码参数 / 语言方向 / 隐私域）稳定哈希进缓存键，并以 model revision 隔离缓存。在此之前，禁止用真实 NMT + `id@version` 指纹（或 `model_id: None`）上线缓存。
   落地（`docs/18`/`docs/19`）：single-flight（`load_gate`，LC-01）、排队绝对截止时间（LC-04）、在飞请求计数与卸载等待（LC-02）、`ResolvedExecutionPlan`+摘要（ADR-035）、**真实 NMT 的结果缓存以计划摘要为键**（ADR-038，LC-09）。前提条件已满足，故转为 Accepted。
@@ -536,7 +536,7 @@ P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运
 - ADR-029（Accepted，P3.1-C 已实现）：**占位符与结构化文本的完整性优先于流畅度，且失败必须显式**。`{name}`/`{order_id}` 这类标记、URL/邮箱、反引号代码块在送入真实 NMT 前必须被保护、译后精确还原；数量或身份不一致时返回 `IntegrityFailure`，严格模式下**不得**输出「看起来正常」的译文。理由：P3.0 实测直送真实模型时 `{name}`/`{order_id}` 被吞、反引号被改写（`docs/11` §2.4），说明「模型会照抄标记」的假设不成立，也不能靠无限试探提示词或无条件正则替换来补救。验收：SP-01～12（编号按 `docs/17` §3.2），尤其「标记被删除/复制/篡改 → `IntegrityFailure`」。现状（`docs/18`）：`translator-core::protection` + `translator-nmt-bergamot` 已接到真实 NMT 路径，两层测试覆盖；**默认策略不是标记而是安全分段**（ADR-034），因为实测没有任何一种标记能稳定穿过真实 Marian。
 
 - ADR-030（Accepted，P3.1-B 已实现）：**隔离快照优先于路径二次校验**。模型的身份绑定到 worker 实际可访问的一份**私有、只读、已校验副本**，而不是 Manifest 里的字符串路径。实现（`translator-runtime::snapshot`）：元信息预检查（存在/非符号链接/普通文件/大小）→ 复制与 sha256 **同一次读**（比较的是副本字节）→ 副本目录 0o700、文件 0o400 → worker 在 spawn native **之前**用 `ModelSpec::verify_digests()` 再核一遍 → 快照活到 unload/shutdown/Drop，SIGKILL 残留按目录名里的 pid 清理。诚实边界：文件权限**不是**安全沙箱，同用户恶意进程仍可改写；`openat`/目录 FD/seccomp 未做。实测代价 `model_preparation_ms` = 262 ms / 49.5 MiB（`docs/15` §2.4）。
-- ADR-031（Accepted，P3.1-B 已实现）：**真实 Bergamot 默认单 worker、单 in-flight**。默认 1 个 worker 进程、1 个 native 进程、并发 1；任何并发提升必须先给出「内存 + 延迟」证据（P3.0/P3.1-B 实测都是 1 线程：峰值 413.8 MiB、热 p50 13.17 ms）。不要把 `--cpu-threads 1`（native 线程数）与进程数混为一谈。串行锁导致的「排队不受超时约束」是已知限制，队列与绝对 deadline 属于 ADR-023 的范围（P3.1-D）。
+- ADR-031（Accepted，P3.1-B 已实现）：**真实 Bergamot 默认单 worker、单 in-flight**。默认 1 个 worker 进程、1 个 native 进程、并发 1；任何并发提升必须先给出「内存 + 延迟」证据（P3.0/P3.1-B 实测都是 1 线程：峰值 413.8 MiB、热 p50 13.17 ms）。不要把 `--cpu-threads 1`（native 线程数）与进程数混为一谈。串行锁导致的「排队不受超时约束」是已知限制，队列与绝对 deadline 属于 ADR-023 的范围（P3.1-D）。**P3.3 增补（实测）**：`native --cpu-threads 1` 只约束 Marian 自己的线程池，OpenBLAS/OpenMP 会另外起线程，导致同一进程内并发 10 的吞吐掉到 15.0 rps、p50 139 ms；worker 在 spawn native 时把 `OPENBLAS_NUM_THREADS`/`OMP_NUM_THREADS` 设成 native 线程数（**宿主显式设置则不覆盖**）后，同一负载为 31.0 rps / p50 35 ms，499 字单句 p50 340 → 176 ms。因此：**报单句延迟或并发吞吐必须同时说明 native 侧线程配置**，否则数字不可比。
 - ADR-032（Accepted，P3.1-B 已实现）：**IPC 协议版本与原生运行时版本分开管理**。`PROTOCOL_VERSION`（当前 1）只描述父子进程之间的帧/消息形状；原生运行时的身份走 `Payload::Loaded.runtime_build`（Bergamot commit `9271618…`）与 `runtime`（`bergamot-cli`）。改帧形状要升 `PROTOCOL_VERSION`，换 native 构建只改 `runtime_build`，两者不得互相冒充。理由：`docs/14` §3.7 要求 load 回执能核对「到底是哪一版在跑」，而协议兼容性与 native 版本是两件不同的事。
 - ADR-033（Accepted，P3.1-B 已实现）：**加载 / 翻译 / 排队截止时间分离**。`Load` 30 s、`Translate` 15 s、`Health`/`Unload`/`Shutdown` 10 s，终止升级仍是 shutdown 帧 500 ms → SIGTERM 500 ms → SIGKILL；任何阶段超时都**废弃持有模型状态的进程**（native 与 worker），不暗中重试。排队截止时间已于 P3.1-D 实现：`guard_until(deadline)` 在状态锁上用 `try_lock` + 1 ms 轮询，到期返回 `Timeout{operation:"queue"}`，不再在 Mutex 上无限等待（`docs/18` §1.3 / LC-04）。并发仍恒为 1、**没有队列结构**，因此没有 FIFO 公平性，也没有"队列长度"指标——这一点不得含糊表述为"已实现排队调度"。
 
@@ -556,6 +556,16 @@ P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运
   代价：没有跨引擎共享、没有持久化、没有 LRU（`docs/19` D-32/D-33）；`plan_digest` 在 `load()` 时算一次，
   因此调用方**必须在 load 之后把 config 视为只读**（D-34）。
 
+- ADR-039（Accepted，P3.3 已实现）：**性能数字必须带口径，并落成可 diff 的基线文件**。
+  一条延迟数字只有在同时给出"构建（release/debug）、是否含加载、缓存开关、线程/beam、样本数、分位算法、
+  机器与负载"时才算证据；本项目的做法是让测量工具把口径写进 JSON 的 `caliber` 字段
+  （`fixtures/nmt/baseline-p33-*.json`），无 `caliber` 的延迟数字视为无效。
+  分位数用**最近秩法**（不插值），保证人能手工复核。内存一律同时报 RSS 与 PSS，并说明"RSS 相加会重复计共享页"。
+  理由：P3 期间出现过三次"数字是对的但结论是错的"——debug 构建的词典查询慢 20×、
+  BLAS 线程超订让 499 字慢一倍、以及把 P3.1-B 的 13.17 ms（debug + 完整 worker 往返）与
+  P3.3 的 6.78 ms（release + 进程内直调）直接比较。**跨构建、跨机器、跨口径的数字不得并列**，
+  只能各自作为自己的基线。
+
 > 状态含义：**Accepted** = 已决定并（如注明）已实现；**Proposed** = 已决定方向但尚未实现，写入 ADR 不等于已验证；
 > **Deferred** = 明确延后。上表未标注 Deferred 的项均须在对应阶段交付。
 
@@ -571,6 +581,7 @@ P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运
 | v1.5 | 2026-11-05 | P3.1-A 落地（`docs/13`）：ADR-027 从 Proposed 改为 Accepted，并把措辞从「worker 独占」收紧为「**进程级**故障隔离」（明确线程与 `catch_unwind` 不可用、IPC 硬约束、非 Linux 显式不可用）；ADR-026 把模型身份从「权重 + tokenizer 摘要」扩展为**权重 / Tokenizer / 短名单 / 解码参数 / runtime build** 五项，并注明当前 `content_digest` 只能诊断、不得作缓存键；新增 ADR-029（严格占位符完整性，Proposed，P3.1-C）。编号处理：`docs/12` §6 的候选 ADR 建议按内容并入 026/027/029，**未覆盖任何旧编号**；ADR-029 是当前最大号 028 之后的第一个空号 |
 | v1.6 | 2026-11-05 | P3.1-B 落地（`docs/15`）：新增 ADR-030～033（隔离快照 / 真实 Bergamot 默认单 worker / IPC 与原生版本分离 / 分阶段截止时间）；ADR-026 的现状一栏改为引用 P3.1-B 实测并再次声明「不得作缓存键」。编号处理：`docs/14` §8 的四条建议按内容顺延为 030～033（029 已被占位），**未覆盖任何旧编号** |
 | v1.8 | 2026-11-05 | P3.2 落地（`docs/19`）：新增 ADR-038（计划摘要作缓存键 + 四条纪律）；ADR-023 从 Proposed 改为 Accepted（真实 NMT 的缓存键已换成计划摘要）；ADR-026 增补"换 prefix 表时 `content_digest` 不变"的实测；ADR-017 增补 `recover()` 语义扩大与目录 fsync（仅 Unix）；ADR-037 增补"摘要跨卸载保留 + 空闲回收不内置线程"。编号处理：`docs/17` 未给候选编号，按当前最大号 037 之后顺延 038，**未覆盖任何旧编号** |
+| v1.9 | 2026-11-05 | P3.3 落地（`docs/20`）：新增 ADR-039（性能数字的口径纪律与基线文件）；ADR-021 从「未实现」改为「已实现观测部分」（`p33-bench` 读 RSS/VmHWM/PSS 并按进程树汇总，库里仍无 `ProcessMetricsProvider`）；ADR-031 增补 BLAS/OpenMP 线程必须与 native 线程数对齐的实测依据。编号处理：`docs/17` 未给候选编号，按当前最大号 038 之后顺延 039，**未覆盖任何旧编号** |
 | v1.7 | 2026-11-05 | P3.1-C/D/E 合并批次落地（`docs/18`）：新增 ADR-034～037（默认安全分段 / 执行计划摘要即未来缓存身份 / 真实 NMT 以可选 feature 接入 / 卸载等待在飞请求）；ADR-029 从 Proposed 改为 Accepted 并改为引用 SP-01～12 与分段默认策略；ADR-023/026/033 的现状一栏补齐 P3.1-D 已实现与仍未实现的分界（缓存仍未上线、并发仍为 1）。编号处理：`docs/17` 未给候选编号，按当前最大号 033 之后顺延 034～037，**未覆盖任何旧编号**；`docs/17` §12 引用的 `docs/16` 从未到达本仓库，SP 编号沿用 `docs/17` §3.2 |
 
 ## 15. 主要风险与应对

@@ -212,6 +212,18 @@ fn spawn_native(binary: &Path, config_path: &Path, threads: u16) -> Result<(Nati
         .arg("--log-level")
         .arg("critical")
         .env("BERGAMOT_STDIN_LINES", "1")
+        // BLAS/OpenMP 线程数：native 的 `--cpu-threads N` 只约束 Marian 自己的线程池，
+        // OpenBLAS 会**另起**一堆线程。实测 10 个并发客户端时，未限制 BLAS 线程会让
+        // 吞吐从 28 rps 掉到 15 rps、p95 从 1.4 s 涨到 2.1 s（`docs/20` §2.6）。
+        // 这里按 native 线程数设成同值；宿主显式设过就不覆盖（避免"偷偷改宿主的配置"）。
+        .env(
+            "OPENBLAS_NUM_THREADS",
+            std::env::var("OPENBLAS_NUM_THREADS").unwrap_or_else(|_| threads.to_string()),
+        )
+        .env(
+            "OMP_NUM_THREADS",
+            std::env::var("OMP_NUM_THREADS").unwrap_or_else(|_| threads.to_string()),
+        )
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

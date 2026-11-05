@@ -107,6 +107,11 @@ impl ProcessTransport {
         deadline: Option<Instant>,
     ) -> Result<std::sync::MutexGuard<'_, State>, RuntimeError> {
         let started = Instant::now();
+        // 退避从 20 µs 起翻倍到 500 µs 封顶：
+        // 固定 1 ms 轮询在 10 个并发客户端时会把吞吐拖掉一半以上（`docs/20` §2.6 实测），
+        // 而纯 `yield_now` 自旋又会烧 CPU。指数退避是这两者之间的折中，且不变更
+        // "排队到期返回 Timeout"的语义。
+        let mut backoff = Duration::from_micros(20);
         loop {
             match self.state.try_lock() {
                 Ok(guard) => return Ok(guard),
@@ -122,7 +127,8 @@ impl ProcessTransport {
                             });
                         }
                     }
-                    std::thread::sleep(Duration::from_millis(1));
+                    std::thread::sleep(backoff);
+                    backoff = (backoff * 2).min(Duration::from_micros(500));
                 }
             }
         }
@@ -133,28 +139,10 @@ impl ProcessTransport {
         self.active_requests.load(Ordering::SeqCst)
     }
 
-    /// 平台门禁。
-    ///
-    /// `std::process` 本身是跨平台的，但"能不能在某个平台安全地托管 native 推理"
-    /// 目前只有 Linux 的证据（P3.0 实测 + 本轮的终止升级/RSS 采样都依赖 `/proc` 与信号）。
-    /// 按 `docs/12` §3.1 的要求：非 Linux 明确报能力不可用，而不是给一个没测过的实现。
-    fn ensure_platform() -> Result<(), RuntimeError> {
-        #[cfg(target_os = "linux")]
-        {
-            Ok(())
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            Err(RuntimeError::CapabilityUnavailable(
-                "进程隔离 worker 目前仅在 Linux 上验证过；该平台暂不可用（P3.1-E 逐个平台放开）"
-                    .to_string(),
-            ))
-        }
-    }
-
     /// 确保有一个活着的 worker；必要时在预算内重启。
     fn ensure_worker(&self, state: &mut State) -> Result<(), RuntimeError> {
-        Self::ensure_platform()?;
+        // 平台门禁见 `platform` 模块：判定表可以单测，不再依赖 cfg 分支（P3.4）
+        crate::platform::ensure_supported()?;
         if self.shutdown_requested.load(Ordering::SeqCst) != 0 {
             return Err(RuntimeError::CapabilityUnavailable(
                 "传输层已 shutdown，不能再用".into(),

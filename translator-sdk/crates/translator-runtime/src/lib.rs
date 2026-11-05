@@ -28,6 +28,7 @@
 pub mod config;
 pub mod error;
 pub mod model;
+pub mod platform;
 pub mod protocol;
 pub mod reclaim;
 pub mod snapshot;
@@ -40,6 +41,7 @@ pub use model::{
     process_rss_bytes, rss_bytes_of, FileDigest, FileRole, FileSpec, ModelInfo, ModelManifest,
     ModelSpec, TranslationJob, TranslationReply, TransportMetrics, WorkerHealth,
 };
+pub use platform::{ensure_supported, support_for, PlatformSupport, VERIFIED_PLATFORMS};
 pub use protocol::{MAX_FRAME_BYTES, PROTOCOL_VERSION};
 pub use reclaim::{sweep_snapshots, sweep_worker_dirs, SweepReport};
 pub use snapshot::{prune_stale_snapshots, ModelSnapshot};

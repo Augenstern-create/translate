@@ -1,0 +1,32 @@
+{
+  "caliber": "进程内首次加载；页缓存未清（真冷盘需要 root 清 page cache，本机未做）；first_sentence 含首次 native 推理",
+  "case": "model_load",
+  "descendants": [
+    {
+      "hwm_mib": 2.76,
+      "name": "nmt-worker",
+      "pid": 1014455,
+      "pss_mib": 0.75,
+      "rss_mib": 2.76
+    },
+    {
+      "hwm_mib": 413.41,
+      "name": "bergamot",
+      "pid": 1014458,
+      "pss_mib": 332.56,
+      "rss_mib": 340.8
+    }
+  ],
+  "first_sentence_ms": 408.75,
+  "load_ms": 647.32,
+  "model_bytes": 51936351,
+  "model_revision": "nmt.enzh.mozilla@3.0#4e5accc141373565ddc8fa1565bceaa8",
+  "runtime": "bergamot-cli",
+  "tree": {
+    "hwm_mib": 3.94,
+    "note": "RSS 含共享页，多进程不能直接相加；PSS 才是跨进程可加的近似",
+    "pss_available": true,
+    "pss_mib": 334.66,
+    "rss_mib": 347.5
+  }
+}
