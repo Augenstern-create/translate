@@ -20,11 +20,12 @@
 - `14_P3.1-A技术审查与P3.1-B实施建议.md` — 外部审查归档：P3.1-A 有条件通过、P3.1-B 实施约束与 B-T01…T12 验收矩阵
 - `15_P3.1-B报告.md` — 真实 Bergamot 进 worker 进程（隔离快照 / 类型化配置 / 分阶段超时 / 实测基线）
 - `17_P3完整实施与验收总报告.md` — 外部 P3 验收框架归档：C/D/E 待办、SP-01～12 与 LC-01～10 矩阵、发布红线
-- `18_P3.1-CDE集成验收报告.md` — **本轮**：严格文本保护（默认安全分段）+ 执行计划/single-flight/排队截止时间 + 真实 NMT 接入 `Translator`/CLI
+- `18_P3.1-CDE集成验收报告.md` — 严格文本保护（默认安全分段）+ 执行计划/single-flight/排队截止时间 + 真实 NMT 接入 `Translator`/CLI
+- `19_P3.2报告.md` — **本轮**：反向依赖（LC-07）、安装崩溃注入与修复（LC-08）、残留回收 + PID 复用、计划摘要作键的缓存（LC-09）、空闲回收与内存准入
 
 ---
 
-## 当前状态：P0 + P1 + P2 + P2-S + P3.0 + P3.1-A + P3.1-B 完成；**P3.1-C/D/E 完成**（公共入口能跑真实模型，且结构不会被静默破坏）。P3.2/P3.3/P3.4 仍 pending
+## 当前状态：P0 + P1 + P2 + P2-S + P3.0 + P3.1-A/B/C/D/E 完成；**P3.2 完成**（LC-01～10 全部有实现与测试）。P3.3/P3.4 仍 pending
 
 - **P0**：workspace 结构、核心类型、插件契约、协调器与路由、缓存、门面 API、Mock 插件、CLI。
   **不接任何真实模型、不装任何 native 库**，整条链路即可运行 —— 这是设计文档规定的交付判据。
@@ -113,8 +114,27 @@
   - **默认依赖树里没有 native 与进程代码**：`cargo tree -p translator-api` 默认看不到
     `translator-nmt-bergamot`/`translator-runtime`；未编译 `nmt` 特性却传 `--nmt` 会得到
     `CapabilityUnavailable`，不会静默降级成 Mock。
-  详见 `../docs/18_P3.1-CDE集成验收报告.md`。**P3.2（反向依赖、安装 `kill -9` 注入）/ P3.3（PSS、长稳、质量评分）/
-  P3.4（许可、CI、打包）仍 pending，P3 不标 Done。**
+  详见 `../docs/18_P3.1-CDE集成验收报告.md`。
+
+- **P3.2**（资源安全与一致性，`docs/19`）：`docs/17` §4.2 的 **LC-01～10 全部有实现与测试**。
+  - **反向依赖（LC-07）**：`uninstall` 拒绝删除"被其他已安装包清单点名需要"的版本
+    （`ReversedDependency`，消息里列出依赖方）；`cleanup` 保留它并记入 `kept_dependents`；
+    `audit` 报"依赖缺口"（判定要**记录在 + 目录在**，只看 state 会把外部误删当成功）。
+  - **安装崩溃注入（LC-08）**：复制 / rename / 写状态前后共 5 个注入点，真独立进程 `abort()`；
+    `recover()` 从"清半成品"扩大为"收敛到一致"（删孤儿目录、丢失效记录、激活版本退回可用版本）。
+    持久化：文件 `fsync` + **父目录 fsync**（仅 Unix，非 Unix 显式跳过，不吹跨平台）。
+  - **残留回收**：快照与 worker 配置目录按「pid + `/proc/<pid>/stat` starttime」判定，
+    **PID 复用不会让旧目录永远留着**，判定不了就保留（不误删正在被 native 打开的文件）。
+  - **缓存（LC-09 / ADR-038）**：真实 NMT 的结果缓存键 = `plan-v1` 摘要 + 目标语言 + 原文 sha256，
+    只缓存成功结果，有界 FIFO；摘要**跨卸载保留**，因此"卸载后重查同一句"0 ms 命中、不重载模型。
+    实测：改 `nonbreaking_prefix.en` 一行 → 计划摘要 `dcc88e56…` → `4eba81ed…`，而 `model_id` **不变**
+    ——这正说明 `content_digest` 不能当缓存键。
+  - **空闲回收与准入**：`evict_if_idle(ttl)` 有在飞请求时绝不卸载；NMT 内存按实测量级
+    （稳态 341.9 MiB / 峰值 413.8 MiB）计入装配期预算，超限 `OutOfBudget`；
+    `Translator::nmt_states()/nmt_cache_stats()/evict_idle_nmt()/unload_nmt()` 可观测。
+  - 实测：默认 361 passed / 0 failed / 37 ignored；真实模型与忽略集 **41/41**。
+  详见 `../docs/19_P3.2报告.md`。**P3.3（PSS、长稳、质量评分）/ P3.4（许可、CI、打包）仍 pending，
+  P3 不标 Done。**
 
 词库与规则都是**可选 feature**：不开 `dictionary` 时 `translator-api` 依赖树里没有 `rusqlite`；
 不开 `rules` 时没有 JSON 解析依赖（但 `TextRules` 契约始终可用，宿主可自己实现）。

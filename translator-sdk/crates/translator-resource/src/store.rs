@@ -117,6 +117,10 @@ pub struct RecoverReport {
     pub reclaimed_leases: usize,
     /// 清理的 `state.json.tmp-*` 残留数（写状态时崩溃留下）。
     pub removed_temp_files: usize,
+    /// 清理的孤儿安装目录数（目录在、state 无记录：rename 后写状态前崩溃）。
+    pub removed_orphans: usize,
+    /// 丢弃的失效记录数（state 有记录、目录不在）。
+    pub dropped_records: usize,
 }
 
 /// 一个已安装（或疑似已安装）的版本引用，用于对账报告。
@@ -153,6 +157,8 @@ pub struct StateAudit {
     /// 租约文件总数与其中已失效的数量。
     pub lease_files: usize,
     pub stale_leases: usize,
+    /// 已安装包的依赖声明指向"没有安装的版本"（依赖缺口）。
+    pub broken_dependencies: Vec<String>,
 }
 
 impl StateAudit {
@@ -164,6 +170,7 @@ impl StateAudit {
             && self.stale_tmp_files.is_empty()
             && self.staging_dirs.is_empty()
             && self.stale_leases == 0
+            && self.broken_dependencies.is_empty()
     }
 
     /// 是否有需要人工介入的项（缺目录 / 孤儿目录 / 激活版本缺失）。
@@ -199,6 +206,13 @@ impl StateAudit {
         if self.stale_leases > 0 {
             parts.push(format!("{} 个失效租约", self.stale_leases));
         }
+        if !self.broken_dependencies.is_empty() {
+            parts.push(format!(
+                "{} 个依赖缺口（{}）",
+                self.broken_dependencies.len(),
+                self.broken_dependencies.join("、")
+            ));
+        }
         parts.join("；")
     }
 }
@@ -213,6 +227,8 @@ pub struct CleanupReport {
     pub removed: Vec<String>,
     /// 因为有有效租约而保留的版本（`(version, holders)`）。
     pub kept_leased: Vec<(String, Vec<String>)>,
+    /// 因为被其他已安装包依赖而保留的版本（`(version, dependents)`）。
+    pub kept_dependents: Vec<(String, Vec<String>)>,
 }
 
 pub struct ResourceStore {
@@ -400,6 +416,8 @@ impl ResourceStore {
         let staged = (|| -> ResourceResult<()> {
             copy_tree(src, &staging)?;
             verify_files(&staging, &manifest)?;
+            sync_dir(&staging)?;
+            crash_point("after-staging");
             Ok(())
         })();
         if let Err(err) = staged {
@@ -456,7 +474,13 @@ impl ResourceStore {
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent)?;
         }
+        crash_point("before-rename");
         fs::rename(staging, &target)?;
+        // rename 之后立刻把父目录目录项落盘：否则断电后可能"目录没名字"
+        if let Some(parent) = target.parent() {
+            sync_dir(parent)?;
+        }
+        crash_point("after-rename");
 
         let installed_at = now_string();
         let entry = state.resources.entry(manifest.id.clone()).or_default();
@@ -473,12 +497,14 @@ impl ResourceStore {
         if activated {
             entry.active = Some(manifest.version.clone());
         }
+        crash_point("before-state");
         // 状态写失败时不能让磁盘上留下一个"已安装但无记录"的目录
         if let Err(err) = self.write_state(&state) {
             let _ = fs::remove_dir_all(&target);
             return Err(err);
         }
 
+        crash_point("after-state");
         Ok(InstallOutcome {
             resource: InstalledResource {
                 id: manifest.id.clone(),
@@ -569,6 +595,8 @@ impl ResourceStore {
         let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
         let _state_lock = self.acquire_state_lock()?;
         let mut state = self.read_state()?;
+        // 反向依赖要在拿到可变借用之前算（`dependents_of` 需要读整个 state）
+        let dependents = self.dependents_of(&state, id, version);
 
         let entry = state
             .resources
@@ -588,6 +616,14 @@ impl ResourceStore {
         }
         // 激活检查之后再看租约：激活版本报 ResourceInUse 更具体
         leases::ensure_not_leased(&self.root, id, version)?;
+        // 反向依赖：别的已安装包在清单里点名要这个版本，删了它就是永久破坏（LC-07）
+        if !dependents.is_empty() {
+            return Err(ResourceError::ReversedDependency {
+                id: id.to_string(),
+                version: version.to_string(),
+                dependents,
+            });
+        }
 
         let dir = self.version_dir(id, version)?;
         if dir.exists() {
@@ -645,6 +681,12 @@ impl ResourceStore {
                 ));
                 continue;
             }
+            // 被其他已安装包依赖的版本一律保留：清理是"腾空间"，不是"拆别人地基"
+            let dependents = self.dependents_of(&state, id, version);
+            if !dependents.is_empty() {
+                report.kept_dependents.push((version.clone(), dependents));
+                continue;
+            }
             let dir = self.version_dir(id, version)?;
             if dir.exists() {
                 // 先删目录：删不掉就整体失败，状态保持不变（不会出现"记录没了但文件还在"）
@@ -697,7 +739,46 @@ impl ResourceStore {
             }
         }
 
-        // 2) 磁盘上有目录但 state 里没记录 → 孤儿
+        // 2) 依赖缺口：已安装包的依赖声明是否还能被满足
+        for (id, entry) in &state.resources {
+            for version in entry.installed.keys() {
+                let dir = self.version_dir(id, version)?;
+                if !dir.exists() {
+                    continue;
+                }
+                let Ok(manifest) = read_manifest_from(&dir) else {
+                    continue;
+                };
+                for dep in &manifest.dependencies {
+                    // "满足"必须是"记录在 + 目录在"：只看 state 会把外部误删当成功
+                    let satisfied = match &dep.version {
+                        Some(required) => {
+                            state
+                                .resources
+                                .get(&dep.id)
+                                .map(|e| e.installed.contains_key(required))
+                                .unwrap_or(false)
+                                && self.version_dir(&dep.id, required)?.exists()
+                        }
+                        None => match state.resources.get(&dep.id) {
+                            None => false,
+                            Some(e) => e.installed.keys().any(|v| {
+                                self.root.join("installed").join(&dep.id).join(v).exists()
+                            }),
+                        },
+                    };
+                    if !satisfied {
+                        audit.broken_dependencies.push(format!(
+                            "{id}@{version} → {}@{}",
+                            dep.id,
+                            dep.version.clone().unwrap_or_else(|| "(任意)".to_string())
+                        ));
+                    }
+                }
+            }
+        }
+
+        // 3) 磁盘上有目录但 state 里没记录 → 孤儿
         let installed_root = self.root.join("installed");
         if installed_root.exists() {
             for id_entry in fs::read_dir(&installed_root)? {
@@ -857,6 +938,80 @@ impl ResourceStore {
             }
         }
 
+        // 孤儿目录（rename 成功、写状态前崩溃）：目录在、state 无记录。
+        // 这种目录**不可能**是"合法已安装"——合法安装必然先写状态再返回成功，
+        // 而写状态失败时 `commit_install` 自己会删目录。因此可以安全清理。
+        let installed_root = self.root.join("installed");
+        if installed_root.exists() {
+            let state = self.read_state()?;
+            for id_entry in fs::read_dir(&installed_root)? {
+                let id_entry = id_entry?;
+                if !id_entry.file_type()?.is_dir() {
+                    continue;
+                }
+                let id = id_entry.file_name().to_string_lossy().to_string();
+                for version_entry in fs::read_dir(id_entry.path())? {
+                    let version_entry = version_entry?;
+                    if !version_entry.file_type()?.is_dir() {
+                        continue;
+                    }
+                    let version = version_entry.file_name().to_string_lossy().to_string();
+                    let recorded = state
+                        .resources
+                        .get(&id)
+                        .map(|e| e.installed.contains_key(&version))
+                        .unwrap_or(false);
+                    if !recorded {
+                        fs::remove_dir_all(version_entry.path())?;
+                        report.removed_orphans += 1;
+                    }
+                }
+            }
+        }
+
+        // 失效记录（state 有记录、目录不在）：丢掉记录，避免"看起来装好了但根本打不开"
+        {
+            let _state_lock = self.acquire_state_lock()?;
+            let mut state = self.read_state()?;
+            let mut dropped_any = false;
+            let ids: Vec<String> = state.resources.keys().cloned().collect();
+            for id in ids {
+                let Some(entry) = state.resources.get_mut(&id) else {
+                    continue;
+                };
+                let gone: Vec<String> = entry
+                    .installed
+                    .keys()
+                    .filter(|v| !self.root.join("installed").join(&id).join(v).exists())
+                    .cloned()
+                    .collect();
+                if gone.is_empty() {
+                    continue;
+                }
+                for version in &gone {
+                    entry.installed.remove(version);
+                    entry.history.retain(|v| v != version);
+                    report.dropped_records += 1;
+                }
+                if entry.active.as_ref().is_some_and(|a| gone.contains(a)) {
+                    // 激活版本没了：退回最近一个还在的版本，没有就置空
+                    let next = entry
+                        .history
+                        .iter()
+                        .find(|v| entry.installed.contains_key(*v))
+                        .cloned();
+                    entry.active = next;
+                }
+                if entry.installed.is_empty() {
+                    state.resources.remove(&id);
+                }
+                dropped_any = true;
+            }
+            if dropped_any {
+                self.write_state(&state)?;
+            }
+        }
+
         report.reclaimed_leases = leases::reclaim_stale(&self.root)?;
         Ok(report)
     }
@@ -890,6 +1045,56 @@ impl ResourceStore {
             history: entry.history.clone(),
             versions,
         })
+    }
+
+    /// 找出所有"清单里点名依赖 `id@version`"的已安装包（`docs/17` LC-07）。
+    ///
+    /// 语义：
+    /// - 依赖写死了版本 → 只有删**那个**版本才算破坏；
+    /// - 依赖只写 id（`version: None`）→ 删到该 id **一个版本都不剩**才算破坏。
+    ///
+    /// 读不到清单的目录直接跳过：那是 `audit()`/`recover()` 的活，不在这里替它判定。
+    fn dependents_of(&self, state: &State, id: &str, version: &str) -> Vec<String> {
+        let remaining = state
+            .resources
+            .get(id)
+            .map(|e| e.installed.len())
+            .unwrap_or(0);
+        let last_version = remaining <= 1;
+
+        let mut dependents = Vec::new();
+        for (other_id, entry) in &state.resources {
+            for other_version in entry.installed.keys() {
+                if other_id == id && other_version == version {
+                    continue;
+                }
+                let Ok(dir) = self.version_dir(other_id, other_version) else {
+                    continue;
+                };
+                if !dir.exists() {
+                    continue;
+                }
+                let Ok(manifest) = read_manifest_from(&dir) else {
+                    continue;
+                };
+                for dep in &manifest.dependencies {
+                    if dep.id != id {
+                        continue;
+                    }
+                    let blocks = match &dep.version {
+                        Some(required) => required == version,
+                        None => last_version,
+                    };
+                    if blocks {
+                        dependents.push(format!("{other_id}@{other_version}"));
+                        break;
+                    }
+                }
+            }
+        }
+        dependents.sort();
+        dependents.dedup();
+        dependents
     }
 
     fn installed_versions(&self, state: &State, id: &str) -> Vec<String> {
@@ -960,8 +1165,39 @@ impl ResourceStore {
             file.sync_all()?;
         }
         fs::rename(&tmp, &path)?;
+        // 目录项落盘：rename 改的是根目录，不 fsync 会留下"内容在、名字不在"
+        sync_dir(&self.root)?;
         Ok(())
     }
+}
+
+/// 测试用的崩溃注入点：环境变量匹配时**立即 abort**（不析构、不写日志、不 flush）。
+///
+/// 语义等价于 `kill -9`：进程死在这一行，磁盘上留下那一刻的半成品。
+/// 只在测试里设置，生产路径上是"读一次环境变量"的成本。
+fn crash_point(name: &str) {
+    if std::env::var("TRANSLATOR_TEST_CRASH_POINT").as_deref() == Ok(name) {
+        // abort 而不是 exit：给"来不及清理"的最坏情况，不留 Drop 机会
+        std::process::abort();
+    }
+}
+
+/// 目录项落盘（`fsync` 目录本身）。
+///
+/// 只 `fsync` 文件不够：`rename` 改的是**父目录**的目录项，父目录不 fsync
+/// 时断电后可能出现"文件内容在、名字不在"。非 Unix 平台没有可移植的目录 fsync，
+/// 这里显式跳过并在报告里注明（不假装跨平台持久化已保证）。
+fn sync_dir(path: &Path) -> ResourceResult<()> {
+    #[cfg(unix)]
+    {
+        let dir = fs::File::open(path)?;
+        dir.sync_all()?;
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+    }
+    Ok(())
 }
 
 /// 从目录读取清单（不做文件校验）。

@@ -161,6 +161,10 @@ impl ModelSnapshot {
             .collect();
         let spec = ModelSpec::from_manifest(&snap_manifest, threads, beam_size);
 
+        // 记录持有者身份（pid + 进程启动标识），供崩溃后的 `reclaim::sweep_snapshots` 判定。
+        // 写不进去不是致命错误：回收时退化为"只能按 pid 判死"。
+        let _ = crate::reclaim::write_owner(&dir);
+
         Ok(Self {
             dir,
             manifest: snap_manifest,
@@ -214,38 +218,13 @@ impl Drop for ModelSnapshot {
     }
 }
 
-/// 清理**所有者已死**的快照目录。命名里带 pid，所以判定不需要额外元数据。
+/// 清理**所有者已死**的快照目录（`docs/17` §4.1.6）。
 ///
-/// 这是崩溃残留的兜底：正常 Drop 会自己删；只有 worker/宿主被 SIGKILL 时才会留下。
+/// 这是崩溃残留的兜底：正常 Drop 会自己删；只有被 SIGKILL 时才会留下。
+/// 判定在 [`crate::reclaim::sweep_snapshots`] 里做：pid 之外还核对进程启动标识，
+/// 避免 PID 复用把别人的目录当成"还在用"而永远留着。
 pub fn prune_stale_snapshots(root: &Path) -> Result<usize, RuntimeError> {
-    let entries = match std::fs::read_dir(root) {
-        Ok(entries) => entries,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
-        Err(e) => {
-            return Err(RuntimeError::InitFailed(format!(
-                "无法读取快照根 {}：{e}",
-                root.display()
-            )))
-        }
-    };
-    let mut removed = 0;
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        let Some(rest) = name.strip_prefix("snap-") else {
-            continue;
-        };
-        let Some(pid) = rest.split('-').next().and_then(|p| p.parse::<u32>().ok()) else {
-            continue;
-        };
-        if pid_alive(pid) {
-            continue;
-        }
-        if std::fs::remove_dir_all(entry.path()).is_ok() {
-            removed += 1;
-        }
-    }
-    Ok(removed)
+    crate::reclaim::sweep_snapshots(root).map(|report| report.removed)
 }
 
 /// 复制的同时算 sha256：一次读、一次写，返回 (字节数, 十六进制摘要)。
@@ -274,18 +253,6 @@ fn copy_with_sha256(source: &Path, target: &Path) -> Result<(u64, String), Runti
     }
     std::io::Write::flush(&mut output).ok();
     Ok((total, format!("{:x}", hasher.finalize())))
-}
-
-fn pid_alive(pid: u32) -> bool {
-    #[cfg(target_os = "linux")]
-    {
-        Path::new(&format!("/proc/{pid}")).exists()
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = pid;
-        true // 判定不了就当活着，绝不误删
-    }
 }
 
 fn next_seq() -> u64 {

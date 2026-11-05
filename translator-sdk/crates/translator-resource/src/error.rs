@@ -47,6 +47,15 @@ pub enum ResourceError {
         version: String,
     },
     /// 该版本还有**有效租约**（P2.3）：有进程正持有它，拒绝删除。
+    /// 仍被其他已安装资源依赖（`docs/17` LC-07）。
+    ///
+    /// 与 `ResourceLeased` 的区别：租约是"某个进程正在用"，依赖是"某个已安装包的清单
+    /// 声明需要这个版本"。前者会自己过期，后者不会——删了就是永久破坏。
+    ReversedDependency {
+        id: String,
+        version: String,
+        dependents: Vec<String>,
+    },
     ResourceLeased {
         id: String,
         version: String,
@@ -98,6 +107,11 @@ impl fmt::Display for ResourceError {
             Self::ResourceInUse { id, version } => {
                 write!(f, "资源 {id}@{version} 正在使用（当前激活版本），拒绝删除")
             }
+            Self::ReversedDependency {
+                id,
+                version,
+                dependents,
+            } => write!(f, "资源 {id}@{version} 仍被依赖：{}", dependents.join(", ")),
             Self::ResourceLeased {
                 id,
                 version,

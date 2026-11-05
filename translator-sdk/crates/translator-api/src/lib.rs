@@ -54,6 +54,9 @@ pub struct Translator {
     /// 从资源仓库挂载时持有的租约：`Translator` 活着，磁盘目录就不会被删（P2.3）。
     #[cfg(feature = "resource")]
     _leases: Vec<translator_resource::ResourceLease>,
+    /// 真实 NMT 引擎句柄（`docs/17` §5：加载/卸载必须能被 SDK 侧观测）。
+    #[cfg(feature = "nmt-bergamot")]
+    nmt_engines: Vec<Arc<translator_nmt_bergamot::BergamotNmtEngine>>,
 }
 
 impl Translator {
@@ -172,6 +175,41 @@ impl Translator {
         self.coordinator.explain_route(req)
     }
 
+    /// 真实 NMT 引擎的加载状态（没挂真实引擎时是空表）。
+    #[cfg(feature = "nmt-bergamot")]
+    pub fn nmt_states(&self) -> Vec<translator_nmt_bergamot::LoadState> {
+        self.nmt_engines.iter().map(|e| e.state()).collect()
+    }
+
+    /// 真实 NMT 引擎的缓存统计。
+    #[cfg(feature = "nmt-bergamot")]
+    pub fn nmt_cache_stats(&self) -> Vec<translator_core::plan_cache::PlanCacheStats> {
+        self.nmt_engines.iter().map(|e| e.cache_stats()).collect()
+    }
+
+    /// 按空闲 TTL 回收真实模型；返回实际卸载的引擎数。
+    ///
+    /// 宿主应当在**没有请求进来的时候**调用（例如自己的空闲定时器）。
+    #[cfg(feature = "nmt-bergamot")]
+    pub fn evict_idle_nmt(&self) -> Result<usize, TranslationError> {
+        let mut evicted = 0;
+        for engine in &self.nmt_engines {
+            if engine.evict_if_idle_configured()? {
+                evicted += 1;
+            }
+        }
+        Ok(evicted)
+    }
+
+    /// 显式卸载全部真实模型（内存立刻还回去；引擎对象仍可继续用）。
+    #[cfg(feature = "nmt-bergamot")]
+    pub fn unload_nmt(&self) -> Result<(), TranslationError> {
+        for engine in &self.nmt_engines {
+            engine.unload()?;
+        }
+        Ok(())
+    }
+
     pub fn registry(&self) -> &PluginRegistry {
         self.coordinator.registry()
     }
@@ -222,6 +260,9 @@ pub struct TranslatorBuilder {
     /// 已登记的资源租约，`build()` 时移交给 `Translator`。
     #[cfg(feature = "resource")]
     leases: Vec<translator_resource::ResourceLease>,
+    /// 真实 NMT 引擎句柄与被拒绝的构造错误。
+    #[cfg(feature = "nmt-bergamot")]
+    nmt_engines: Vec<Arc<translator_nmt_bergamot::BergamotNmtEngine>>,
 }
 
 impl Default for TranslatorBuilder {
@@ -244,6 +285,8 @@ impl TranslatorBuilder {
             memory_limit: None,
             #[cfg(feature = "resource")]
             leases: Vec::new(),
+            #[cfg(feature = "nmt-bergamot")]
+            nmt_engines: Vec::new(),
         }
     }
 
@@ -253,13 +296,17 @@ impl TranslatorBuilder {
     /// 首次翻译（或宿主显式调用 `engine.load()`）才会真正加载。
     /// 构造失败计入构建错误，`build()` 时返回，不会带病运行。
     #[cfg(feature = "nmt-bergamot")]
-    pub fn nmt_bergamot(self, config: translator_nmt_bergamot::BergamotNmtConfig) -> Self {
+    pub fn nmt_bergamot(mut self, config: translator_nmt_bergamot::BergamotNmtConfig) -> Self {
         match translator_nmt_bergamot::BergamotNmtEngine::new(config) {
-            Ok(engine) => self.engine(Arc::new(engine)),
+            Ok(engine) => {
+                let engine = Arc::new(engine);
+                // 句柄要留一份给 `Translator`：加载/卸载/缓存统计得能被观测（docs/17 §5）
+                self.nmt_engines.push(engine.clone());
+                self.engine(engine)
+            }
             Err(err) => {
-                let mut this = self;
-                this.errors.push(err);
-                this
+                self.errors.push(err);
+                self
             }
         }
     }
@@ -489,6 +536,18 @@ impl TranslatorBuilder {
             }
         }
 
+        // 真实 NMT 的内存准入（docs/17 §4.1.8）：用实测下界估计记账，
+        // 超限在装配期就失败，而不是加载到一半 OOM。
+        #[cfg(feature = "nmt-bergamot")]
+        for engine in &self.nmt_engines {
+            let footprint = engine.memory_footprint_bytes();
+            let label = format!("nmt:{}", translator_nmt_bergamot::ENGINE_ID);
+            match budget.try_reserve(label, footprint) {
+                Ok(reservation) => reservations.push(reservation),
+                Err(e) => self.errors.push(TranslationError::from(e)),
+            }
+        }
+
         if let Some(err) = self.errors.into_iter().next() {
             return Err(err);
         }
@@ -512,6 +571,8 @@ impl TranslatorBuilder {
             _reservations: reservations,
             #[cfg(feature = "resource")]
             _leases: self.leases,
+            #[cfg(feature = "nmt-bergamot")]
+            nmt_engines: self.nmt_engines,
         })
     }
 }

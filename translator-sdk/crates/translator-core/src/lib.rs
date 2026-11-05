@@ -24,6 +24,7 @@ pub mod cache;
 pub mod coordinator;
 pub mod diagnostics;
 pub mod plan;
+pub mod plan_cache;
 pub mod protection;
 pub mod routing;
 pub mod rules;

@@ -68,6 +68,7 @@ translator-cli —— 轻量跨平台翻译 SDK 调试工具
   --nmt-protection <p>     segment | marker（默认 segment）
   --nmt-threads <n>        native 线程数（默认 1）
   --nmt-beam <n>           beam size（默认 1）
+  --nmt-idle-ttl <ms>      空闲多久后允许回收模型（默认不自动回收）
   --nmt-source <lang>      引擎语言对源（默认 en）
   --nmt-target <lang>      引擎语言对目标（默认 zh-Hans）
 
@@ -157,12 +158,16 @@ struct NmtOptions {
     beam: Option<u8>,
     source: Option<String>,
     target: Option<String>,
+    idle_ttl_ms: Option<u64>,
 }
 
 /// 运行时身份横幅（`--diagnose` 时打印）。不含 pid、socket、权重路径。
 #[derive(Default)]
 struct RuntimeBanner {
     lines: Vec<(&'static str, String)>,
+    /// 真实引擎句柄：`--diagnose` 时用来读缓存统计与加载状态。
+    #[cfg(feature = "nmt")]
+    engine: Option<std::sync::Arc<translator_api::nmt_bergamot::BergamotNmtEngine>>,
 }
 
 const DEFAULT_STORE: &str = ".resources";
@@ -232,6 +237,15 @@ fn take_global_options(args: &mut Vec<String>) -> Result<GlobalOptions, ExitCode
             Ok(n) if n > 0 => options.nmt.threads = Some(n),
             _ => {
                 eprintln!("--nmt-threads 需要正整数：{raw}");
+                return Err(ExitCode::from(2));
+            }
+        }
+    }
+    if let Some(raw) = take(args, "--nmt-idle-ttl") {
+        match raw.parse::<u64>() {
+            Ok(ms) if ms > 0 => options.nmt.idle_ttl_ms = Some(ms),
+            _ => {
+                eprintln!("--nmt-idle-ttl 需要正整数（毫秒）：{raw}");
                 return Err(ExitCode::from(2));
             }
         }
@@ -398,6 +412,9 @@ fn register_nmt(
     if let Some(target) = &options.target {
         config.target = LanguageTag::new(target)?;
     }
+    if let Some(ms) = options.idle_ttl_ms {
+        config.idle_ttl = Some(std::time::Duration::from_millis(ms));
+    }
 
     let engine = std::sync::Arc::new(BergamotNmtEngine::new(config)?);
     // 显式加载：把"模型坏了"暴露在启动阶段，而不是第一条译文时
@@ -450,6 +467,7 @@ fn register_nmt(
         ),
     ));
 
+    banner.engine = Some(engine.clone());
     Ok((builder.engine(engine), banner))
 }
 
@@ -631,6 +649,31 @@ fn cmd_translate(
                     println!("运行时  （真实本地 NMT）");
                     for (key, value) in &banner.lines {
                         println!("  {key:<8}{value}");
+                    }
+                }
+                #[cfg(feature = "nmt")]
+                if let Some(engine) = &banner.engine {
+                    let stats = engine.cache_stats();
+                    println!();
+                    println!(
+                        "引擎缓存 命中 {} / 未命中 {} / 条目 {} / 淘汰 {}（键=执行计划摘要）",
+                        stats.hits, stats.misses, stats.entries, stats.evictions
+                    );
+                    match engine.state() {
+                        translator_api::nmt_bergamot::LoadState::Loaded {
+                            snapshot_bytes,
+                            preparation_ms,
+                            uptime_ms,
+                            ..
+                        } => println!(
+                            "模型状态   已加载（快照 {} MiB / 准备 {} ms / 已存活 {} ms）",
+                            snapshot_bytes / (1024 * 1024),
+                            preparation_ms,
+                            uptime_ms
+                        ),
+                        translator_api::nmt_bergamot::LoadState::Unloaded => {
+                            println!("模型状态   未加载")
+                        }
                     }
                 }
                 if let Ok(out) = pollster::block_on(translator.translate_with_diagnostics(&req)) {

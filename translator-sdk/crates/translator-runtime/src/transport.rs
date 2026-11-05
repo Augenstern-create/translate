@@ -10,7 +10,7 @@
 //! 2. **失败不静默重试**：请求失败就失败；只有"下一个**新**请求"才允许在预算内起新 worker。
 //!    这条是为了不把一次崩溃变成 N 次不可见的重放。
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -52,6 +52,9 @@ struct State {
     spawns: u32,
     respawns: u32,
     next_epoch: u64,
+    /// 本次加载前清理/保留的崩溃残留快照数（`docs/17` §4.1.6）。
+    stale_snapshots_removed: u32,
+    stale_snapshots_kept: u32,
 }
 
 /// 基于子进程的传输实现。
@@ -65,6 +68,8 @@ pub struct ProcessTransport {
     load_gate: Mutex<()>,
     /// 进行中的翻译请求数（租约的可观测部分；`docs/17` LC-02）。
     active_requests: AtomicU32,
+    /// 残留回收只做一次（每个传输层一次，避免每次加载都扫目录）。
+    swept: AtomicBool,
 }
 
 impl ProcessTransport {
@@ -82,10 +87,13 @@ impl ProcessTransport {
                 spawns: 0,
                 respawns: 0,
                 next_epoch: 1,
+                stale_snapshots_removed: 0,
+                stale_snapshots_kept: 0,
             }),
             shutdown_requested: AtomicU32::new(0),
             load_gate: Mutex::new(()),
             active_requests: AtomicU32::new(0),
+            swept: AtomicBool::new(false),
         }
     }
 
@@ -233,6 +241,15 @@ impl ProcessTransport {
         }
 
         let started = Instant::now();
+        // 崩溃残留兜底：先清掉"持有者已死"的快照目录再生成新的。
+        // 每个传输层只做一次（正常路径上目录数是 0，代价可以忽略）。
+        if !self.swept.swap(true, Ordering::Relaxed) {
+            if let Ok(report) = crate::reclaim::sweep_snapshots(snapshot_root) {
+                let mut state = self.guard();
+                state.stale_snapshots_removed = report.removed as u32;
+                state.stale_snapshots_kept = (report.kept_alive + report.unverifiable) as u32;
+            }
+        }
         let snapshot = ModelSnapshot::materialize(manifest, snapshot_root, threads, beam_size)?;
         let prepare_ms = started.elapsed().as_millis() as u64;
         let bytes = snapshot.bytes();
@@ -485,6 +502,8 @@ impl RuntimeTransport for ProcessTransport {
             worker_pid: worker.map(|w| w.pid()),
             model_preparation_ms: state.model_preparation_ms,
             snapshot_bytes: state.snapshot_bytes,
+            stale_snapshots_removed: state.stale_snapshots_removed,
+            stale_snapshots_kept: state.stale_snapshots_kept,
         }
     }
 }

@@ -29,6 +29,7 @@ pub mod config;
 pub mod error;
 pub mod model;
 pub mod protocol;
+pub mod reclaim;
 pub mod snapshot;
 pub mod transport;
 pub mod worker;
@@ -40,6 +41,7 @@ pub use model::{
     ModelSpec, TranslationJob, TranslationReply, TransportMetrics, WorkerHealth,
 };
 pub use protocol::{MAX_FRAME_BYTES, PROTOCOL_VERSION};
+pub use reclaim::{sweep_snapshots, sweep_worker_dirs, SweepReport};
 pub use snapshot::{prune_stale_snapshots, ModelSnapshot};
 pub use transport::{ProcessTransport, RuntimeTransport};
 pub use worker::{WorkerConfig, WorkerProcess};

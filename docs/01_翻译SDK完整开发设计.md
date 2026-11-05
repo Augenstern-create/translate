@@ -519,16 +519,17 @@ P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运
 - ADR-016（Accepted，P2.5 已实现）：`dictionary.sqlite.v2` 把释义内联进 `entries.senses`（U+001F 分隔），以失去"逐条释义行"换取一次 B-tree 查找。真实 CC-CEDICT 实测 p50 17.4 → 9.0 µs（−48%）、库体积 18.2 → 13.6 MB（−25%）。v1 保持可读，读写两侧都校验 `PRAGMA user_version`，格式与清单不符即拒绝打开。
   增补（P2-S，对应 `docs/08` D-03 / 审查 ADR-017）：**新包默认写 v2**（`pack-dictionary` 默认即为 v2），v1 进入**只读兼容窗口**，`--payload-schema dictionary.sqlite.v1` 保留为 legacy 重现用法；v1 读取器的退役版本**尚无日期**，等真实发行与兼容矩阵明确后再定，不在文档里承诺"永久兼容"。
 - ADR-017（Accepted，P2.3 已实现）：`state.json` 的跨进程互斥用 `O_CREAT|O_EXCL` 锁文件，不引入 `libc`/`flock`。理由是零依赖、语义明确（创建成功即持锁）、失败可见；代价是崩溃残留锁需人工确认（程序只在"持锁 pid 确定已死"时自动回收）。
+  增补（P3.2，`docs/19` §1.2）：`recover()` 的职责从"只清半成品"扩大为"让仓库回到一致状态"——额外删除**孤儿安装目录**（rename 成功、写状态前崩溃）并**丢弃目录已不在的记录**，激活版本丢失时退回 history 里还在的版本；`audit()` 仍然只读。持久化边界：`write_state` 与 `commit_install` 在 rename 之后都 fsync **父目录**（仅 Unix；非 Unix 显式跳过，不宣称跨平台持久化）。
 - ADR-018（Accepted，P2.3 已实现）：租约是**协作式**的，不是内核强制锁。每个使用方一个文件（`leases/<id>/<version>/<pid>-<nonce>.json`），检查即列目录。诚实边界：绕过本 SDK 直接 `open()` 资源文件的程序检测不到；无法判定进程存活时按"占用"处理。
 - ADR-019（Accepted；v0.x 部分落地）：术语按**请求级解析出的不可变快照**生效。每次翻译只绑定一份有效术语表（`id` + `version`，内容摘要 `content_digest` 随后续执行计划一起进缓存键）；`glossary_id` 只用于**选择**，不承诺多表叠加，不存在表时返回明确错误而不是静默退回默认表。理由：多表叠加需要优先级、同源短语冲突检测与合并哈希，属于独立设计，先不做半成品。现状：`id@version` 指纹已进键（P2.5），`content_digest` 未实现（P3.1 与本条一起收口）。
 - ADR-020（Accepted，P2-S 已实现）：字典 `lookup()` 永远返回原始释义，**不受输出侧术语约束改写**；`translate()` 的词典直出也不默认套用强制替换（最多给非破坏性警告）。完整句子的 NMT 译文才进入术语验证。理由：`lookup()` 是"查词"，用户要的是资源真实内容；把词典释义替换成"更喜欢的说法"会让查词结果不可追溯。
 - ADR-021（Accepted，未实现）：**预算记账与平台内存观测分离**。`MemoryBudget`（CAS 记账）负责装配期准入与协作式估算，对外一律称 accounted/estimated bytes，不得称 RSS 或硬上限；另设可选 `ProcessMetricsProvider`（Linux `/proc`/`smaps_rollup`、Windows 进程 API、macOS `task_info`、Android 平台回调）负责真实占用观测，测不到时返回 `Unavailable` 而不是 0。两条数值不得互相冒充（`docs/08` D-04）。
 - ADR-022（Accepted，P2-S 已实现）：**租约登记与卸载/清理必须在同一跨进程临界区内完成**「检查安装状态 + 登记/删除」。`acquire_lease` 与 `uninstall`/`cleanup` 共用进程内 `Mutex` + 同一个 `state.lock`，锁内重读状态（锁顺序一致，先 Mutex 后文件锁）。状态锁的陈旧判定用「pid + 进程启动标识」：确定持有者已死才回收，无法判定时按占用处理并报 `LockTimeout`（带锁文件路径与持有者）。
-- ADR-023（Proposed，P3.1-D 已实现前四项、缓存仍未上线）：真实模型接入时必须同时实现 single-flight 加载、热模型租约与卸载保护、`ResolvedExecutionPlan`（engine / runtime / model revision / tokenizer / 规则与术语指纹 / 解码参数 / 语言方向 / 隐私域）稳定哈希进缓存键，并以 model revision 隔离缓存。在此之前，禁止用真实 NMT + `id@version` 指纹（或 `model_id: None`）上线缓存。
-  进展（`docs/18`）：single-flight（`load_gate`，LC-01）、排队绝对截止时间（LC-04）、在飞请求计数与卸载等待（LC-02）、`ResolvedExecutionPlan`+摘要（见 ADR-035）已落地；**真实 NMT 仍未接缓存**，因此"用错身份命中旧缓存"的路径依旧不存在，本条继续维持 Proposed。
+- ADR-023（Accepted，P3.1-D + P3.2 已实现）：真实模型接入时必须同时实现 single-flight 加载、热模型租约与卸载保护、`ResolvedExecutionPlan`（engine / runtime / model revision / tokenizer / 规则与术语指纹 / 解码参数 / 语言方向 / 隐私域）稳定哈希进缓存键，并以 model revision 隔离缓存。在此之前，禁止用真实 NMT + `id@version` 指纹（或 `model_id: None`）上线缓存。
+  落地（`docs/18`/`docs/19`）：single-flight（`load_gate`，LC-01）、排队绝对截止时间（LC-04）、在飞请求计数与卸载等待（LC-02）、`ResolvedExecutionPlan`+摘要（ADR-035）、**真实 NMT 的结果缓存以计划摘要为键**（ADR-038，LC-09）。前提条件已满足，故转为 Accepted。
 - ADR-024（Accepted，P3.0 已执行）：**Linux 先交付，核心保持平台无关**。P3 的验收范围只有 Ubuntu x86_64 / CPU；Windows、macOS、Android 只保留扩展边界（trait、feature、配置项），**不得**用 Linux 的测试结果对外表述为跨平台通过。理由：跨平台实证需要真机与 CI，没做就说没做（`docs/11` §3.3）。
 - ADR-025（Accepted，P3.0 已执行）：**先打通原生参考链路，再写 Rust 适配**。顺序是：锁定模型坐标与校验和 → 原生 CLI 出真实译文并记录基线 → 才允许实现 `runtime-bergamot`。理由：参考链路不通时，Rust 侧的"翻译失败"无法区分是 FFI 写错还是模型/配置不对；本次先证明"模型确实能翻"（en→zh-Hans，23/24 金样本），再谈 adapter（`docs/11`）。
-- ADR-026（Proposed，P3.1-B/D 落地）：**模型身份以内容为准，且身份要覆盖整个执行栈**。缓存、实例复用、诊断必须携带一份足以复现译文的摘要集合：**权重内容摘要、Tokenizer/词表摘要、短名单（lexical shortlist）摘要、解码参数（beam、长度惩罚等）、runtime build 标识**；不能只用 `package_id@version`，也不能只摘要权重。同版本不同 hash 视为不同模型。现状（`docs/13` D-02 / `docs/15` D-15 / **`docs/18` §1.2**）：诊断用的 `content_digest = package@version#权重sha256前32位` 仍**只能用于诊断，不得用作缓存键**；P3.1-C/D 新增的 `ResolvedExecutionPlan`（`plan-v1`）已经覆盖本条要求的五项（权重 / tokenizer / 短名单 / 解码参数 / runtime build）与语言方向、保护策略、规则与术语指纹，可算出稳定摘要（ADR-035），但**真实 NMT 路径没有任何缓存消费者**，所以「用错身份命中旧缓存」的路径依然不存在。P2.5 的 `id@version` 指纹缺口仍在（ADR-019/023 已记录）。
+- ADR-026（Proposed，P3.1-B/D 落地）：**模型身份以内容为准，且身份要覆盖整个执行栈**。缓存、实例复用、诊断必须携带一份足以复现译文的摘要集合：**权重内容摘要、Tokenizer/词表摘要、短名单（lexical shortlist）摘要、解码参数（beam、长度惩罚等）、runtime build 标识**；不能只用 `package_id@version`，也不能只摘要权重。同版本不同 hash 视为不同模型。现状（`docs/13` D-02 / `docs/15` D-15 / **`docs/18` §1.2**）：诊断用的 `content_digest = package@version#权重sha256前32位` 仍**只能用于诊断，不得用作缓存键**；P3.1-C/D 新增的 `ResolvedExecutionPlan`（`plan-v1`）已经覆盖本条要求的五项（权重 / tokenizer / 短名单 / 解码参数 / runtime build）与语言方向、保护策略、规则与术语指纹，可算出稳定摘要（ADR-035），P3.2 起真实 NMT **有**缓存了，但键是覆盖五文件的计划摘要而不是 `content_digest`；实测把 `nonbreaking_prefix.en` 改一行，计划摘要从 `dcc88e56…` 变成 `4eba81ed…`，而 `model_id`（`content_digest`）**没有任何变化**（`docs/19` §2.6）——这就是本条结论的直接证据。P2.5 的 `id@version` 指纹缺口仍在（ADR-019/023 已记录）。
 - ADR-027（Accepted，P3.1-A 已落地接口；实例独占未做共享验证）：**原生运行时归受控 worker 独占，且隔离边界必须是进程级故障隔离，不是线程**。理由：`panic = "abort"` 让 `catch_unwind` 失效，线程也无法隔离 SIGSEGV/`abort()`；P3.0 实测缺文件时 `abort()`（信号 6）、截断权重 SIGSEGV（信号 11），只有独立地址空间能把宿主保住。实现约束（`docs/13` §1）：单一 worker 进程独占模型实例，对外只暴露 `Send + Sync` 的消息代理与 `RuntimeTransport` trait；IPC 用长度前缀帧（有上限）、强制 `request_id`/`worker epoch`/`model revision` 关联、请求超时与三级终止（shutdown 帧→SIGTERM→SIGKILL）、无僵尸、受控重启用预算且不静默重放；禁止无依据的 `unsafe impl Send/Sync`；不向 `translator-api` 泄漏 C++ 类型/pid/socket；非 Linux 平台明确返回 `CapabilityUnavailable` 而非空实现。
 - ADR-028（Accepted，P3.0 事实）：**模型权重不入库、许可未确认前不分发**。权重（约 51 MB）只通过 `models.lock.json` 里的 CDN 坐标 + sha256 复现；Remote Settings 记录里没有 license 字段，`mozilla/translations` 仓库代码是 MPL-2.0，但权重的再分发条款需模型卡/法务确认。在结论确定前，仓库只提交锁定记录、配置模板与构建脚本。
 
@@ -543,6 +544,17 @@ P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运
 - ADR-035（Accepted，P3.1-D 已实现）：**执行计划摘要就是（未来的）缓存身份，且必须版本化并可锁定**。`ResolvedExecutionPlan`（`PLAN_SCHEMA = plan-v1`）+ `canonical()`（键按字典序、`k=v` 逐行、转义 `\`、`\n`、`\r`、`=`）+ sha256 = `digest`，`short_digest()` 取前 16 位给诊断。字段固定 14 项 + 每个模型文件一行；**新增字段必须同时升 `PLAN_SCHEMA`**。金值（`67d2768e…`）被钉在单元测试里，防止无意改动让所有缓存身份漂移。现状：真实 NMT 仍无缓存消费者，摘要目前只用于诊断与 CLI 展示。
 - ADR-036（Accepted，P3.1-E 已实现）：**真实 NMT 以可选 feature 接入公共入口，默认依赖树里不得出现 native/进程代码**。`translator-api` 的 `nmt-bergamot = ["dep:translator-nmt-bergamot"]` 默认关闭，`TranslatorBuilder::nmt_bergamot(config)` 只挂载引擎、构造期只做文件与摘要校验（不 spawn、不加载权重）；`translator-cli` 的 `nmt` feature + `--nmt` 负责端到端。理由：设计要求"默认 `cargo build` 不拉 native C++/权重"，而 CLI 是 workspace 默认成员（`docs/18` §2.8 的 `cargo tree` 证据）。代价：`docs/17` §5 的 CLI 验收命令需要额外两个开关，文档必须写清，不得让人误以为默认二进制能跑真实模型。
 - ADR-037（Accepted，P3.1-D 已实现）：**卸载与在飞请求的关系是"等待"，不是"拒绝"或"杀进程"**。`unload()` 取状态锁；正在翻译的请求持锁执行 native 调用，因此卸载会等它结束，卸载成功后 `identity()` 为空、下一次请求自动重载（实测含快照 + native load ≈ 1.13 s）。`active_requests` 计数是租约的可观测部分（LC-02 的证据）。理由：`docs/17` §4.1.3 允许"等待/安全取消/明确错误"三选一，而当前并发恒为 1，把并发复杂度推给宿主不划算。代价：没有"取消进行中请求"的能力，卸载延迟取决于在飞请求耗时。
+  增补（P3.2）：计划摘要**跨卸载保留**，因此"卸载后重查同一句"直接命中缓存（实测 0 ms），不会为了一个已有答案重新加载 342 MiB；空闲回收只提供 `evict_if_idle(ttl)` API，**不内置后台线程**——SDK 不该偷偷起线程改宿主的内存占用，宿主（或 CLI 的 `--nmt-idle-ttl`）自己调。
+
+- ADR-038（Accepted，P3.2 已实现）：**真实 NMT 的结果缓存以执行计划摘要为键，并遵守四条纪律**。
+  (1) 键 = `plan-v1` 摘要 + 目标语言 + 原文 sha256，键里**不存原文**；
+  (2) 只缓存**成功**结果——把失败缓存成成功是最坏的一类 bug；
+  (3) 有界 **FIFO**（容量 0 = 关闭），命中不改变淘汰顺序；命中率是观测量，不是优化目标；
+  (4) 计划摘要**跨卸载保留**，卸载后重查同一句直接命中（0 ms），不会为了一个已有答案重载 342 MiB。
+  实现：`translator-core::plan_cache` + `BergamotNmtEngine` 的翻译前查表。理由：`content_digest` 只覆盖权重
+  （实测换 prefix 表时 `model_id` 不变），`id@version` 连权重都不看，两者都不能当缓存键（ADR-026）。
+  代价：没有跨引擎共享、没有持久化、没有 LRU（`docs/19` D-32/D-33）；`plan_digest` 在 `load()` 时算一次，
+  因此调用方**必须在 load 之后把 config 视为只读**（D-34）。
 
 > 状态含义：**Accepted** = 已决定并（如注明）已实现；**Proposed** = 已决定方向但尚未实现，写入 ADR 不等于已验证；
 > **Deferred** = 明确延后。上表未标注 Deferred 的项均须在对应阶段交付。
@@ -558,6 +570,7 @@ P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运
 | v1.4 | 2026-11-05 | P3.0 落地：新增 ADR-024～028（Linux 优先/参考链路先行/内容即身份/worker 独占/权重不入库）；`docs/10` 的候选 ADR 标题按内容合并进这几条，未覆盖旧编号 |
 | v1.5 | 2026-11-05 | P3.1-A 落地（`docs/13`）：ADR-027 从 Proposed 改为 Accepted，并把措辞从「worker 独占」收紧为「**进程级**故障隔离」（明确线程与 `catch_unwind` 不可用、IPC 硬约束、非 Linux 显式不可用）；ADR-026 把模型身份从「权重 + tokenizer 摘要」扩展为**权重 / Tokenizer / 短名单 / 解码参数 / runtime build** 五项，并注明当前 `content_digest` 只能诊断、不得作缓存键；新增 ADR-029（严格占位符完整性，Proposed，P3.1-C）。编号处理：`docs/12` §6 的候选 ADR 建议按内容并入 026/027/029，**未覆盖任何旧编号**；ADR-029 是当前最大号 028 之后的第一个空号 |
 | v1.6 | 2026-11-05 | P3.1-B 落地（`docs/15`）：新增 ADR-030～033（隔离快照 / 真实 Bergamot 默认单 worker / IPC 与原生版本分离 / 分阶段截止时间）；ADR-026 的现状一栏改为引用 P3.1-B 实测并再次声明「不得作缓存键」。编号处理：`docs/14` §8 的四条建议按内容顺延为 030～033（029 已被占位），**未覆盖任何旧编号** |
+| v1.8 | 2026-11-05 | P3.2 落地（`docs/19`）：新增 ADR-038（计划摘要作缓存键 + 四条纪律）；ADR-023 从 Proposed 改为 Accepted（真实 NMT 的缓存键已换成计划摘要）；ADR-026 增补"换 prefix 表时 `content_digest` 不变"的实测；ADR-017 增补 `recover()` 语义扩大与目录 fsync（仅 Unix）；ADR-037 增补"摘要跨卸载保留 + 空闲回收不内置线程"。编号处理：`docs/17` 未给候选编号，按当前最大号 037 之后顺延 038，**未覆盖任何旧编号** |
 | v1.7 | 2026-11-05 | P3.1-C/D/E 合并批次落地（`docs/18`）：新增 ADR-034～037（默认安全分段 / 执行计划摘要即未来缓存身份 / 真实 NMT 以可选 feature 接入 / 卸载等待在飞请求）；ADR-029 从 Proposed 改为 Accepted 并改为引用 SP-01～12 与分段默认策略；ADR-023/026/033 的现状一栏补齐 P3.1-D 已实现与仍未实现的分界（缓存仍未上线、并发仍为 1）。编号处理：`docs/17` 未给候选编号，按当前最大号 033 之后顺延 034～037，**未覆盖任何旧编号**；`docs/17` §12 引用的 `docs/16` 从未到达本仓库，SP 编号沿用 `docs/17` §3.2 |
 
 ## 15. 主要风险与应对

@@ -145,13 +145,9 @@ fn real_config() -> translator_api::nmt_bergamot::BergamotNmtConfig {
 
 #[cfg(feature = "nmt-bergamot")]
 fn real_translator() -> Translator {
-    build_with(|b| {
-        let engine = std::sync::Arc::new(
-            translator_api::nmt_bergamot::BergamotNmtEngine::new(real_config())
-                .expect("构造引擎失败"),
-        );
-        b.engine(engine)
-    })
+    // 走公开 builder 方法（不是手工 `engine()`）：这样 `Translator` 才持有句柄，
+    // 宿主才能观测加载状态与缓存统计（docs/17 §5）。
+    build_with(|b| b.nmt_bergamot(real_config()))
 }
 
 #[cfg(feature = "nmt-bergamot")]
@@ -226,4 +222,64 @@ fn f07_诊断路径与普通路径译文一致且报告受保护片段() {
         plain.text
     );
     assert_eq!(out.diagnostics.protected_spans.len(), 2);
+}
+
+#[test]
+#[ignore = "需要真实 Bergamot 模型（NMT_BERGAMOT_BIN / NMT_MODEL_DIR）"]
+#[cfg(feature = "nmt-bergamot")]
+fn f08_加载状态与缓存统计可经_sdk_观测() {
+    let translator = real_translator();
+    // 挂载但未翻译：必须报告"未加载"（不能假装加载好了）
+    let states = translator.nmt_states();
+    assert_eq!(states.len(), 1, "应当能看到 1 个真实引擎");
+    assert!(
+        matches!(states[0], translator_api::nmt_bergamot::LoadState::Unloaded),
+        "{:?}",
+        states[0]
+    );
+
+    let req = TranslateRequest::new("Hello world!", zh())
+        .with_source(en())
+        .with_policy(TranslationPolicy::LocalOnly);
+    pollster::block_on(translator.translate(&req)).expect("翻译失败");
+    let states = translator.nmt_states();
+    match &states[0] {
+        translator_api::nmt_bergamot::LoadState::Loaded {
+            snapshot_bytes,
+            preparation_ms,
+            ..
+        } => {
+            println!(
+                "快照 {} MiB / 准备 {} ms",
+                snapshot_bytes / 1024 / 1024,
+                preparation_ms
+            );
+            assert!(*snapshot_bytes > 40 * 1024 * 1024);
+        }
+        other => panic!("翻译后应当是 Loaded：{other:?}"),
+    }
+
+    // 再翻一次同一句：**SDK 门面层**的缓存先命中，请求根本不会再进引擎。
+    // 这是两层缓存的正确关系：上层按"请求指纹"、引擎层按"执行计划摘要"。
+    let out =
+        pollster::block_on(translator.translate_with_diagnostics(&req)).expect("第二次翻译失败");
+    let cache = translator.nmt_cache_stats();
+    println!(
+        "引擎缓存 {cache:?} / 门面缓存命中 {}",
+        out.diagnostics.cache_hit
+    );
+    assert!(out.diagnostics.cache_hit, "第二次相同请求应当在门面层命中");
+    assert_eq!(
+        cache[0].entries, 1,
+        "引擎层应当只缓存了第一次的结果：{cache:?}"
+    );
+
+    // 显式卸载后状态回到 Unloaded
+    translator.unload_nmt().expect("卸载失败");
+    assert!(matches!(
+        translator.nmt_states()[0],
+        translator_api::nmt_bergamot::LoadState::Unloaded
+    ));
+    // 空闲回收在"已卸载"状态下是空操作
+    assert_eq!(translator.evict_idle_nmt().unwrap(), 0);
 }

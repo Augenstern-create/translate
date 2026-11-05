@@ -416,6 +416,10 @@ pub struct TransportMetrics {
     pub model_preparation_ms: Option<u64>,
     /// 当前快照占用字节数
     pub snapshot_bytes: Option<u64>,
+    /// 本次加载前清理掉的崩溃残留快照数（`docs/17` §4.1.6）。
+    pub stale_snapshots_removed: u32,
+    /// 因为持有者仍存活而保留的残留快照数。
+    pub stale_snapshots_kept: u32,
 }
 
 impl TransportMetrics {

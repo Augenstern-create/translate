@@ -1,0 +1,278 @@
+//! P3.2 资源安全：反向依赖（LC-07）+ 安装关键点崩溃注入（LC-08）。
+//!
+//! LC-08 必须是**独立进程**：崩溃注入靠 `abort()` 跳过 `Drop`，同进程里做会带走整个测试。
+//! 父测试用 `std::env::current_exe()` 重新执行本测试二进制，只跑 `child_install_with_crash`
+//! 那一个 `#[ignore]` 子测试，用环境变量告诉它崩溃点。
+//!
+//! 运行：`cargo test -p translator-resource --test p32_lifecycle`
+
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::time::Duration;
+
+use translator_resource::store::{sha256_file, ResourceStore};
+use translator_resource::ResourceError;
+
+const ROOT_ENV: &str = "P32_STORE_ROOT";
+const PKG_ENV: &str = "P32_PACKAGE";
+const CRASH_ENV: &str = "TRANSLATOR_TEST_CRASH_POINT";
+
+// ---------------------------------------------------------------- 夹具
+
+/// 造一个最小合法资源包；`deps` 是 `(id, 版本要求)`。
+fn build_package(root: &Path, id: &str, version: &str, deps: &[(&str, Option<&str>)]) -> PathBuf {
+    let dir = root.join(format!("pkg-{id}-{version}"));
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let mut entries = Vec::new();
+    for (name, content) in [
+        ("index.fst", b"fake-fst-bytes".as_slice()),
+        ("entries.sqlite", b"fake-sqlite-bytes".as_slice()),
+    ] {
+        std::fs::write(dir.join(name), content).unwrap();
+        entries.push(format!(
+            r#"{{ "path": "{name}", "sha256": "{}", "bytes": {} }}"#,
+            sha256_file(dir.join(name)).unwrap(),
+            content.len()
+        ));
+    }
+    std::fs::write(dir.join("LICENSE.txt"), b"CC0").unwrap();
+
+    let deps_json: Vec<String> = deps
+        .iter()
+        .map(|(dep_id, ver)| match ver {
+            Some(v) => format!(r#"{{ "id": "{dep_id}", "version": "{v}" }}"#),
+            None => format!(r#"{{ "id": "{dep_id}" }}"#),
+        })
+        .collect();
+
+    let manifest = format!(
+        r#"{{
+            "manifest_schema_version": 2,
+            "payload_schema_version": "dictionary.sqlite.v1",
+            "id": "{id}",
+            "version": "{version}",
+            "kind": "dictionary",
+            "language": "zh-Hans",
+            "target_languages": ["en"],
+            "entry_count": 1,
+            "provenance": {{
+                "name": "TEST", "source_url": "https://example.invalid",
+                "revision": "r1", "license_spdx": "CC0-1.0",
+                "license_file": "LICENSE.txt", "retrieved_at": "2026-11-05"
+            }},
+            "files": [{}],
+            "dependencies": [{}],
+            "platforms": ["*"]
+        }}"#,
+        entries.join(", "),
+        deps_json.join(", ")
+    );
+    std::fs::write(dir.join("manifest.json"), manifest).unwrap();
+    dir
+}
+
+fn store(root: &Path) -> ResourceStore {
+    ResourceStore::open_with_timeout(root, Duration::from_millis(800)).unwrap()
+}
+
+// ---------------------------------------------------------------- LC-07
+
+#[test]
+fn lc07_被依赖的版本不可卸载() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let s = store(root);
+
+    s.install_from_dir(build_package(root, "dictionary.base", "1.0.0", &[]))
+        .unwrap();
+    // dependent 点名要 base 1.0.0；安装时 base 1.0.0 是激活版本，兼容性检查通过
+    s.install_from_dir(build_package(
+        root,
+        "dictionary.dependent",
+        "1.0.0",
+        &[("dictionary.base", Some("1.0.0"))],
+    ))
+    .unwrap();
+    s.install_from_dir(build_package(root, "dictionary.base", "2.0.0", &[]))
+        .unwrap();
+    s.activate("dictionary.base", "2.0.0").unwrap();
+
+    let err = s
+        .uninstall("dictionary.base", "1.0.0")
+        .expect_err("被依赖的版本必须拒绝卸载");
+    match err {
+        ResourceError::ReversedDependency {
+            id,
+            version,
+            dependents,
+        } => {
+            assert_eq!(id, "dictionary.base");
+            assert_eq!(version, "1.0.0");
+            assert_eq!(dependents, vec!["dictionary.dependent@1.0.0".to_string()]);
+        }
+        other => panic!("期望 ReversedDependency，实际 {other:?}"),
+    }
+    // 目录必须还在（拒绝 = 什么都没动）
+    assert!(s.version_dir("dictionary.base", "1.0.0").unwrap().exists());
+
+    // 依赖方改成要 base 2.0.0，并把新版本激活；老版本成为可清理的历史
+    s.install_from_dir(build_package(
+        root,
+        "dictionary.dependent",
+        "2.0.0",
+        &[("dictionary.base", Some("2.0.0"))],
+    ))
+    .unwrap();
+    s.activate("dictionary.dependent", "2.0.0").unwrap();
+    s.cleanup("dictionary.dependent", 0).unwrap();
+    // 依赖解除之后允许回收
+    s.uninstall("dictionary.base", "1.0.0").unwrap();
+    assert!(!s.version_dir("dictionary.base", "1.0.0").unwrap().exists());
+}
+
+#[test]
+fn lc07_清理保留被依赖的版本而不是删掉() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let s = store(root);
+
+    s.install_from_dir(build_package(root, "dictionary.base", "1.0.0", &[]))
+        .unwrap();
+    s.install_from_dir(build_package(
+        root,
+        "dictionary.dependent",
+        "1.0.0",
+        &[("dictionary.base", Some("1.0.0"))],
+    ))
+    .unwrap();
+    s.install_from_dir(build_package(root, "dictionary.base", "2.0.0", &[]))
+        .unwrap();
+    s.activate("dictionary.base", "2.0.0").unwrap();
+
+    let report = s.cleanup("dictionary.base", 0).unwrap();
+    assert!(report.removed.is_empty(), "不该删任何版本：{report:?}");
+    assert_eq!(
+        report.kept_dependents,
+        vec![(
+            "1.0.0".to_string(),
+            vec!["dictionary.dependent@1.0.0".to_string()]
+        )]
+    );
+    assert!(s.version_dir("dictionary.base", "1.0.0").unwrap().exists());
+}
+
+#[test]
+fn lc07_依赖缺口会在对账里报出来() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let s = store(root);
+
+    s.install_from_dir(build_package(root, "dictionary.base", "1.0.0", &[]))
+        .unwrap();
+    s.install_from_dir(build_package(
+        root,
+        "dictionary.dependent",
+        "1.0.0",
+        &[("dictionary.base", Some("1.0.0"))],
+    ))
+    .unwrap();
+    assert!(s.audit().unwrap().broken_dependencies.is_empty());
+
+    // 绕过 SDK 直接删目录（模拟外部误删）：对账必须指出依赖缺口
+    std::fs::remove_dir_all(s.version_dir("dictionary.base", "1.0.0").unwrap()).unwrap();
+    let audit = s.audit().unwrap();
+    assert!(
+        audit
+            .broken_dependencies
+            .iter()
+            .any(|line| line.contains("dictionary.dependent@1.0.0")),
+        "{:?}",
+        audit.broken_dependencies
+    );
+    assert!(audit.needs_attention());
+}
+
+// ---------------------------------------------------------------- LC-08
+
+/// 子进程角色：按环境变量指定的崩溃点装一个包，然后按注入点死掉。
+#[test]
+#[ignore = "由父测试重新执行本二进制时使用"]
+fn child_install_with_crash() {
+    // 只有在被父测试点名（环境变量齐全）时才真的干活；
+    // 否则（例如 `cargo test -- --ignored` 全量跑）直接跳过，不让辅助角色污染结果。
+    let (Ok(root), Ok(pkg)) = (std::env::var(ROOT_ENV), std::env::var(PKG_ENV)) else {
+        return;
+    };
+    let s = store(Path::new(&root));
+    // 崩溃点由 TRANSLATOR_TEST_CRASH_POINT 决定；正常情况下这里会返回 Ok
+    let outcome = s.install_from_dir(&pkg);
+    println!("CHILD_RESULT={outcome:?}");
+}
+
+fn run_child(root: &Path, pkg: &Path, crash: &str) -> bool {
+    let status = Command::new(std::env::current_exe().unwrap())
+        .arg("--ignored")
+        .arg("--exact")
+        .arg("child_install_with_crash")
+        .arg("--test-threads=1")
+        .env(ROOT_ENV, root)
+        .env(PKG_ENV, pkg)
+        .env(CRASH_ENV, crash)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .expect("无法启动子进程");
+    status.success()
+}
+
+#[test]
+fn lc08_安装关键点崩溃后仓库仍可修复() {
+    let points = [
+        "after-staging",
+        "before-rename",
+        "after-rename",
+        "before-state",
+        "after-state",
+    ];
+    for point in points {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let pkg = build_package(root, "dictionary.crash", "1.0.0", &[]);
+
+        assert!(
+            !run_child(root, &pkg, point),
+            "{point}：子进程应当异常终止（abort）"
+        );
+
+        let s = store(root);
+        let audit_before = s.audit().unwrap();
+        let recovered = s.recover().unwrap();
+        let audit_after = s.audit().unwrap();
+        println!(
+            "{point}: 崩溃后 {}；recover={:?}；修复后 {}",
+            audit_before.summary(),
+            recovered,
+            audit_after.summary()
+        );
+        assert!(
+            audit_after.is_clean(),
+            "{point}：recover 之后必须干净，实际 {}",
+            audit_after.summary()
+        );
+
+        // 修复后必须能重新安装（或如实报"已经装好了"）
+        match s.install_from_dir(&pkg) {
+            Ok(_) => assert_ne!(
+                point, "after-state",
+                "after-state 时状态已落盘，重装必须报已安装"
+            ),
+            Err(ResourceError::AlreadyInstalled { .. }) => {
+                // after-state：崩溃发生在状态写完之后，安装其实已经生效
+                assert_eq!(point, "after-state", "{point}：不该报已安装");
+            }
+            Err(other) => panic!("{point}：重装失败 {other:?}"),
+        }
+        assert!(s.audit().unwrap().is_clean(), "{point}：重装后仓库必须一致");
+    }
+}

@@ -573,6 +573,16 @@ fn load(args: &Args, session: &mut Session, id: u64, epoch: u64, spec: ModelSpec
         }
     };
 
+    // 崩溃残留兜底：被 SIGKILL 的 worker 会留下 `nmt-worker-<pid>-<epoch>/`。
+    // 判定按 pid + 进程启动标识（PID 复用不会被误当成"还活着"）。
+    if let Ok(report) = translator_runtime::reclaim::sweep_worker_dirs(
+        &translator_runtime::reclaim::worker_dir_root(),
+    ) {
+        if report.removed > 0 {
+            eprintln!("nmt-worker: 清理 {} 个残留工作目录", report.removed);
+        }
+    }
+
     // 配置写在 worker 私有临时目录里（快照目录是只读语义，不往里写东西）
     let workdir = std::env::temp_dir().join(format!("nmt-worker-{}-{}", std::process::id(), epoch));
     if let Err(e) = std::fs::create_dir_all(&workdir) {
