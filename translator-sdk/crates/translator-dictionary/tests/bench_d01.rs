@@ -431,7 +431,7 @@ fn d01_真实包_cc_cedict() {
 
     let mut keys: Vec<String> = Vec::new();
     {
-        use fst::{IntoStreamer, Streamer};
+        use fst::Streamer;
         let mut stream = map.stream();
         while let Some((key, _)) = stream.next() {
             if let Ok(s) = std::str::from_utf8(key) {

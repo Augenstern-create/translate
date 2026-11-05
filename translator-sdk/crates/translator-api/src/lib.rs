@@ -23,6 +23,12 @@ pub use translator_plugin_api::mocks;
 #[cfg(feature = "dictionary")]
 pub use translator_dictionary as dictionary;
 
+#[cfg(feature = "rules")]
+pub use translator_rules as rules;
+
+// 规则契约：即使不开 `rules` feature，宿主也可以自己实现 `TextRules` 注入。
+pub use translator_core::rules::{NoRules, RuleOutcome, RulePreview, TextRules};
+
 /// 对外门面。构造后不可变，可跨线程共享（`Send + Sync`）。
 pub struct Translator {
     coordinator: Coordinator,
@@ -94,6 +100,19 @@ impl Translator {
         self.coordinator.capabilities()
     }
 
+    /// 预览规则包对一段输入做了什么（不执行翻译、不写缓存）。
+    ///
+    /// 规则 id 不进 `TranslationResult`：给公开枚举加变体会破坏宿主的穷尽匹配，
+    /// 因此诊断入口单独提供。
+    pub fn explain_rules(
+        &self,
+        text: &str,
+        source: &LanguageTag,
+        target: &LanguageTag,
+    ) -> RulePreview {
+        self.coordinator.explain_rules(text, source, target)
+    }
+
     /// 只给出路由决策，不执行翻译（调试/诊断用）。
     pub fn explain_route(&self, req: &TranslateRequest) -> Result<RouteDecision, TranslationError> {
         self.coordinator.explain_route(req)
@@ -132,6 +151,7 @@ pub struct TranslatorBuilder {
     errors: Vec<TranslationError>,
     #[cfg(feature = "dictionary")]
     dictionary_roots: Vec<std::path::PathBuf>,
+    rules: Option<Arc<dyn TextRules>>,
 }
 
 impl Default for TranslatorBuilder {
@@ -148,6 +168,7 @@ impl TranslatorBuilder {
             errors: Vec::new(),
             #[cfg(feature = "dictionary")]
             dictionary_roots: Vec::new(),
+            rules: None,
         }
     }
 
@@ -182,11 +203,38 @@ impl TranslatorBuilder {
         self
     }
 
+    /// 注入文本规则包（不需要 `rules` feature：`TextRules` 是公开契约）。
+    ///
+    /// 规则包的 `version()` 会自动进入缓存键，因此**换规则必须换版本**，
+    /// 否则旧缓存会被错误复用。
+    pub fn rules(mut self, rules: Arc<dyn TextRules>) -> Self {
+        self.rules = Some(rules);
+        self
+    }
+
+    /// 从文件加载规则包（JSON 或二进制形态，需启用 `rules` feature）。
+    ///
+    /// 加载失败计入构建错误，不会静默退化成「没有规则」——
+    /// 规则是为了纠正译文，静默失效比报错更危险。
+    #[cfg(feature = "rules")]
+    pub fn rules_file(mut self, path: impl AsRef<std::path::Path>) -> Self {
+        match translator_rules::RuleEngine::load(path) {
+            Ok(engine) => self.rules = Some(Arc::new(engine)),
+            Err(e) => self.errors.push(TranslationError::new(
+                TranslationErrorCode::InvalidRequest,
+                format!("规则包加载失败：{e}"),
+            )),
+        }
+        self
+    }
+
     pub fn cache_capacity(mut self, capacity: usize) -> Self {
         self.config.cache_capacity = capacity;
         self
     }
 
+    /// 手动指定规则版本。仅在**没有**注入 `rules` 时生效
+    /// （注入了规则包时以规则包自报版本为准）。
     pub fn rules_version(mut self, version: u32) -> Self {
         self.config.rules_version = version;
         self
@@ -217,6 +265,8 @@ impl TranslatorBuilder {
         if let Some(err) = self.errors.into_iter().next() {
             return Err(err);
         }
+
+        self.config.rules = self.rules.take();
 
         Ok(Translator {
             coordinator: Coordinator::new(Arc::new(self.registry), self.config),

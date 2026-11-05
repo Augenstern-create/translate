@@ -54,10 +54,15 @@ fn not_installed(
 }
 
 /// 依据策略与语言对选择引擎。
+///
+/// `text` 是**规则处理后的**待翻译文本（不是 `req.text`）：
+/// 规则可能把全角字母转成半角、把缩写展开，这会影响
+/// 「是不是一个单词」的判断，进而影响该不该走词典。
 pub fn select(
     registry: &PluginRegistry,
     req: &TranslateRequest,
     source: &LanguageTag,
+    text: &str,
 ) -> Result<RouteOutcome, TranslationError> {
     use translator_types::TranslationPolicy as P;
 
@@ -122,7 +127,7 @@ pub fn select(
 
         P::AutoLocalFirst => {
             // 只有"像单词"的输入才优先查词典，避免用词条释义冒充整句翻译。
-            if text::looks_like_single_word(&req.text) {
+            if text::looks_like_single_word(text) {
                 if let Some(engine) = pick(registry, Capability::Dictionary, source, target) {
                     return Ok(RouteOutcome {
                         decision: RouteDecision {
@@ -143,7 +148,7 @@ pub fn select(
                 decision: RouteDecision {
                     engine_id: engine.descriptor().id.to_string(),
                     capability: Capability::Nmt,
-                    reason: if text::looks_like_single_word(&req.text) {
+                    reason: if text::looks_like_single_word(text) {
                         "单词形态但无词典可覆盖该语言对，退化到本地 NMT".to_string()
                     } else {
                         "输入为短语/句子，使用本地 NMT".to_string()

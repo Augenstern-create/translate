@@ -15,6 +15,7 @@ use translator_types::{
 
 use crate::cache::{CacheKey, QueryCache};
 use crate::routing;
+use crate::rules::{RulePreview, TextRules};
 use crate::text;
 
 /// 协调器配置。
@@ -23,7 +24,12 @@ pub struct CoordinatorConfig {
     /// 查询缓存容量（0 表示禁用）。
     pub cache_capacity: usize,
     /// 规则包版本。规则变更必须让旧缓存失效，因此进入缓存键。
+    ///
+    /// 配置了 `rules` 时以规则包自报的版本为准，这里的值只作为
+    /// 「无规则包时的手动版本号」使用（例如宿主自己实现规则、只改版本）。
     pub rules_version: u32,
+    /// 文本规则包。`None` 表示不做任何规则处理。
+    pub rules: Option<Arc<dyn TextRules>>,
 }
 
 impl Default for CoordinatorConfig {
@@ -31,6 +37,7 @@ impl Default for CoordinatorConfig {
         Self {
             cache_capacity: 256,
             rules_version: 1,
+            rules: None,
         }
     }
 }
@@ -39,15 +46,51 @@ pub struct Coordinator {
     registry: Arc<PluginRegistry>,
     cache: Mutex<QueryCache>,
     config: CoordinatorConfig,
+    /// 实际参与缓存键的规则版本（规则包自报版本优先）。
+    effective_rules_version: u32,
 }
 
 impl Coordinator {
     pub fn new(registry: Arc<PluginRegistry>, config: CoordinatorConfig) -> Self {
         let capacity = config.cache_capacity;
+        let effective_rules_version = config
+            .rules
+            .as_ref()
+            .map(|rules| rules.version())
+            .unwrap_or(config.rules_version);
         Self {
             registry,
             cache: Mutex::new(QueryCache::new(capacity)),
             config,
+            effective_rules_version,
+        }
+    }
+
+    /// 规则包版本（参与缓存键与诊断输出）。
+    pub fn rules_version(&self) -> u32 {
+        self.effective_rules_version
+    }
+
+    /// 预览规则包对输入文本的作用，不执行翻译。
+    pub fn explain_rules(
+        &self,
+        text: &str,
+        source: &translator_types::LanguageTag,
+        target: &translator_types::LanguageTag,
+    ) -> RulePreview {
+        let normalized = text::normalize(text);
+        match &self.config.rules {
+            None => RulePreview::none(normalized),
+            Some(rules) => {
+                let outcome = rules.apply(&normalized, source, target);
+                RulePreview {
+                    rules_id: Some(rules.id().to_string()),
+                    version: rules.version(),
+                    text: outcome.text,
+                    applied: outcome.applied,
+                    rule_count: rules.rule_count(),
+                }
+            }
         }
     }
 
@@ -77,7 +120,9 @@ impl Coordinator {
         }
 
         let source = self.resolve_source(&normalized, req)?;
-        let outcome = routing::select(&self.registry, req, &source)?;
+        // 规则可能改变文本形态（全角→半角、术语替换），路由必须看到处理后的文本
+        let work_text = self.apply_rules(&normalized, &source, &req.target)?.0;
+        let outcome = routing::select(&self.registry, req, &source, &work_text)?;
         Ok(outcome.decision)
     }
 
@@ -155,11 +200,20 @@ impl Coordinator {
             ));
         }
 
-        // 3) 占位符保护
-        let protected = text::protect(&normalized);
+        // 3) 规则包（声明式、可编译校验；详见 translator-rules）
+        let (work_text, rule_applied) = self.apply_rules(&normalized, &source, &req.target)?;
+        if work_text.trim().is_empty() {
+            return Err(TranslationError::new(
+                TranslationErrorCode::InvalidRequest,
+                "规则处理后文本为空",
+            ));
+        }
 
-        // 4) 路由
-        let outcome = routing::select(&self.registry, req, &source)?;
+        // 4) 占位符保护
+        let protected = text::protect(&work_text);
+
+        // 5) 路由（用的是规则处理后的文本）
+        let outcome = routing::select(&self.registry, req, &source, &protected.text)?;
 
         // 5) 交给引擎的请求：文本已保护、源语言已确定
         let resolved = TranslateRequest {
@@ -174,7 +228,7 @@ impl Coordinator {
             &resolved,
             source.as_str(),
             &outcome.decision.engine_id,
-            self.config.rules_version,
+            self.effective_rules_version,
         );
 
         if let Ok(cache) = self.cache.lock() {
@@ -211,6 +265,9 @@ impl Coordinator {
                 )));
         }
         result.text = restored;
+        // 规则 trace 不进 TranslationResult：给公开枚举加变体会破坏宿主的穷尽匹配，
+        // 因此只保留内部应用（见 `explain_rules`）。这里显式忽略以避免误用。
+        let _ = rule_applied;
 
         // 9) 补全结果元信息
         result.source = source;
@@ -228,6 +285,22 @@ impl Coordinator {
         }
 
         Ok(result)
+    }
+
+    /// 应用规则包。返回 (处理后文本, 实际生效的规则 id)。
+    fn apply_rules(
+        &self,
+        text: &str,
+        source: &translator_types::LanguageTag,
+        target: &translator_types::LanguageTag,
+    ) -> Result<(String, Vec<String>), TranslationError> {
+        match &self.config.rules {
+            None => Ok((text.to_string(), Vec::new())),
+            Some(rules) => {
+                let outcome = rules.apply(text, source, target);
+                Ok((outcome.text, outcome.applied))
+            }
+        }
     }
 
     fn should_fallback(

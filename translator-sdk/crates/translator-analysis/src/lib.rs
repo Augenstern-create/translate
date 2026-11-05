@@ -49,7 +49,11 @@ impl LanguageIdentifier for HeuristicIdentifier {
         let has_han = text.chars().any(|c| ('\u{4E00}'..='\u{9FFF}').contains(&c));
         let has_cyrillic = text.chars().any(|c| ('\u{0400}'..='\u{04FF}').contains(&c));
         let has_arabic = text.chars().any(|c| ('\u{0600}'..='\u{06FF}').contains(&c));
-        let has_latin = text.chars().any(|c| c.is_ascii_alphabetic());
+        // 全角拉丁字母（Ａ-Ｚ ａ-ｚ）也算拉丁：用户从中文输入法切过来时常留下全角，
+        // 若这里不认，就会在语言识别阶段直接失败，规则包连纠正的机会都没有。
+        let has_latin = text
+            .chars()
+            .any(|c| c.is_ascii_alphabetic() || is_fullwidth_latin(c));
 
         let mut guesses: Vec<LanguageGuess> = Vec::new();
         let mut push = |tag: &str, confidence: f32| {
@@ -102,6 +106,10 @@ pub fn guess(text: &str) -> Option<LanguageTag> {
         .map(|g| g.language)
 }
 
+fn is_fullwidth_latin(c: char) -> bool {
+    ('\u{FF21}'..='\u{FF3A}').contains(&c) || ('\u{FF41}'..='\u{FF5A}').contains(&c)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,6 +145,15 @@ mod tests {
     #[test]
     fn 纯数字无候选() {
         assert!(HeuristicIdentifier.identify("12345", 5).is_empty());
+    }
+
+    #[test]
+    fn 全角拉丁字母也算拉丁() {
+        // 用户从中文输入法切回英文时常见全角残留，必须仍能识别出拉丁语言，
+        // 否则规则包的 NFKC 规则连执行机会都没有（见 docs/04 §5.1）。
+        let id = HeuristicIdentifier;
+        let guesses = id.identify("ｃａｔ", 3);
+        assert_eq!(guesses[0].language.as_str(), "en");
     }
 
     #[test]

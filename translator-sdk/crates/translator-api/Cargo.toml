@@ -11,14 +11,18 @@ default = []
 mocks = ["translator-plugin-api/mocks"]
 # 离线词典包（P1）。默认关闭，保持 API 的默认依赖树极简。
 dictionary = ["dep:translator-dictionary"]
+# 声明式规则包（P1）。开启后可加载 JSON / 二进制规则文件。
+rules = ["dep:translator-rules"]
 
 [dependencies]
 translator-types.workspace = true
 translator-plugin-api.workspace = true
 translator-core.workspace = true
 translator-dictionary = { workspace = true, optional = true }
+translator-rules = { workspace = true, optional = true }
 
 [dev-dependencies]
 # 测试通过 `--all-features` 启用 mocks，解析出的特性对本 crate 同样生效
 translator-plugin-api = { workspace = true, features = ["mocks"] }
 pollster.workspace = true
+tempfile = "3"

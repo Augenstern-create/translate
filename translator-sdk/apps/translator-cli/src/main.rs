@@ -11,6 +11,7 @@
 //! translator-cli lookup cat --lang en
 //! translator-cli detect "你好"
 //! translator-cli --dict resources/zh-en translate 世界
+//! translator-cli --rules fixtures/rules/minimal.json translate 机器人 --explain
 //! translator-cli capabilities
 //! ```
 
@@ -37,7 +38,8 @@ translator-cli —— 轻量跨平台翻译 SDK 调试工具
   capabilities
 
 全局选项:
-  --dict <包目录>  挂载离线词典包（不指定则使用内置 Mock 词表）
+  --dict <包目录>   挂载离线词典包（不指定则使用内置 Mock 词表）
+  --rules <规则文件> 挂载规则包（JSON 或已编译的二进制）
 
 策略 (--policy):
   auto         AutoLocalFirst（默认）
@@ -51,6 +53,7 @@ translator-cli —— 轻量跨平台翻译 SDK 调试工具
   translator-cli translate \"good morning\" --to zh-Hans --explain
   translator-cli --dict resources/zh-en translate 世界
   translator-cli --dict resources/zh-en lookup 计算机
+  translator-cli --rules fixtures/rules/minimal.json translate 机器人 --explain
 ";
 
 fn main() -> ExitCode {
@@ -61,18 +64,13 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    // 抽取全局 --dict
-    let mut dict: Option<String> = None;
-    if let Some(pos) = args.iter().position(|a| a == "--dict") {
-        if pos + 1 >= args.len() {
-            eprintln!("--dict 缺少路径参数");
-            return ExitCode::from(2);
-        }
-        dict = Some(args[pos + 1].clone());
-        args.drain(pos..=pos + 1);
-    }
+    // 抽取全局选项 --dict / --rules
+    let (dict, rules) = match take_global_options(&mut args) {
+        Ok(pair) => pair,
+        Err(code) => return code,
+    };
 
-    let translator = match build_translator(dict.as_deref()) {
+    let translator = match build_translator(dict.as_deref(), rules.as_deref()) {
         Ok(t) => t,
         Err(err) => {
             eprintln!("插件注册失败：{err}");
@@ -93,8 +91,30 @@ fn main() -> ExitCode {
     }
 }
 
+/// 抽出全局选项，剩下的交给子命令解析。
+fn take_global_options(
+    args: &mut Vec<String>,
+) -> Result<(Option<String>, Option<String>), ExitCode> {
+    let mut dict = None;
+    let mut rules = None;
+
+    for (flag, slot) in [("--dict", &mut dict), ("--rules", &mut rules)] {
+        while let Some(pos) = args.iter().position(|a| a == flag) {
+            if pos + 1 >= args.len() {
+                eprintln!("{flag} 缺少路径参数");
+                return Err(ExitCode::from(2));
+            }
+            *slot = Some(args[pos + 1].clone());
+            args.drain(pos..=pos + 1);
+        }
+    }
+
+    Ok((dict, rules))
+}
+
 fn build_translator(
     dict: Option<&str>,
+    rules: Option<&str>,
 ) -> Result<translator_api::Translator, translator_api::TranslationError> {
     let mut builder = translator_api::Translator::builder()
         // 本地 NMT：模拟 Marian（真实模型在 P3 接入）
@@ -103,6 +123,10 @@ fn build_translator(
         .engine(MockRemoteEngine::new(false))
         .backend(MockBackend::new())
         .cache_capacity(64);
+
+    if let Some(path) = rules {
+        builder = builder.rules_file(path);
+    }
 
     match dict {
         // 有真实词典包：用它替代 Mock 词表
@@ -208,12 +232,34 @@ fn cmd_translate(translator: &translator_api::Translator, args: &[String]) -> Ex
         }
     };
 
-    let mut req = TranslateRequest::new(text, target).with_policy(policy);
+    let mut req = TranslateRequest::new(text.clone(), target).with_policy(policy);
     if let Some(tag) = source_tag {
         req = req.with_source(tag);
     }
 
     if explain {
+        // 规则预览需要确定的语言对；源语言识别失败时（req.source 为 None）跳过
+        let preview = req
+            .source
+            .clone()
+            .map(|source| translator.explain_rules(&text, &source, &req.target));
+        if let Some(preview) = preview {
+            if let Some(id) = preview.rules_id.as_deref() {
+                println!("规则包：");
+                println!("  id        {id}  v{}", preview.version);
+                println!("  规则数    {}", preview.rule_count);
+                if preview.applied.is_empty() {
+                    println!("  生效      （无）");
+                } else {
+                    println!("  生效      {}", preview.applied.join(", "));
+                }
+                if preview.text != text {
+                    println!("  处理后    {}", preview.text);
+                }
+                println!();
+            }
+        }
+
         match translator.explain_route(&req) {
             Ok(d) => {
                 println!("路由决策：");
