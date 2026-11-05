@@ -1,0 +1,109 @@
+diff --git a/app/bergamot.cpp b/app/bergamot.cpp
+index 195e167..95c94e4 100644
+--- a/app/bergamot.cpp
++++ b/app/bergamot.cpp
+@@ -5,6 +5,40 @@
+ #include "translator/service.h"
+ #include "translator/utils.h"
+ 
++#include <chrono>
++#include <cstdlib>
++#include <iostream>
++#include <sstream>
++#include <string>
++
++// P3.0 本地补丁：加一个「按行模式」，用来测**同一进程内连续多次请求**的延迟。
++// 原版 CLI 把整个 stdin 当成一段文本，只输出一个结果，无法测热翻译 p50/p95。
++// 通过环境变量 BERGAMOT_STDIN_LINES=1 打开，默认行为完全不变。
++// 只改了 I/O 循环，翻译路径（service/model/config）没有任何改动。
++
++static std::string jsonEscape(const std::string &in) {
++  std::string out;
++  out.reserve(in.size() + 8);
++  for (unsigned char c : in) {
++    switch (c) {
++      case '"': out += "\\\""; break;
++      case '\\': out += "\\\\"; break;
++      case '\n': out += "\\n"; break;
++      case '\r': out += "\\r"; break;
++      case '\t': out += "\\t"; break;
++      default:
++        if (c < 0x20) {
++          char buf[7];
++          snprintf(buf, sizeof(buf), "\\u%04x", c);
++          out += buf;
++        } else {
++          out += static_cast<char>(c);
++        }
++    }
++  }
++  return out;
++}
++
+ int main(int argc, char *argv[]) {
+   using namespace marian::bergamot;
+   ConfigParser<AsyncService> configParser("Bergamot CLI", /*multiOpMode=*/false);
+@@ -13,29 +47,47 @@ int main(int argc, char *argv[]) {
+ 
+   AsyncService service(config.serviceConfig);
+ 
+-  // Construct a model.
+   auto options = parseOptionsFromFilePath(config.modelConfigPaths.front());
+ 
++  const auto loadStart = std::chrono::steady_clock::now();
+   std::shared_ptr<TranslationModel> model = service.createCompatibleModel(options);
++  const double loadMs = std::chrono::duration<double, std::milli>(
++                            std::chrono::steady_clock::now() - loadStart)
++                            .count();
+ 
+   ResponseOptions responseOptions;
+-  std::string input = readFromStdin();
+-
+-  // Create a barrier using future/promise.
+-  std::promise<Response> promise;
+-  std::future<Response> future = promise.get_future();
+-  auto callback = [&promise](Response &&response) {
+-    // Fulfill promise.
+-    promise.set_value(std::move(response));
+-  };
+-
+-  service.translate(model, std::move(input), callback, responseOptions);
+ 
+-  // Wait until promise sets the response.
+-  Response response = future.get();
++  const bool lineMode = std::getenv("BERGAMOT_STDIN_LINES") != nullptr;
++  if (!lineMode) {
++    std::string input = readFromStdin();
++    std::promise<Response> promise;
++    std::future<Response> future = promise.get_future();
++    auto callback = [&promise](Response &&response) { promise.set_value(std::move(response)); };
++    service.translate(model, std::move(input), callback, responseOptions);
++    Response response = future.get();
++    std::cout << response.target.text;
++    return 0;
++  }
+ 
+-  // Print (only) translated text.
+-  std::cout << response.target.text;
++  // 首行报告加载耗时，后面每行一个请求的结果
++  std::cout << "{\"load_ms\":" << loadMs << "}" << std::endl;
+ 
++  std::string line;
++  while (std::getline(std::cin, line)) {
++    if (line.empty()) {
++      std::cout << "{\"ms\":0,\"text\":\"\"}" << std::endl;
++      continue;
++    }
++    std::promise<Response> promise;
++    std::future<Response> future = promise.get_future();
++    auto callback = [&promise](Response &&response) { promise.set_value(std::move(response)); };
++    const auto start = std::chrono::steady_clock::now();
++    service.translate(model, std::string(line), callback, responseOptions);
++    Response response = future.get();
++    const double ms =
++        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
++    std::cout << "{\"ms\":" << ms << ",\"text\":\"" << jsonEscape(response.target.text) << "\"}"
++              << std::endl;
++  }
+   return 0;
+ }

@@ -1,0 +1,282 @@
+{
+  "status": "measured",
+  "tool": "tools/p3/nmt_baseline.py",
+  "command": "/tmp/p3/bergamot-translator/build/app/bergamot --model-config-paths config.bergamot.yml --cpu-threads 1",
+  "samples": "/home/nan/deepseek-harness/translate-workspace/translator-sdk/fixtures/nmt/golden-v1.jsonl",
+  "threads": 1,
+  "beam_size": 1,
+  "warm_iters": 50,
+  "golden": [
+    {
+      "id": "greet-01",
+      "text": "Good morning, how are you today?",
+      "output": "早上好,你今天怎么样?",
+      "ms": 417.5,
+      "wall_ms": 417.7,
+      "ok": true,
+      "problems": [],
+      "vm_hwm_mib": 413.8
+    },
+    {
+      "id": "greet-02",
+      "text": "Thank you very much for your help.",
+      "output": "非常感谢您的帮助。",
+      "ms": 9.7,
+      "wall_ms": 9.9,
+      "ok": true,
+      "problems": [],
+      "vm_hwm_mib": 413.8
+    },
+    {
+      "id": "stmt-01",
+      "text": "The library opens at nine in the morning.",
+      "output": "图书馆在早上九点开放。",
+      "ms": 13.1,
+      "wall_ms": 13.2,
+      "ok": true,
+      "problems": [],
+      "vm_hwm_mib": 413.8
+    },
+    {
+      "id": "stmt-02",
+      "text": "This machine learning model runs entirely on the CPU.",
+      "output": "这种机器学习模型完全运行在CPU上。",
+      "ms": 16.0,
+      "wall_ms": 16.1,
+      "ok": true,
+      "problems": [],
+      "vm_hwm_mib": 413.8
+    },
+    {
+      "id": "neg-01",
+      "text": "I do not think this plan will work.",
+      "output": "我认为这个计划不会奏效。",
+      "ms": 11.3,
+      "wall_ms": 11.5,
+      "ok": true,
+      "problems": [],
+      "vm_hwm_mib": 413.8
+    },
+    {
+      "id": "neg-02",
+      "text": "The package is not installed on your system.",
+      "output": "该软件包未安装在您的系统上。",
+      "ms": 13.4,
+      "wall_ms": 13.5,
+      "ok": true,
+      "problems": [],
+      "vm_hwm_mib": 413.8
+    },
+    {
+      "id": "num-01",
+      "text": "The price is 42 dollars and 50 cents.",
+      "output": "价格是42美元,50美分。",
+      "ms": 15.7,
+      "wall_ms": 15.8,
+      "ok": true,
+      "problems": [],
+      "vm_hwm_mib": 413.8
+    },
+    {
+      "id": "num-02",
+      "text": "There are 1,024 entries in the dictionary.",
+      "output": "词典中有1,024个条目。",
+      "ms": 13.6,
+      "wall_ms": 13.7,
+      "ok": true,
+      "problems": [],
+      "vm_hwm_mib": 413.8
+    },
+    {
+      "id": "date-01",
+      "text": "The meeting is scheduled for March 3, 2026.",
+      "output": "会议定于2026年3月3日举行。",
+      "ms": 15.4,
+      "wall_ms": 15.5,
+      "ok": true,
+      "problems": [],
+      "vm_hwm_mib": 413.8
+    },
+    {
+      "id": "term-01",
+      "text": "Large language models require a lot of memory.",
+      "output": "大型语言模型需要大量的内存。",
+      "ms": 12.3,
+      "wall_ms": 12.5,
+      "ok": true,
+      "problems": [],
+      "vm_hwm_mib": 413.8
+    },
+    {
+      "id": "term-02",
+      "text": "Please download the offline dictionary package first.",
+      "output": "请先下载离线词典包。",
+      "ms": 11.9,
+      "wall_ms": 12.0,
+      "ok": true,
+      "problems": [],
+      "vm_hwm_mib": 413.8
+    },
+    {
+      "id": "pn-01",
+      "text": "Sergey Brin and Larry Page founded Google.",
+      "output": "谢尔盖·布林和拉里·佩奇创立了谷歌。",
+      "ms": 18.0,
+      "wall_ms": 18.2,
+      "ok": true,
+      "problems": [],
+      "vm_hwm_mib": 413.8
+    },
+    {
+      "id": "pn-02",
+      "text": "The book was written by Ludwig van Beethoven's biographer.",
+      "output": "这本书由路德维希·范·贝多芬的传记作者撰写。",
+      "ms": 22.6,
+      "wall_ms": 22.8,
+      "ok": true,
+      "problems": [],
+      "vm_hwm_mib": 413.8
+    },
+    {
+      "id": "url-01",
+      "text": "See https://example.com/docs for more details.",
+      "output": "详情请见 https://example.com/docs。",
+      "ms": 27.2,
+      "wall_ms": 27.3,
+      "ok": true,
+      "problems": [],
+      "vm_hwm_mib": 413.8
+    },
+    {
+      "id": "email-01",
+      "text": "Contact support@example.com if the error persists.",
+      "output": "如果错误仍然存在,请联系 support@example.com。",
+      "ms": 23.7,
+      "wall_ms": 23.9,
+      "ok": true,
+      "problems": [],
+      "vm_hwm_mib": 413.8
+    },
+    {
+      "id": "code-01",
+      "text": "Run `cargo test --all-features` before committing.",
+      "output": "在提交前先运行“cargo test --all-features”。",
+      "ms": 28.8,
+      "wall_ms": 29.0,
+      "ok": true,
+      "problems": [],
+      "vm_hwm_mib": 413.8
+    },
+    {
+      "id": "var-01",
+      "text": "Hello {name}, your order {order_id} has shipped.",
+      "output": "您好,您的订单(订单)已发货。",
+      "ms": 19.6,
+      "wall_ms": 19.8,
+      "ok": false,
+      "problems": [
+        "缺少 '{name}'",
+        "缺少 '{order_id}'"
+      ],
+      "vm_hwm_mib": 413.8
+    },
+    {
+      "id": "multi-01",
+      "text": "Visit https://example.com or email us at hi@example.com about {plan}.",
+      "output": "请访问 https://example.com 或发送邮件至 hi@example.com 与我们联系,了解 {plan}。",
+      "ms": 84.3,
+      "wall_ms": 84.4,
+      "ok": true,
+      "problems": [],
+      "vm_hwm_mib": 413.8
+    },
+    {
+      "id": "long-01",
+      "text": "Translation quality depends on the training data, the tokenizer, and the decoding parameters, so every release must be validated against a fixed set of golden samples before it is published to users.",
+      "output": "翻译质量取决于训练数据、令牌处理器和解码参数,因此每个版本在发布给用户之前必须针对一组固定的黄金样本进行验证。",
+      "ms": 102.8,
+      "wall_ms": 102.9,
+      "ok": true,
+      "problems": [],
+      "vm_hwm_mib": 413.8
+    },
+    {
+      "id": "long-02",
+      "text": "When the model is loaded for the first time the process reads the weights from disk, allocates the working memory, and then keeps the model resident so that later requests only pay for the inference itself.",
+      "output": "当模型首次加载时,该进程会读取磁盘中的权重,分配工作内存,然后保留模型的常驻,以便之后请求仅为推断本身付费。",
+      "ms": 140.0,
+      "wall_ms": 140.1,
+      "ok": true,
+      "problems": [],
+      "vm_hwm_mib": 413.8
+    },
+    {
+      "id": "punct-01",
+      "text": "Wait... really?! I can't believe it.",
+      "output": "等等......真的吗?!我简直不敢相信。",
+      "ms": 35.4,
+      "wall_ms": 35.5,
+      "ok": true,
+      "problems": [],
+      "vm_hwm_mib": 413.8
+    },
+    {
+      "id": "mix-01",
+      "text": "API 响应时间 latency 必须低于 100 ms。",
+      "output": "API 响应时间 延迟 参须低于 100 毫秒",
+      "ms": 88.6,
+      "wall_ms": 88.7,
+      "ok": true,
+      "problems": [],
+      "vm_hwm_mib": 413.8
+    },
+    {
+      "id": "empty-01",
+      "text": "",
+      "output": "",
+      "ms": 0.0,
+      "wall_ms": 0.1,
+      "ok": true,
+      "problems": [],
+      "vm_hwm_mib": 413.8
+    },
+    {
+      "id": "space-01",
+      "text": "   ",
+      "output": "",
+      "ms": 0.0,
+      "wall_ms": 0.1,
+      "ok": true,
+      "problems": [],
+      "vm_hwm_mib": 413.8
+    }
+  ],
+  "cold": {
+    "text": "Good morning, how are you today?",
+    "output": "早上好,你今天怎么样?",
+    "load_ms": 192.0,
+    "first_request_ms": 416.5,
+    "cold_to_first_line_ms": 608.5,
+    "wall_to_first_line_ms": 416.7,
+    "vm_hwm_mib": 413.8,
+    "vm_rss_mib": 341.4,
+    "stderr_tail": ""
+  },
+  "warm": {
+    "text": "The library opens at nine in the morning.",
+    "iters": 50,
+    "p50_ms": 13.08,
+    "p95_ms": 15.1,
+    "p99_ms": 29.49,
+    "min_ms": 12.8,
+    "max_ms": 29.49,
+    "mean_ms": 13.92,
+    "stdev_ms": 3.13,
+    "vm_hwm_mib": 413.8,
+    "vm_rss_mib": 345.1
+  },
+  "note": "原生参考链路（Bergamot CLI + 按行补丁）观测，不是 translator-sdk 的观测；页面缓存未清，cold 指'热页缓存下的冷进程'",
+  "golden_total": 24,
+  "golden_failed": 1,
+  "stderr_tail": ""
+}

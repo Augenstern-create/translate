@@ -1,0 +1,50 @@
+# P3.0 参考链路配置模板（en→zh-Hans，Mozilla Firefox Translations 模型）
+#
+# 这不是"最终 SDK 的模型清单"，只是让**原生 Bergamot CLI** 能加载这套权重的配置。
+# `${MODEL_DIR}` 需替换为真实目录（见 docs/11 §2 的复现命令）。权重本身不入库。
+#
+# 字段来源分两类：
+#   1. Marian 侧：models / vocabs / beam-size / normalize / word-penalty / workspace / max-length…
+#   2. Bergamot 侧（`tools/patch-marian-for-bergamot.py` 会补的那几个）：
+#      ssplit-mode / ssplit-prefix-file / alignment / max-length-break / max-length-factor / mini-batch-words
+#
+# `models` 的第二项是 **lexical shortlist**（`lex.50.50.enzh.s2t.bin`）。删掉它也能跑，
+# 但会把整个词表当成候选，延迟明显变差——P3.0 的基线要求保留它，否则测的不是产品形态。
+
+models:
+  - ${MODEL_DIR}/model.enzh.intgemm.alphas.bin
+
+# lexical shortlist **不是** models 的第二项：把它写进 models 会被当成第二个模型去解析
+# marian 二进制头，直接 ABORT（实测：exit 134 + core dump，且没有可读的报错，因为
+# 崩溃发生在加载线程里）。正确写法是独立的 `shortlist` 键，第一项是路径，之后是
+# 源/目标词表规模（千）与两个布尔位，取值与 Firefox 训练的配置一致：50 50 false true。
+shortlist:
+  - ${MODEL_DIR}/lex.50.50.enzh.s2t.bin
+  - 50
+  - 50
+  - false
+  - true
+
+vocabs:
+  - ${MODEL_DIR}/srcvocab.enzh.spm
+  - ${MODEL_DIR}/trgvocab.enzh.spm
+
+# 解码：单句、贪心（beam=1），与"低延迟优先"的产品目标一致
+beam-size: 1
+normalize: 1.0
+word-penalty: 0
+max-length: 100
+
+# 批处理：一次一条，避免为了吞吐把首字延迟拉长
+mini-batch: 1
+maxi-batch: 1
+maxi-batch-sort: none
+workspace: 128
+
+# Bergamot 侧
+ssplit-mode: sentence
+ssplit-prefix-file: ${MODEL_DIR}/nonbreaking_prefix.en
+alignment: soft
+max-length-break: 128
+max-length-factor: 2.0
+mini-batch-words: 1024

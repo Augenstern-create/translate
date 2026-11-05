@@ -12,11 +12,13 @@
 - `06_P2.1-P2.2_资源协议与仓库报告.md` — 资源协议（v1/v2 双版本号）、安装/激活/回滚、偏差清单
 - `07_P2.3-P2.5_租约预算与术语约束报告.md` — 资源租约、内存预算、术语约束与诊断、`dictionary.sqlite.v2` 实测
 - `08_P2完整技术审查与P3开发建议.md` — 外部审查归档：四个 P3 前决策、P0/P1 风险表、C-01～C-12 测试矩阵、P2-S 方案
-- `09_P2-S稳定化报告.md` — **本轮**：P0 收口（租约/卸载原子性、锁回收、术语默认值）+ 明确 pending 清单
+- `09_P2-S稳定化报告.md` — P2-S 稳定化：P0 收口（租约/卸载原子性、锁回收、术语默认值）+ 明确 pending 清单
+- `10_P3_Linux本地NMT开发建议与验收计划.md` — 外部输入：P3 分阶段（P3.0～P3.4）目标、准入门槛与测试矩阵
+- `11_P3.0_原生模型验证报告.md` — **本轮**：真实模型 + Bergamot 原生链路的实测报告（译文/延迟/RSS/失败项）
 
 ---
 
-## 当前状态：P0 + P1 + P2 完成；**P2-S 稳定化完成**（P3 准入前的 P0/P1 收口）
+## 当前状态：P0 + P1 + P2 + P2-S 完成；**P3.0 完成**（原生参考链路已跑通，Rust 接入尚未开始）
 
 - **P0**：workspace 结构、核心类型、插件契约、协调器与路由、缓存、门面 API、Mock 插件、CLI。
   **不接任何真实模型、不装任何 native 库**，整条链路即可运行 —— 这是设计文档规定的交付判据。
@@ -48,6 +50,15 @@
   - **三方对账** `resource audit [--prune]`：state / installed / staging / 租约对账，只报告，删孤儿要显式；
   - 跨进程测试 6 条（独立二进制 re-exec，不是线程模拟）。
 
+- **P3.0**（原生验证，不改 Rust 代码）：锁定 Mozilla 官方 en→zh-Hans 权重
+  （`model.enzh.intgemm.alphas.bin` v3.0，43.8 MB，sha256 与注册表一致）+ Bergamot commit `9271618`，
+  在 Ubuntu x86_64 CPU 上通过原生 CLI 得到**真实译文**：
+  `Hello world!` → `你好,世界!`。
+  实测（本机、beam=1）：冷到首行 **605.9 ms**、热 p50 **12.82 ms** / p95 14.38 ms（100 次同进程）、
+  峰值 RSS **678.5 MiB（2 线程）/ 413.8 MiB（1 线程）**。
+  24 条固定样本 23 条通过；**模板变量 `{name}` 会被模型吞掉**——占位符保护必须在 P3.1 里前置。
+  详见 `../docs/11_P3.0_原生模型验证报告.md`。
+
 词库与规则都是**可选 feature**：不开 `dictionary` 时 `translator-api` 依赖树里没有 `rusqlite`；
 不开 `rules` 时没有 JSON 解析依赖（但 `TextRules` 契约始终可用，宿主可自己实现）。
 
@@ -68,8 +79,10 @@ translator-sdk/
 │   └── translator-cli/         # 调试与演示命令行
 ├── tools/
 │   ├── pack-dictionary/        # CC-CEDICT → 资源包（payload v1/v2）
-│   └── migrate-rules/          # 规则包离线迁移（pipeline_version 1 → 2）
+│   ├── migrate-rules/          # 规则包离线迁移（pipeline_version 1 → 2）
+│   └── p3/                     # P3.0 原生参考链路：构建/取模型/基线采集脚本 + CLI 补丁（非 cargo 包）
 ├── fixtures/                   # 金样本 + 示例规则包（rules/minimal.json）+ 示例术语表（terms/zh-en.json）
+│   └── nmt/                    # P3.0：NMT 金样本、模型锁定记录、配置模板、基线 JSON（权重不入库）
 ├── resources/                  # 打包产物（体积大，gitignore）
 └── Cargo.toml                  # workspace
 ```
@@ -301,6 +314,29 @@ cargo run --release -p pack-dictionary -- /tmp/cedict /tmp/pkg --payload-schema 
 | 租约与卸载同临界区（ADR-022） | `acquire_lease`/`uninstall`/`cleanup` 共享 Mutex + `state.lock`，锁内重读状态 |
 | 跨进程行为用独立进程验证 | `crates/translator-resource/tests/cross_process.rs`（线程无法构造锁/僵死/PID 复用） |
 
+### P3.0：原生参考链路（真实模型，不是 SDK）
+
+```bash
+# 1) 构建 Bergamot（约 6 分钟；钉 commit 9271618）
+./tools/p3/build-bergamot.sh /tmp/p3
+
+# 2) 按 fixtures/nmt/models.lock.json 下载并逐个校验 sha256（约 40 MB）
+./tools/p3/prepare-model.sh /tmp/p3/models
+
+# 3) 一句话试试真实翻译
+printf 'Hello world!' | /tmp/p3/bergamot-translator/build/app/bergamot \
+  --model-config-paths /tmp/p3/models/config.bergamot.yml --cpu-threads 1
+# → 你好,世界!
+
+# 4) 基线：24 条金样本 + 冷启动 + 100 次热翻译 + RSS
+python3 tools/p3/nmt_baseline.py --bergamot /tmp/p3/bergamot-translator/build/app/bergamot \
+  --config /tmp/p3/models/config.bergamot.yml --samples fixtures/nmt/golden-v1.jsonl \
+  --threads 2 --warm-iters 100 --out /tmp/p3/baseline.json
+```
+
+**这条链路只用于验证"模型确实可用"，`translator-api` 还没有接入真实模型**（P3.1）。
+模型权重不入库（43 MB + 许可未确认），复现靠 `models.lock.json` 里的坐标与 sha256。
+
 ## 尚未实现
 
 - 除 CC-CEDICT 之外的词库（Kaikki / JMdict 各有解析器与许可审查）
@@ -310,6 +346,10 @@ cargo run --release -p pack-dictionary -- /tmp/cedict /tmp/pkg --payload-schema 
 - 规则包的其余能力：分句、词形；正则类匹配按 §7.3 的风险评估后决定不做
 - 词形分析（Lindera 等）
 - 内存**硬**上限与 RSS 监控；`ProcessMetricsProvider`（各平台真实占用观测，ADR-021，未实现）
+- **真实 NMT 的 Rust 接入**（`runtime-bergamot`、`LoadedModel`、worker 归属、错误映射）——P3.1，未开始
+- 模型实例租约、single-flight、`ResolvedExecutionPlan`、`content_digest`（ADR-023/026/027）
+- 卸载后 RSS、TTL/LRU 回收（需要 Rust API 才能测）
+- 模型权重再分发许可结论（注册表未声明，待模型卡/法务确认；当前只在开发机本地验证）
 - 断电一致性加固（fsync 父目录/目录树）、加载前内容重新校验、依赖反向引用检查、崩溃注入测试
 - 术语"源文命中但译文缺失 → 建议重译"（当前只做到不误改）
 - `content_digest` 进缓存键（术语表快照，ADR-019 只落了 `id@version`）

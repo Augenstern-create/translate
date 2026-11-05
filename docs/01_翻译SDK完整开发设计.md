@@ -523,6 +523,11 @@ P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运
 - ADR-021（Accepted，未实现）：**预算记账与平台内存观测分离**。`MemoryBudget`（CAS 记账）负责装配期准入与协作式估算，对外一律称 accounted/estimated bytes，不得称 RSS 或硬上限；另设可选 `ProcessMetricsProvider`（Linux `/proc`/`smaps_rollup`、Windows 进程 API、macOS `task_info`、Android 平台回调）负责真实占用观测，测不到时返回 `Unavailable` 而不是 0。两条数值不得互相冒充（`docs/08` D-04）。
 - ADR-022（Accepted，P2-S 已实现）：**租约登记与卸载/清理必须在同一跨进程临界区内完成**「检查安装状态 + 登记/删除」。`acquire_lease` 与 `uninstall`/`cleanup` 共用进程内 `Mutex` + 同一个 `state.lock`，锁内重读状态（锁顺序一致，先 Mutex 后文件锁）。状态锁的陈旧判定用「pid + 进程启动标识」：确定持有者已死才回收，无法判定时按占用处理并报 `LockTimeout`（带锁文件路径与持有者）。
 - ADR-023（Proposed，P3.1 落地）：真实模型接入时必须同时实现 single-flight 加载、热模型租约与卸载保护、`ResolvedExecutionPlan`（engine / runtime / model revision / tokenizer / 规则与术语指纹 / 解码参数 / 语言方向 / 隐私域）稳定哈希进缓存键，并以 model revision 隔离缓存。在此之前，禁止用真实 NMT + `id@version` 指纹（或 `model_id: None`）上线缓存。唯一性来源：`docs/08` §5.3 只是接口意向，不是已编译代码。
+- ADR-024（Accepted，P3.0 已执行）：**Linux 先交付，核心保持平台无关**。P3 的验收范围只有 Ubuntu x86_64 / CPU；Windows、macOS、Android 只保留扩展边界（trait、feature、配置项），**不得**用 Linux 的测试结果对外表述为跨平台通过。理由：跨平台实证需要真机与 CI，没做就说没做（`docs/11` §3.3）。
+- ADR-025（Accepted，P3.0 已执行）：**先打通原生参考链路，再写 Rust 适配**。顺序是：锁定模型坐标与校验和 → 原生 CLI 出真实译文并记录基线 → 才允许实现 `runtime-bergamot`。理由：参考链路不通时，Rust 侧的"翻译失败"无法区分是 FFI 写错还是模型/配置不对；本次先证明"模型确实能翻"（en→zh-Hans，23/24 金样本），再谈 adapter（`docs/11`）。
+- ADR-026（Proposed，P3.1/P3.2 落地）：**模型身份以内容为准**。缓存、实例复用、诊断都必须携带模型内容摘要（`content_digest`）与 tokenizer 摘要，不能只用 `package_id@version`；同版本不同 hash 视为不同模型。现状：P2.5 仍用 `id@version` 指纹（ADR-019/023 已记录该缺口），模型校验和只在 `fixtures/nmt/models.lock.json` 里人工核对过。
+- ADR-027（Proposed，P3.1 落地）：**原生运行时归受控 worker 独占**。在验证 C++ 句柄可安全共享之前，模型实例只由单一 worker 持有，对外暴露 `Send + Sync` 的消息代理；禁止无依据的 `unsafe impl Send/Sync`。P3.0 的实测支持这个保守选择：缺文件时参考运行时 `abort()`、权重被截断时 SIGSEGV，说明 native 侧错误不能穿越到宿主进程。
+- ADR-028（Accepted，P3.0 事实）：**模型权重不入库、许可未确认前不分发**。权重（约 51 MB）只通过 `models.lock.json` 里的 CDN 坐标 + sha256 复现；Remote Settings 记录里没有 license 字段，`mozilla/translations` 仓库代码是 MPL-2.0，但权重的再分发条款需模型卡/法务确认。在结论确定前，仓库只提交锁定记录、配置模板与构建脚本。
 
 > 状态含义：**Accepted** = 已决定并（如注明）已实现；**Proposed** = 已决定方向但尚未实现，写入 ADR 不等于已验证；
 > **Deferred** = 明确延后。上表未标注 Deferred 的项均须在对应阶段交付。
@@ -535,6 +540,7 @@ P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运
 | v1.1 | 2026-11-05 | 新增 ADR-008～014；§6 流水线补「受保护跨度 → 规则（仅纯文本）」；§7.2 增补规则三硬约束与 `pipeline_version`；§7.3 更正正则相关表述 |
 | v1.2 | 2026-11-05 | 新增 ADR-015～018（术语约束、`dictionary.sqlite.v2`、跨进程锁、协作式租约）；ADR-010/012/013 从 Proposed 改为 Accepted 并注明实实现范围，ADR-011 明确仍未落地；§6 流水线补「术语约束（输出侧）」；§9.3 补齐预算的数值来源与"下界估计"限定 |
 | v1.3 | 2026-11-05 | 并入 `docs/08` 的四个 P3 前决策：新增 ADR-019～023（术语表快照、`lookup()` 不受改写、预算与 RSS 观测分离、租约/卸载跨进程原子性、真实模型的 single-flight 与执行计划）；ADR-015 增补「默认 Warn + 源文触发」、ADR-016 增补「v2 默认写入 / v1 只读窗口」；§9.3 把页缓存一行的"精确"改为"配置上界、需实测"。编号处理：`docs/08` §8 的 ADR-015～021 是**候选编号**，其中 015～018 已被占用，按标题与内容合并进现有 015/016 与新 019～023，未覆盖任何旧 ADR |
+| v1.4 | 2026-11-05 | P3.0 落地：新增 ADR-024～028（Linux 优先/参考链路先行/内容即身份/worker 独占/权重不入库）；`docs/10` 的候选 ADR 标题按内容合并进这几条，未覆盖旧编号 |
 
 ## 15. 主要风险与应对
 
