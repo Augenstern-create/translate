@@ -12,6 +12,9 @@
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
+use std::time::Instant;
+
+use std::path::Path;
 
 use crate::error::RuntimeError;
 use crate::model::{
@@ -19,6 +22,7 @@ use crate::model::{
     WorkerHealth,
 };
 use crate::protocol::{Payload, Request};
+use crate::snapshot::ModelSnapshot;
 use crate::worker::{WorkerConfig, WorkerProcess};
 
 /// 后端能力契约。实现方可以是进程、线程池、或未来的 FFI 边界。
@@ -40,6 +44,11 @@ pub trait RuntimeTransport: Send + Sync {
 struct State {
     worker: Option<WorkerProcess>,
     loaded: Option<ModelInfo>,
+    /// 已加载模型对应的隔离快照。必须活到 unload/shutdown，
+    /// 否则目录被删、native 的路径指向空（Linux 上已打开的 fd 还在，但语义已经不成立）。
+    snapshot: Option<ModelSnapshot>,
+    model_preparation_ms: Option<u64>,
+    snapshot_bytes: Option<u64>,
     spawns: u32,
     respawns: u32,
     next_epoch: u64,
@@ -62,6 +71,9 @@ impl ProcessTransport {
             state: Mutex::new(State {
                 worker: None,
                 loaded: None,
+                snapshot: None,
+                model_preparation_ms: None,
+                snapshot_bytes: None,
                 spawns: 0,
                 respawns: 0,
                 next_epoch: 1,
@@ -110,6 +122,7 @@ impl ProcessTransport {
             // 死掉的 worker：先回收（Drop 会走终止流程），不留僵尸
             state.worker = None;
             state.loaded = None;
+            state.snapshot = None;
             if state.respawns >= self.restart_budget {
                 return Err(RuntimeError::CapabilityUnavailable(format!(
                     "worker 重启预算耗尽（{} 次），不再自动重启",
@@ -151,6 +164,59 @@ impl ProcessTransport {
     }
 }
 
+impl ProcessTransport {
+    /// 从**清单**加载：先生成隔离快照并校验，再把快照路径交给 worker。
+    ///
+    /// 这是 P3.1-B 的真实入口（`docs/14` §3.5）。`RuntimeTransport::load` 仍然可用，
+    /// 但它只做路径级检查、假定调用方已经准备好了可信路径——那是给 mock 与测试用的。
+    ///
+    /// `snapshot_root` 需要是可写目录；快照在 `unload`/`shutdown`/传输层 Drop 时删除，
+    /// 被 SIGKILL 的残留由 [`crate::snapshot::prune_stale_snapshots`] 按 pid 清理。
+    pub fn load_from_manifest(
+        &self,
+        manifest: &crate::model::ModelManifest,
+        snapshot_root: &Path,
+        threads: u16,
+        beam_size: u8,
+    ) -> Result<ModelInfo, RuntimeError> {
+        let started = Instant::now();
+        let snapshot = ModelSnapshot::materialize(manifest, snapshot_root, threads, beam_size)?;
+        let prepare_ms = started.elapsed().as_millis() as u64;
+        let bytes = snapshot.bytes();
+        let spec = snapshot.spec().clone();
+
+        {
+            let mut state = self.guard();
+            state.snapshot = Some(snapshot);
+            state.model_preparation_ms = Some(prepare_ms);
+            state.snapshot_bytes = Some(bytes);
+        }
+        self.load(&spec)
+    }
+
+    /// 当前是否持有一个模型快照（诊断用）。
+    pub fn has_snapshot(&self) -> bool {
+        self.guard().snapshot.is_some()
+    }
+
+    /// 当前快照对应的 `ModelSpec`（含每个文件的期望摘要）。诊断/取证与测试用。
+    pub fn snapshot_spec(&self) -> Option<ModelSpec> {
+        self.guard()
+            .snapshot
+            .as_ref()
+            .map(|snap| snap.spec().clone())
+    }
+
+    /// 当前快照里**权重**的路径（诊断/取证用；不对外暴露给 `translator-api`）。
+    pub fn snapshot_model_path(&self) -> Option<std::path::PathBuf> {
+        self.guard()
+            .snapshot
+            .as_ref()
+            .and_then(|snap| snap.spec().path_of(crate::model::FileRole::Model))
+            .map(std::path::PathBuf::from)
+    }
+}
+
 impl RuntimeTransport for ProcessTransport {
     fn load(&self, spec: &ModelSpec) -> Result<ModelInfo, RuntimeError> {
         // 顺序很重要：**先校验，后 spawn**。P3.0 的教训是缺文件会让 native abort()。
@@ -178,16 +244,31 @@ impl RuntimeTransport for ProcessTransport {
             model_revision,
             threads,
             beam_size,
+            runtime,
+            runtime_build,
+            platform,
+            native_pid,
         } = payload
         else {
             return Err(RuntimeError::Protocol("Load 返回了非 Loaded 载荷".into()));
         };
+        // revision 必须与我们要求加载的那个一致：这是 `docs/14` §1.1-3 的"回复一致性"
+        if model_revision != spec.model_revision {
+            return Err(RuntimeError::Protocol(format!(
+                "worker 报回 model_revision={model_revision}，与请求的 {} 不符",
+                spec.model_revision
+            )));
+        }
         let info = ModelInfo {
             engine_id,
             model_revision,
             threads,
             beam_size,
             worker_epoch: epoch,
+            runtime,
+            runtime_build,
+            platform,
+            native_pid,
         };
         state.loaded = Some(info.clone());
         Ok(info)
@@ -226,15 +307,18 @@ impl RuntimeTransport for ProcessTransport {
         let mut state = self.guard();
         let Some(worker) = state.worker.as_mut() else {
             state.loaded = None;
+            state.snapshot = None;
             return Ok(());
         };
         if worker.is_dead() {
             state.loaded = None;
+            state.snapshot = None;
             return Ok(());
         }
         match worker.request(Request::Unload)? {
             Payload::Unloaded => {
                 state.loaded = None;
+                state.snapshot = None;
                 Ok(())
             }
             other => Err(RuntimeError::Protocol(format!(
@@ -276,6 +360,7 @@ impl RuntimeTransport for ProcessTransport {
             // 进程句柄在这里释放；WorkerProcess::drop 是幂等的
         }
         state.loaded = None;
+        state.snapshot = None;
         Ok(())
     }
 
@@ -290,6 +375,8 @@ impl RuntimeTransport for ProcessTransport {
             host_rss_bytes: process_rss_bytes(),
             worker_rss_bytes: worker.and_then(|w| w.resident_bytes()),
             worker_pid: worker.map(|w| w.pid()),
+            model_preparation_ms: state.model_preparation_ms,
+            snapshot_bytes: state.snapshot_bytes,
         }
     }
 }
@@ -318,9 +405,11 @@ mod tests {
             src_vocab: "/tmp/y".into(),
             trg_vocab: "/tmp/z".into(),
             lex_shortlist: None,
+            split_prefix: None,
             threads: 1,
             beam_size: 1,
             model_revision: "test@1#deadbeef".into(),
+            digests: Default::default(),
         }
     }
 

@@ -25,15 +25,32 @@ pub enum FileRole {
     SourceVocab,
     TargetVocab,
     LexicalShortlist,
+    /// 可选：ssplit 的 non-breaking prefix 表（P3.0 的可用配置里存在）。
+    /// 它不是"四文件"的一部分，缺了也能启动；有就用，没有就不生成那个键。
+    SplitPrefix,
 }
 
 impl FileRole {
-    pub const ALL: [FileRole; 4] = [
+    /// **必需**集合（`docs/14` §3.5 的"四文件"）。
+    pub const REQUIRED: [FileRole; 4] = [
         FileRole::Model,
         FileRole::SourceVocab,
         FileRole::TargetVocab,
         FileRole::LexicalShortlist,
     ];
+
+    /// 全部角色（含可选）。
+    pub const ALL: [FileRole; 5] = [
+        FileRole::Model,
+        FileRole::SourceVocab,
+        FileRole::TargetVocab,
+        FileRole::LexicalShortlist,
+        FileRole::SplitPrefix,
+    ];
+
+    pub fn required(self) -> bool {
+        !matches!(self, Self::SplitPrefix)
+    }
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -41,6 +58,7 @@ impl FileRole {
             Self::SourceVocab => "src_vocab",
             Self::TargetVocab => "trg_vocab",
             Self::LexicalShortlist => "lex_shortlist",
+            Self::SplitPrefix => "split_prefix",
         }
     }
 }
@@ -97,7 +115,7 @@ impl ModelManifest {
     /// 大小在摘要之前（大文件摘要很贵，先用便宜的指标挡住明显不对的输入）。
     pub fn verify(&self) -> Result<(), RuntimeError> {
         let mut missing = Vec::new();
-        for role in FileRole::ALL {
+        for role in FileRole::REQUIRED {
             let Some(spec) = self.files.get(&role) else {
                 missing.push(role.as_str());
                 continue;
@@ -137,7 +155,9 @@ impl ModelManifest {
         }
         // 摘要最后做，且要做
         for role in FileRole::ALL {
-            let spec = &self.files[&role];
+            let Some(spec) = self.files.get(&role) else {
+                continue;
+            };
             let (_, actual) = sha256_file(&spec.path)?;
             if !actual.eq_ignore_ascii_case(&spec.sha256) {
                 return Err(RuntimeError::IntegrityFailure(format!(
@@ -168,6 +188,13 @@ impl ModelManifest {
     }
 }
 
+/// 单个文件的期望属性（进入协议：worker 要在**打开之前**再核一次）。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileDigest {
+    pub bytes: u64,
+    pub sha256: String,
+}
+
 /// 传给 worker 的加载参数（要能 JSON 序列化，所以路径用 String）。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelSpec {
@@ -178,10 +205,17 @@ pub struct ModelSpec {
     pub trg_vocab: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lex_shortlist: Option<String>,
+    /// 可选的 ssplit non-breaking prefix 表
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub split_prefix: Option<String>,
     pub threads: u16,
     pub beam_size: u8,
     /// 进入诊断与缓存键的内容摘要（`ModelManifest::content_digest()`）
     pub model_revision: String,
+    /// 每个角色的期望大小与 sha256。worker 侧在 spawn native 之前**重新核验**，
+    /// 这样"宿主校验过"和"native 实际打开的文件"之间不再只靠信任传递。
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub digests: BTreeMap<FileRole, FileDigest>,
 }
 
 impl ModelSpec {
@@ -204,9 +238,26 @@ impl ModelSpec {
                 .files
                 .get(&FileRole::LexicalShortlist)
                 .map(|f| f.path.display().to_string()),
+            split_prefix: manifest
+                .files
+                .get(&FileRole::SplitPrefix)
+                .map(|f| f.path.display().to_string()),
             threads,
             beam_size,
             model_revision: manifest.content_digest(),
+            digests: manifest
+                .files
+                .iter()
+                .map(|(role, spec)| {
+                    (
+                        *role,
+                        FileDigest {
+                            bytes: spec.bytes,
+                            sha256: spec.sha256.clone(),
+                        },
+                    )
+                })
+                .collect(),
         }
     }
 
@@ -243,6 +294,50 @@ impl ModelSpec {
             }
         }
         Ok(())
+    }
+
+    /// **worker 侧**的加载前核验：按 `digests` 重新算一遍大小与 sha256。
+    ///
+    /// 与宿主的 `verify_paths()` 的区别：宿主只能证明"路径上的东西现在对"，
+    /// 真正的信任链要在**打开之前、由将要打开它的人**再确认一次（`docs/14` §3.5 第 5 条）。
+    /// 摘要为空时不校验（mock worker / 旧调用方）。
+    pub fn verify_digests(&self) -> Result<(), RuntimeError> {
+        if self.digests.is_empty() {
+            return Ok(());
+        }
+        for role in FileRole::ALL {
+            let Some(expected) = self.digests.get(&role) else {
+                continue;
+            };
+            let path = self.path_of(role).ok_or_else(|| {
+                RuntimeError::IntegrityFailure(format!("{role} 在 digests 里有、路径却缺失"))
+            })?;
+            let (bytes, sha256) = sha256_file(Path::new(path))?;
+            if bytes != expected.bytes {
+                return Err(RuntimeError::IntegrityFailure(format!(
+                    "{path}（{role}）大小不符：期望 {}，实际 {bytes}",
+                    expected.bytes
+                )));
+            }
+            if !sha256.eq_ignore_ascii_case(&expected.sha256) {
+                return Err(RuntimeError::IntegrityFailure(format!(
+                    "{path}（{role}）sha256 不符：期望 {}，实际 {sha256}",
+                    expected.sha256
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// 角色 → 当前 spec 里的路径。
+    pub fn path_of(&self, role: FileRole) -> Option<&str> {
+        match role {
+            FileRole::Model => Some(&self.model_path),
+            FileRole::SourceVocab => Some(&self.src_vocab),
+            FileRole::TargetVocab => Some(&self.trg_vocab),
+            FileRole::LexicalShortlist => self.lex_shortlist.as_deref(),
+            FileRole::SplitPrefix => self.split_prefix.as_deref(),
+        }
     }
 
     /// 字节总量（用于预算的**已知部分**；不含 native 工作区）。
@@ -287,6 +382,14 @@ pub struct ModelInfo {
     pub threads: u16,
     pub beam_size: u8,
     pub worker_epoch: u64,
+    /// worker 内部真正跑推理的东西（`mock` / `bergamot-cli`），**不是**对外承诺
+    pub runtime: Option<String>,
+    /// 运行时版本（Bergamot commit / Marian 子模块），未知时 `None`
+    pub runtime_build: Option<String>,
+    /// 平台三元组
+    pub platform: Option<String>,
+    /// native 进程 pid（`docs/14` §3.7 的可核对身份；仅在 Linux/有 native 时存在）
+    pub native_pid: Option<u32>,
 }
 
 /// worker 心跳结果。
@@ -309,6 +412,10 @@ pub struct TransportMetrics {
     pub host_rss_bytes: Option<u64>,
     pub worker_rss_bytes: Option<u64>,
     pub worker_pid: Option<u32>,
+    /// 最近一次 `model_preparation_ms`（复制 + 校验快照）
+    pub model_preparation_ms: Option<u64>,
+    /// 当前快照占用字节数
+    pub snapshot_bytes: Option<u64>,
 }
 
 impl TransportMetrics {
@@ -335,6 +442,28 @@ pub fn process_rss_bytes() -> Option<u64> {
     }
     #[cfg(not(target_os = "linux"))]
     {
+        None
+    }
+}
+
+/// 任意 pid 的 **峰值** RSS（`VmHWM`，Linux）。进程退出后不可读。
+///
+/// `docs/14` §6 要求峰值与稳态分开报：`VmRSS` 是"现在多少"，`VmHWM` 是"最多到过多少"。
+pub fn vmhwm_bytes_of(pid: u32) -> Option<u64> {
+    #[cfg(target_os = "linux")]
+    {
+        let text = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
+        for line in text.lines() {
+            if let Some(rest) = line.strip_prefix("VmHWM:") {
+                let kib: u64 = rest.split_whitespace().next()?.parse().ok()?;
+                return Some(kib * 1024);
+            }
+        }
+        None
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = pid;
         None
     }
 }

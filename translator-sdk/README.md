@@ -16,11 +16,13 @@
 - `10_P3_Linux本地NMT开发建议与验收计划.md` — 外部输入：P3 分阶段（P3.0～P3.4）目标、准入门槛与测试矩阵
 - `11_P3.0_原生模型验证报告.md` — 真实模型 + Bergamot 原生链路的实测报告（译文/延迟/RSS/失败项）
 - `12_P3.0技术审查与P3.1准入决策.md` — 外部审查归档：P3.0 有条件通过、三个 P0 门槛、P3.1-A～E 拆分与测试矩阵
-- `13_P3.1-A报告.md` — **本轮**：独立 worker 进程 + 帧协议 + mock worker（实现/测试/偏差三部分）
+- `13_P3.1-A报告.md` — 独立 worker 进程 + 帧协议 + mock worker（实现/测试/偏差三部分）
+- `14_P3.1-A技术审查与P3.1-B实施建议.md` — 外部审查归档：P3.1-A 有条件通过、P3.1-B 实施约束与 B-T01…T12 验收矩阵
+- `15_P3.1-B报告.md` — **本轮**：真实 Bergamot 进 worker 进程（隔离快照 / 类型化配置 / 分阶段超时 / 实测基线）
 
 ---
 
-## 当前状态：P0 + P1 + P2 + P2-S + P3.0 完成；**P3.1-A 完成**（worker 进程边界已钉死，真实模型接入从 P3.1-B 开始）
+## 当前状态：P0 + P1 + P2 + P2-S + P3.0 + P3.1-A 完成；**P3.1-B 完成**（真实 Bergamot 已经在独立进程里跑通，占位符保护仍未做）
 
 - **P0**：workspace 结构、核心类型、插件契约、协调器与路由、缓存、门面 API、Mock 插件、CLI。
   **不接任何真实模型、不装任何 native 库**，整条链路即可运行 —— 这是设计文档规定的交付判据。
@@ -74,6 +76,21 @@
     宿主 2.8 MiB + worker 2.1 MiB（**空壳**，不含权重），`shutdown` 5.1 ms；
   - **这些数字不能当内存预算**：预算口径仍是 P3.0 的 413.8 MiB（1 线程峰值）/ 678.5 MiB（2 线程峰值）。
   详见 `../docs/13_P3.1-A报告.md`。
+
+- **P3.1-B**（真实模型进进程，`docs/15`）：`Hello world!` → `你好,世界!`，整条链路是
+  **宿主 → nmt-worker(Rust 监督者) → bergamot(native)**，三层进程。
+  - **隔离快照**：四文件先复制进私有只读目录（0o700/0o400），复制与 sha256 用同一次读，
+    worker 在 spawn native 前**再核一遍**摘要；源文件之后被改也影响不到已加载的模型；
+  - **类型化配置生成**：只接受 5 个有范围检查的参数，`shortlist` 是独立键（写进 `models` 会让 Marian `abort()`），
+    调用方无法注入任意 YAML；
+  - **分阶段超时**：Load 30 s / Translate 15 s / 其余 10 s，终止仍是 shutdown 帧 → SIGTERM → SIGKILL；
+  - **native 不产生孤儿**：`PR_SET_PDEATHSIG`，宿主在加载期击杀 worker 时 native 一起死；
+  - 实测（1 线程、beam=1）：快照 **262 ms**、加载总墙钟 **719 ms**、首句 **417 ms**、
+    热 p50 **13.17 ms** / p95 14.09（n=100）、host 3.0 MiB + worker 2.7 MiB + native 341.9 MiB、
+    native 峰值 **413.8 MiB**（与 P3.0 一致）、卸载 43 ms、重载 725 ms；
+  - 崩溃隔离：缺权重让 Marian 真 `abort()`（SIGABRT）→ 宿主收到 `RuntimeInitFailed` 并存活；
+    native 被外部 SIGKILL → `BackendFailed` + worker 退出 → 下一次请求才重启（不重放）。
+  详见 `../docs/15_P3.1-B报告.md`。**占位符 `{name}` 仍会被吞（`docs/15` §2.5），那是 P3.1-C。**
 
 词库与规则都是**可选 feature**：不开 `dictionary` 时 `translator-api` 依赖树里没有 `rusqlite`；
 不开 `rules` 时没有 JSON 解析依赖（但 `TextRules` 契约始终可用，宿主可自己实现）。
@@ -365,9 +382,27 @@ cargo build -p translator-runtime --release --bins
 cargo run -p translator-runtime --release --example p3_1a_evidence
 ```
 
-**这里没有任何真实翻译**：mock worker 的译文是 `[目标语言] 原文`，`--bergamot` 会明确返回
-`CapabilityUnavailable`（真实接线是 P3.1-B）。本轮证明的是"崩了宿主还活着、超时能收尸、坏帧不会卡住"，
-不是"模型能翻"。
+**这里没有任何真实翻译**：mock worker 的译文是 `[目标语言] 原文`。
+（P3.1-B 之后 `--bergamot` 已经是真路径，见下一节。）
+
+### P3.1-B：真实 Bergamot（需要本机有权重与 native 二进制，均不入库）
+
+```bash
+export NMT_BERGAMOT_BIN=/tmp/p3/bergamot-translator/build/app/bergamot
+export NMT_MODEL_DIR=/tmp/p3/models
+export LD_LIBRARY_PATH=/tmp/p3/sysroot/usr/lib/x86_64-linux-gnu:/tmp/p3/sysroot/usr/lib/x86_64-linux-gnu/openblas-pthread
+
+# 12 条真实验收（默认 #[ignore]，因为权重不在仓库里）
+cargo test -p translator-runtime --test real_bergamot -- --ignored --test-threads=1
+
+# 实测基线（可写 JSON；不加 NMT_BASELINE_OUT 就只打印）
+cargo build -p translator-runtime --release --bins
+NMT_BASELINE_OUT=fixtures/nmt/baseline-p3.1b-linux-x86_64-1thread.json \
+  cargo run -p translator-runtime --release --example p3_1b_evidence
+```
+
+约定：默认 `cargo build` **不需要**任何 C++ 依赖（native 是外部二进制），
+`--all-features` 也不会把 Bergamot 拖进编译。
 
 ## 尚未实现
 
@@ -378,9 +413,11 @@ cargo run -p translator-runtime --release --example p3_1a_evidence
 - 规则包的其余能力：分句、词形；正则类匹配按 §7.3 的风险评估后决定不做
 - 词形分析（Lindera 等）
 - 内存**硬**上限与 RSS 监控；`ProcessMetricsProvider`（各平台真实占用观测，ADR-021，未实现）
-- **真实 NMT 的 worker**（Bergamot 进子进程、`Load` 参数、加载前核验与只读快照）——P3.1-B，未开始
-  （P3.1-A 只做了协议与进程边界，`translator-runtime` **尚未被 `translator-api` 使用**）
+- `translator-runtime` 接入 `translator-api`/CLI 的端到端路径——P3.1-E
+  （P3.1-B 只做到"Rust 宿主 + 测试"级别，`translator-api` 仍未被真实模型使用）
 - 占位符保护接真实 NMT（SP-01～08，ADR-029）——P3.1-C，未开始
+  （真实模型会吞 `{name}`/`{order_id}`，反引号会被换成中文引号，见 `docs/15` §2.5）
+- 卸载后 native **进程内** RSS 收敛（本轮只证明了进程消失，`docs/15` D-11）
 - 模型实例租约、single-flight、排队超时、`ResolvedExecutionPlan`、`content_digest` 进缓存键（ADR-023/026）——P3.1-D
 - 加载/卸载多轮 RSS 收敛、PSS、`VmHWM`（ADR-021 的 `ProcessMetricsProvider`）——P3.1-D / P3.3
 - Linux CI 与多轮基准（P3.1-E / P3.3）

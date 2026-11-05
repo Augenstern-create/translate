@@ -1,7 +1,7 @@
 # 轻量跨平台混合翻译 SDK — 完整软件开发设计文档
 
-> 文档版本：v1.5（架构基线；ADR 增补见 §14 与文末修订记录）  
-> 编写日期：2026-11-05（v1.5 修订 2026-11-05）  
+> 文档版本：v1.6（架构基线；ADR 增补见 §14 与文末修订记录）  
+> 编写日期：2026-11-05（v1.6 修订 2026-11-05）  
 > 交付形式：Rust Library SDK；**不实现 UI**，但预留桌面、Android、命令行及服务端适配接口  
 > 目标平台：Windows x86_64、Ubuntu Linux x86_64/aarch64、macOS aarch64/x86_64、Android arm64-v8a
 
@@ -525,11 +525,16 @@ P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运
 - ADR-023（Proposed，P3.1 落地）：真实模型接入时必须同时实现 single-flight 加载、热模型租约与卸载保护、`ResolvedExecutionPlan`（engine / runtime / model revision / tokenizer / 规则与术语指纹 / 解码参数 / 语言方向 / 隐私域）稳定哈希进缓存键，并以 model revision 隔离缓存。在此之前，禁止用真实 NMT + `id@version` 指纹（或 `model_id: None`）上线缓存。唯一性来源：`docs/08` §5.3 只是接口意向，不是已编译代码。
 - ADR-024（Accepted，P3.0 已执行）：**Linux 先交付，核心保持平台无关**。P3 的验收范围只有 Ubuntu x86_64 / CPU；Windows、macOS、Android 只保留扩展边界（trait、feature、配置项），**不得**用 Linux 的测试结果对外表述为跨平台通过。理由：跨平台实证需要真机与 CI，没做就说没做（`docs/11` §3.3）。
 - ADR-025（Accepted，P3.0 已执行）：**先打通原生参考链路，再写 Rust 适配**。顺序是：锁定模型坐标与校验和 → 原生 CLI 出真实译文并记录基线 → 才允许实现 `runtime-bergamot`。理由：参考链路不通时，Rust 侧的"翻译失败"无法区分是 FFI 写错还是模型/配置不对；本次先证明"模型确实能翻"（en→zh-Hans，23/24 金样本），再谈 adapter（`docs/11`）。
-- ADR-026（Proposed，P3.1-B/D 落地）：**模型身份以内容为准，且身份要覆盖整个执行栈**。缓存、实例复用、诊断必须携带一份足以复现译文的摘要集合：**权重内容摘要、Tokenizer/词表摘要、短名单（lexical shortlist）摘要、解码参数（beam、长度惩罚等）、runtime build 标识**；不能只用 `package_id@version`，也不能只摘要权重。同版本不同 hash 视为不同模型。现状（`docs/13` D-02）：P3.1-A 只实现 `content_digest = package@version#权重sha256前32位`，其余五项尚无来源，因此它**只能用于诊断，不得用作缓存键**；P2.5 的 `id@version` 指纹缺口仍在（ADR-019/023 已记录）。
+- ADR-026（Proposed，P3.1-B/D 落地）：**模型身份以内容为准，且身份要覆盖整个执行栈**。缓存、实例复用、诊断必须携带一份足以复现译文的摘要集合：**权重内容摘要、Tokenizer/词表摘要、短名单（lexical shortlist）摘要、解码参数（beam、长度惩罚等）、runtime build 标识**；不能只用 `package_id@version`，也不能只摘要权重。同版本不同 hash 视为不同模型。现状（`docs/13` D-02 / `docs/15` D-15）：`content_digest = package@version#权重sha256前32位`，其余五项仍无来源，因此它**只能用于诊断，不得用作缓存键**；真实 NMT 在 P3.1-B 里**没有接缓存**，所以暂不存在「用错身份命中旧缓存」的路径。P2.5 的 `id@version` 指纹缺口仍在（ADR-019/023 已记录）。
 - ADR-027（Accepted，P3.1-A 已落地接口；实例独占未做共享验证）：**原生运行时归受控 worker 独占，且隔离边界必须是进程级故障隔离，不是线程**。理由：`panic = "abort"` 让 `catch_unwind` 失效，线程也无法隔离 SIGSEGV/`abort()`；P3.0 实测缺文件时 `abort()`（信号 6）、截断权重 SIGSEGV（信号 11），只有独立地址空间能把宿主保住。实现约束（`docs/13` §1）：单一 worker 进程独占模型实例，对外只暴露 `Send + Sync` 的消息代理与 `RuntimeTransport` trait；IPC 用长度前缀帧（有上限）、强制 `request_id`/`worker epoch`/`model revision` 关联、请求超时与三级终止（shutdown 帧→SIGTERM→SIGKILL）、无僵尸、受控重启用预算且不静默重放；禁止无依据的 `unsafe impl Send/Sync`；不向 `translator-api` 泄漏 C++ 类型/pid/socket；非 Linux 平台明确返回 `CapabilityUnavailable` 而非空实现。
 - ADR-028（Accepted，P3.0 事实）：**模型权重不入库、许可未确认前不分发**。权重（约 51 MB）只通过 `models.lock.json` 里的 CDN 坐标 + sha256 复现；Remote Settings 记录里没有 license 字段，`mozilla/translations` 仓库代码是 MPL-2.0，但权重的再分发条款需模型卡/法务确认。在结论确定前，仓库只提交锁定记录、配置模板与构建脚本。
 
 - ADR-029（Proposed，P3.1-C 落地）：**占位符与结构化文本的完整性优先于流畅度，且失败必须显式**。`{name}`/`{order_id}` 这类标记、URL/邮箱、反引号代码块在送入真实 NMT 前必须被保护、译后精确还原；数量或身份不一致时返回 `IntegrityFailure`，严格模式下**不得**输出「看起来正常」的译文。理由：P3.0 实测直送真实模型时 `{name}`/`{order_id}` 被吞、反引号被改写（`docs/11` §2.4），说明「模型会照抄标记」的假设不成立，也不能靠无限试探提示词或无条件正则替换来补救。验收：`docs/12` §2.3 的 SP-01～08，尤其「标记被删除/复制/篡改 → `IntegrityFailure`」。现状：P3.1-A 未实现，`strict_placeholder_restore` 尚未接到真实 NMT 路径。
+
+- ADR-030（Accepted，P3.1-B 已实现）：**隔离快照优先于路径二次校验**。模型的身份绑定到 worker 实际可访问的一份**私有、只读、已校验副本**，而不是 Manifest 里的字符串路径。实现（`translator-runtime::snapshot`）：元信息预检查（存在/非符号链接/普通文件/大小）→ 复制与 sha256 **同一次读**（比较的是副本字节）→ 副本目录 0o700、文件 0o400 → worker 在 spawn native **之前**用 `ModelSpec::verify_digests()` 再核一遍 → 快照活到 unload/shutdown/Drop，SIGKILL 残留按目录名里的 pid 清理。诚实边界：文件权限**不是**安全沙箱，同用户恶意进程仍可改写；`openat`/目录 FD/seccomp 未做。实测代价 `model_preparation_ms` = 262 ms / 49.5 MiB（`docs/15` §2.4）。
+- ADR-031（Accepted，P3.1-B 已实现）：**真实 Bergamot 默认单 worker、单 in-flight**。默认 1 个 worker 进程、1 个 native 进程、并发 1；任何并发提升必须先给出「内存 + 延迟」证据（P3.0/P3.1-B 实测都是 1 线程：峰值 413.8 MiB、热 p50 13.17 ms）。不要把 `--cpu-threads 1`（native 线程数）与进程数混为一谈。串行锁导致的「排队不受超时约束」是已知限制，队列与绝对 deadline 属于 ADR-023 的范围（P3.1-D）。
+- ADR-032（Accepted，P3.1-B 已实现）：**IPC 协议版本与原生运行时版本分开管理**。`PROTOCOL_VERSION`（当前 1）只描述父子进程之间的帧/消息形状；原生运行时的身份走 `Payload::Loaded.runtime_build`（Bergamot commit `9271618…`）与 `runtime`（`bergamot-cli`）。改帧形状要升 `PROTOCOL_VERSION`，换 native 构建只改 `runtime_build`，两者不得互相冒充。理由：`docs/14` §3.7 要求 load 回执能核对「到底是哪一版在跑」，而协议兼容性与 native 版本是两件不同的事。
+- ADR-033（Accepted，P3.1-B 已实现）：**加载 / 翻译 / 排队截止时间分离**。`Load` 30 s、`Translate` 15 s、`Health`/`Unload`/`Shutdown` 10 s，终止升级仍是 shutdown 帧 500 ms → SIGTERM 500 ms → SIGKILL；任何阶段超时都**废弃持有模型状态的进程**（native 与 worker），不暗中重试。**排队截止时间尚未实现**（没有队列、并发恒为 1），留给 P3.1-D；在此之前不得宣称「排队超时已支持」。
 
 > 状态含义：**Accepted** = 已决定并（如注明）已实现；**Proposed** = 已决定方向但尚未实现，写入 ADR 不等于已验证；
 > **Deferred** = 明确延后。上表未标注 Deferred 的项均须在对应阶段交付。
@@ -544,6 +549,7 @@ P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运
 | v1.3 | 2026-11-05 | 并入 `docs/08` 的四个 P3 前决策：新增 ADR-019～023（术语表快照、`lookup()` 不受改写、预算与 RSS 观测分离、租约/卸载跨进程原子性、真实模型的 single-flight 与执行计划）；ADR-015 增补「默认 Warn + 源文触发」、ADR-016 增补「v2 默认写入 / v1 只读窗口」；§9.3 把页缓存一行的"精确"改为"配置上界、需实测"。编号处理：`docs/08` §8 的 ADR-015～021 是**候选编号**，其中 015～018 已被占用，按标题与内容合并进现有 015/016 与新 019～023，未覆盖任何旧 ADR |
 | v1.4 | 2026-11-05 | P3.0 落地：新增 ADR-024～028（Linux 优先/参考链路先行/内容即身份/worker 独占/权重不入库）；`docs/10` 的候选 ADR 标题按内容合并进这几条，未覆盖旧编号 |
 | v1.5 | 2026-11-05 | P3.1-A 落地（`docs/13`）：ADR-027 从 Proposed 改为 Accepted，并把措辞从「worker 独占」收紧为「**进程级**故障隔离」（明确线程与 `catch_unwind` 不可用、IPC 硬约束、非 Linux 显式不可用）；ADR-026 把模型身份从「权重 + tokenizer 摘要」扩展为**权重 / Tokenizer / 短名单 / 解码参数 / runtime build** 五项，并注明当前 `content_digest` 只能诊断、不得作缓存键；新增 ADR-029（严格占位符完整性，Proposed，P3.1-C）。编号处理：`docs/12` §6 的候选 ADR 建议按内容并入 026/027/029，**未覆盖任何旧编号**；ADR-029 是当前最大号 028 之后的第一个空号 |
+| v1.6 | 2026-11-05 | P3.1-B 落地（`docs/15`）：新增 ADR-030～033（隔离快照 / 真实 Bergamot 默认单 worker / IPC 与原生版本分离 / 分阶段截止时间）；ADR-026 的现状一栏改为引用 P3.1-B 实测并再次声明「不得作缓存键」。编号处理：`docs/14` §8 的四条建议按内容顺延为 030～033（029 已被占位），**未覆盖任何旧编号** |
 
 ## 15. 主要风险与应对
 

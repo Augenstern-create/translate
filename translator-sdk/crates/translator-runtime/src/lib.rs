@@ -25,17 +25,21 @@
 // 全 crate 禁止 unsafe；唯一例外是 worker.rs 里发 SIGTERM 的那一处，显式 allow。
 #![deny(unsafe_code)]
 
+pub mod config;
 pub mod error;
 pub mod model;
 pub mod protocol;
+pub mod snapshot;
 pub mod transport;
 pub mod worker;
 
+pub use config::{render_bergamot_config, BergamotOptions};
 pub use error::RuntimeError;
 pub use model::{
-    process_rss_bytes, rss_bytes_of, FileRole, FileSpec, ModelInfo, ModelManifest, ModelSpec,
-    TranslationJob, TranslationReply, TransportMetrics, WorkerHealth,
+    process_rss_bytes, rss_bytes_of, FileDigest, FileRole, FileSpec, ModelInfo, ModelManifest,
+    ModelSpec, TranslationJob, TranslationReply, TransportMetrics, WorkerHealth,
 };
 pub use protocol::{MAX_FRAME_BYTES, PROTOCOL_VERSION};
+pub use snapshot::{prune_stale_snapshots, ModelSnapshot};
 pub use transport::{ProcessTransport, RuntimeTransport};
 pub use worker::{WorkerConfig, WorkerProcess};

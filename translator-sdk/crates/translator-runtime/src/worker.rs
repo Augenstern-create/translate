@@ -33,8 +33,12 @@ pub struct WorkerConfig {
     pub binary: PathBuf,
     /// 额外参数（例如 `--mock`、`--crash-on load`）
     pub args: Vec<String>,
-    /// 单次请求的等待上限
+    /// 其它请求（Health/Unload/Shutdown）的等待上限
     pub request_timeout: Duration,
+    /// `Load` 的等待上限。加载要读 44 MB 权重 + 建工作区，10 s 不够稳（`docs/14` §3.6）
+    pub load_timeout: Duration,
+    /// `Translate` 的等待上限。P3.0 单句热翻译 p50 13 ms、冷首句 415 ms
+    pub translate_timeout: Duration,
     /// 礼貌关闭的等待上限
     pub shutdown_grace: Duration,
     /// SIGTERM 之后的等待上限（之后 SIGKILL）
@@ -51,6 +55,8 @@ impl WorkerConfig {
             binary: binary.into(),
             args: Vec::new(),
             request_timeout: Duration::from_secs(10),
+            load_timeout: Duration::from_secs(30),
+            translate_timeout: Duration::from_secs(15),
             shutdown_grace: Duration::from_millis(500),
             term_grace: Duration::from_millis(500),
             stderr_lines: 64,
@@ -72,6 +78,25 @@ impl WorkerConfig {
         self
     }
 
+    pub fn with_load_timeout(mut self, timeout: Duration) -> Self {
+        self.load_timeout = timeout;
+        self
+    }
+
+    pub fn with_translate_timeout(mut self, timeout: Duration) -> Self {
+        self.translate_timeout = timeout;
+        self
+    }
+
+    /// 按操作类型取截止时间：`docs/14` §3.6 要求加载与推理分开。
+    pub fn timeout_for(&self, request: &Request) -> Duration {
+        match request {
+            Request::Load { .. } => self.load_timeout,
+            Request::Translate { .. } => self.translate_timeout,
+            _ => self.request_timeout,
+        }
+    }
+
     pub fn with_epoch(mut self, epoch: u64) -> Self {
         self.epoch = epoch;
         self
@@ -91,6 +116,8 @@ pub struct WorkerProcess {
     epoch: u64,
     next_id: u64,
     request_timeout: Duration,
+    load_timeout: Duration,
+    translate_timeout: Duration,
     shutdown_grace: Duration,
     term_grace: Duration,
     exit: Option<ExitStatus>,
@@ -199,6 +226,8 @@ impl WorkerProcess {
             epoch: config.epoch,
             next_id: 0,
             request_timeout: config.request_timeout,
+            load_timeout: config.load_timeout,
+            translate_timeout: config.translate_timeout,
             shutdown_grace: config.shutdown_grace,
             term_grace: config.term_grace,
             exit: None,
@@ -211,6 +240,24 @@ impl WorkerProcess {
 
     pub fn epoch(&self) -> u64 {
         self.epoch
+    }
+
+    /// 按操作类型取截止时间（实例侧；与 `WorkerConfig::timeout_for` 对应）。
+    fn timeout_for(&self, request: &Request) -> Duration {
+        match request {
+            Request::Load { .. } => self.load_timeout,
+            Request::Translate { .. } => self.translate_timeout,
+            _ => self.request_timeout,
+        }
+    }
+
+    /// 本进程使用的三段截止时间（诊断用）。
+    pub fn timeouts(&self) -> (Duration, Duration, Duration) {
+        (
+            self.request_timeout,
+            self.load_timeout,
+            self.translate_timeout,
+        )
     }
 
     /// worker 是否已经不可用（进程退出 / 协议错乱 / 被我们终止）。
@@ -262,7 +309,8 @@ impl WorkerProcess {
             return Err(self.exit_error(&format!("写入请求失败：{e}")));
         }
 
-        match receiver.recv_timeout(self.request_timeout) {
+        let budget = envelope.request.clone();
+        match receiver.recv_timeout(self.timeout_for(&budget)) {
             Ok(response) => {
                 // 世代/版本不符说明这个 worker 已经不可信（可能是别人的迟到响应，
                 // 也可能是协议实现坏了）。不做猜测：标记不可用，让上层决定要不要重来。
@@ -284,7 +332,7 @@ impl WorkerProcess {
             }
             Err(RecvTimeoutError::Timeout) => {
                 // native 推理可能不可中断：不能假装"停下来了"，只能杀掉独占 worker
-                let waited = self.request_timeout.as_millis() as u64;
+                let waited = self.timeout_for(&budget).as_millis() as u64;
                 self.terminate();
                 Err(RuntimeError::Timeout {
                     operation: envelope.request.op_name(),

@@ -79,6 +79,17 @@ pub enum Payload {
         model_revision: String,
         threads: u16,
         beam_size: u8,
+        /// worker 内部真正跑推理的东西（`mock` / `bergamot-cli`）
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        runtime: Option<String>,
+        /// 运行时版本（Bergamot commit 等）
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        runtime_build: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        platform: Option<String>,
+        /// native 进程 pid（可核对身份，`docs/14` §3.7）
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        native_pid: Option<u32>,
     },
     Translated {
         text: String,

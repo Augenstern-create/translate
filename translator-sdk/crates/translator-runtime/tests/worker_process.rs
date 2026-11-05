@@ -187,7 +187,7 @@ fn n03_摘要不符在清单校验阶段被发现() {
 fn n13_超时后杀掉worker且不留僵尸() {
     let fx = fixture();
     let config =
-        worker(&["--mock", "--sleep-ms", "3000"]).with_request_timeout(Duration::from_millis(300));
+        worker(&["--mock", "--sleep-ms", "3000"]).with_load_timeout(Duration::from_millis(300));
     let transport = ProcessTransport::new(config, 1);
     let pid = {
         // load 也会 sleep，所以先用一个短超时的请求把 pid 拿到：直接调 health 也会被拖住，
@@ -217,8 +217,7 @@ fn n13_翻译超时返回timeout并回收进程() {
             // 再用一个极短超时去撞翻译。mock 的 sleep 对 load 和 translate 都生效，
             // 因此先把超时设长、加载完再换成短超时的新请求需要重建 transport。
             // 折中：直接用 --sleep-ms=2000，加载也用短超时，验证清理路径一致。
-            worker(&["--mock", "--sleep-ms", "2000"])
-                .with_request_timeout(Duration::from_millis(150))
+            worker(&["--mock", "--sleep-ms", "2000"]).with_load_timeout(Duration::from_millis(150))
         }
     }
 
