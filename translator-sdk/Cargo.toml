@@ -8,7 +8,9 @@ members = [
     "crates/translator-dictionary",
     "crates/translator-analysis",
     "crates/translator-rules",
+    "crates/translator-resource",
     "tools/pack-dictionary",
+    "tools/migrate-rules",
     "apps/translator-cli",
 ]
 
@@ -29,7 +31,9 @@ translator-api = { path = "crates/translator-api" }
 translator-dictionary = { path = "crates/translator-dictionary" }
 translator-analysis = { path = "crates/translator-analysis" }
 translator-rules = { path = "crates/translator-rules" }
+translator-resource = { path = "crates/translator-resource" }
 pack-dictionary = { path = "tools/pack-dictionary" }
+migrate-rules = { path = "tools/migrate-rules" }
 
 # 外部依赖（P1 新增，全部为轻量或按 feature 隔离）
 pollster = "0.4"                  # 仅 CLI / 测试：同步驱动 async

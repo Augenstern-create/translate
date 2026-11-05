@@ -12,6 +12,8 @@
 //! translator-cli detect "你好"
 //! translator-cli --dict resources/zh-en translate 世界
 //! translator-cli --rules fixtures/rules/minimal.json translate 机器人 --explain
+//! translator-cli --store .resources resource install path/to/package
+//! translator-cli --store .resources --dict-id dictionary.cc-cedict.zh-en lookup 计算机
 //! translator-cli capabilities
 //! ```
 
@@ -31,6 +33,13 @@ translator-cli —— 轻量跨平台翻译 SDK 调试工具
   translator-cli [--dict <包目录>] <子命令> ...
 
 子命令:
+  resource install <目录>              安装资源包到仓库（校验 + 原子落位）
+  resource list                        列出仓库里的资源与激活版本
+  resource inspect <id>                查看某个资源的版本与历史
+  resource activate <id> <version>     切换激活版本（不删除旧版本）
+  resource rollback <id>               回滚到上一个激活过的版本
+  resource uninstall <id> <version>    删除非激活版本（激活版本拒绝删除）
+  resource cleanup <id> [--keep <n>]   保留激活 + 最近 n 个历史版本
   translate <文本> [--from <lang>] [--to <lang>] [--policy <p>] [--explain]
              --to 缺省时按源语言推断：中文→en，其它→zh-Hans
   lookup <词条> [--lang <lang>] [--limit <n>]
@@ -38,8 +47,10 @@ translator-cli —— 轻量跨平台翻译 SDK 调试工具
   capabilities
 
 全局选项:
-  --dict <包目录>   挂载离线词典包（不指定则使用内置 Mock 词表）
-  --rules <规则文件> 挂载规则包（JSON 或已编译的二进制）
+  --dict <包目录>    直接挂载一个词典包目录
+  --dict-id <资源 id> 从资源仓库挂载该资源的**激活版本**
+  --store <仓库目录>  资源仓库根目录（默认 .resources）
+  --rules <规则文件>  挂载规则包（JSON 或已编译的二进制）
 
 策略 (--policy):
   auto         AutoLocalFirst（默认）
@@ -54,6 +65,8 @@ translator-cli —— 轻量跨平台翻译 SDK 调试工具
   translator-cli --dict resources/zh-en translate 世界
   translator-cli --dict resources/zh-en lookup 计算机
   translator-cli --rules fixtures/rules/minimal.json translate 机器人 --explain
+  translator-cli --store .resources resource install resources/zh-en
+  translator-cli --store .resources --dict-id dictionary.cc-cedict.zh-en lookup 计算机
 ";
 
 fn main() -> ExitCode {
@@ -64,13 +77,24 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    // 抽取全局选项 --dict / --rules
-    let (dict, rules) = match take_global_options(&mut args) {
-        Ok(pair) => pair,
+    // 抽取全局选项
+    let options = match take_global_options(&mut args) {
+        Ok(o) => o,
         Err(code) => return code,
     };
 
-    let translator = match build_translator(dict.as_deref(), rules.as_deref()) {
+    // resource 子命令不需要构建 Translator（它管理的是磁盘上的资源）
+    if args[0] == "resource" {
+        return cmd_resource(&options.store, &args[1..]);
+    }
+
+    // --dict-id：从仓库解析激活版本目录，再走原有挂载路径
+    let dict = match resolve_dict(&options) {
+        Ok(dir) => dir,
+        Err(code) => return code,
+    };
+
+    let translator = match build_translator(dict.as_deref(), options.rules.as_deref()) {
         Ok(t) => t,
         Err(err) => {
             eprintln!("插件注册失败：{err}");
@@ -91,25 +115,75 @@ fn main() -> ExitCode {
     }
 }
 
-/// 抽出全局选项，剩下的交给子命令解析。
-fn take_global_options(
-    args: &mut Vec<String>,
-) -> Result<(Option<String>, Option<String>), ExitCode> {
-    let mut dict = None;
-    let mut rules = None;
+/// 全局选项。
+struct GlobalOptions {
+    dict: Option<String>,
+    dict_id: Option<String>,
+    store: String,
+    rules: Option<String>,
+}
 
-    for (flag, slot) in [("--dict", &mut dict), ("--rules", &mut rules)] {
+const DEFAULT_STORE: &str = ".resources";
+
+/// 抽出全局选项，剩下的交给子命令解析。
+fn take_global_options(args: &mut Vec<String>) -> Result<GlobalOptions, ExitCode> {
+    let mut options = GlobalOptions {
+        dict: None,
+        dict_id: None,
+        store: DEFAULT_STORE.to_string(),
+        rules: None,
+    };
+
+    let take = |args: &mut Vec<String>, flag: &str| -> Option<String> {
+        let mut value = None;
         while let Some(pos) = args.iter().position(|a| a == flag) {
             if pos + 1 >= args.len() {
-                eprintln!("{flag} 缺少路径参数");
-                return Err(ExitCode::from(2));
+                return None;
             }
-            *slot = Some(args[pos + 1].clone());
+            value = Some(args[pos + 1].clone());
             args.drain(pos..=pos + 1);
         }
+        value
+    };
+
+    options.dict = take(args, "--dict");
+    options.dict_id = take(args, "--dict-id");
+    options.rules = take(args, "--rules");
+    if let Some(store) = take(args, "--store") {
+        options.store = store;
     }
 
-    Ok((dict, rules))
+    if options.dict.is_some() && options.dict_id.is_some() {
+        eprintln!("--dict 与 --dict-id 只能用一个");
+        return Err(ExitCode::from(2));
+    }
+
+    Ok(options)
+}
+
+/// 解析要挂载的词典目录：`--dict` 优先，其次 `--dict-id`（读仓库激活版本）。
+fn resolve_dict(options: &GlobalOptions) -> Result<Option<String>, ExitCode> {
+    if let Some(dir) = &options.dict {
+        return Ok(Some(dir.clone()));
+    }
+    let Some(id) = &options.dict_id else {
+        return Ok(None);
+    };
+
+    let store = match translator_resource::ResourceStore::open(&options.store) {
+        Ok(store) => store,
+        Err(err) => {
+            eprintln!("打开资源仓库失败（{}）：{err}", options.store);
+            return Err(ExitCode::FAILURE);
+        }
+    };
+    match store.active_dir(id) {
+        Ok(dir) => Ok(Some(dir.display().to_string())),
+        Err(err) => {
+            eprintln!("资源 {id} 没有可用版本：{err}");
+            Err(ExitCode::FAILURE)
+        }
+    }
 }
 
 fn build_translator(
@@ -383,6 +457,204 @@ fn cmd_detect(translator: &translator_api::Translator, args: &[String]) -> ExitC
         Err(err) => {
             eprintln!("识别失败：{err}");
             ExitCode::FAILURE
+        }
+    }
+}
+
+fn cmd_resource(store_dir: &str, args: &[String]) -> ExitCode {
+    let Some(action) = args.first() else {
+        eprintln!("resource 需要子命令：install | list | inspect | activate | rollback | uninstall | cleanup");
+        return ExitCode::from(2);
+    };
+
+    let store = match translator_resource::ResourceStore::open(store_dir) {
+        Ok(store) => store,
+        Err(err) => {
+            eprintln!("打开资源仓库失败（{store_dir}）：{err}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    match action.as_str() {
+        "install" => {
+            let Some(path) = args.get(1) else {
+                eprintln!("resource install 需要包目录");
+                return ExitCode::from(2);
+            };
+            // 安装前顺手清掉上次中断留下的 staging
+            if let Ok(report) = store.recover() {
+                if report.removed_staging > 0 {
+                    println!("已清理 {} 个遗留安装目录", report.removed_staging);
+                }
+            }
+            match store.install_from_dir(path) {
+                Ok(outcome) => {
+                    println!(
+                        "已安装 {}@{}（{} / {}）",
+                        outcome.resource.id,
+                        outcome.resource.version,
+                        outcome.resource.kind.as_str(),
+                        outcome.resource.payload_schema
+                    );
+                    if outcome.activated {
+                        println!("已激活（此前没有激活版本）");
+                    } else {
+                        println!(
+                            "未激活：当前激活版本仍为 {}；用 `resource activate {} {}` 切换",
+                            outcome
+                                .previous_active
+                                .unwrap_or_else(|| "（无）".to_string()),
+                            outcome.resource.id,
+                            outcome.resource.version
+                        );
+                    }
+                    ExitCode::SUCCESS
+                }
+                Err(err) => {
+                    eprintln!("安装失败：{err}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        "list" => match store.list() {
+            Ok(list) if list.is_empty() => {
+                println!("（仓库为空）");
+                ExitCode::SUCCESS
+            }
+            Ok(list) => {
+                for status in list {
+                    println!(
+                        "{}  激活={}  历史=[{}]",
+                        status.id,
+                        status.active.unwrap_or_else(|| "（无）".to_string()),
+                        status.history.join(", ")
+                    );
+                    for version in status.versions {
+                        println!(
+                            "  - {}{}  {}  {}",
+                            version.version,
+                            if version.active { "（激活）" } else { "" },
+                            version.kind.as_str(),
+                            version.installed_at
+                        );
+                    }
+                }
+                ExitCode::SUCCESS
+            }
+            Err(err) => {
+                eprintln!("读取资源列表失败：{err}");
+                ExitCode::FAILURE
+            }
+        },
+        "inspect" => {
+            let Some(id) = args.get(1) else {
+                eprintln!("resource inspect 需要资源 id");
+                return ExitCode::from(2);
+            };
+            match store.inspect(id) {
+                Ok(status) => {
+                    println!("资源    {}", status.id);
+                    println!(
+                        "激活    {}",
+                        status.active.unwrap_or_else(|| "（无）".to_string())
+                    );
+                    println!("历史    [{}]", status.history.join(", "));
+                    for version in status.versions {
+                        println!(
+                            "版本    {}{}  {}  {}  {}",
+                            version.version,
+                            if version.active { "（激活）" } else { "" },
+                            version.kind.as_str(),
+                            version.payload_schema,
+                            version.path.display()
+                        );
+                    }
+                    ExitCode::SUCCESS
+                }
+                Err(err) => {
+                    eprintln!("查询失败：{err}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        "activate" => {
+            let (Some(id), Some(version)) = (args.get(1), args.get(2)) else {
+                eprintln!("resource activate 需要 <id> <version>");
+                return ExitCode::from(2);
+            };
+            match store.activate(id, version) {
+                Ok(()) => {
+                    println!("已激活 {id}@{version}");
+                    ExitCode::SUCCESS
+                }
+                Err(err) => {
+                    eprintln!("激活失败：{err}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        "rollback" => {
+            let Some(id) = args.get(1) else {
+                eprintln!("resource rollback 需要 <id>");
+                return ExitCode::from(2);
+            };
+            match store.rollback(id) {
+                Ok(version) => {
+                    println!("已回滚 {id} 到 {version}");
+                    ExitCode::SUCCESS
+                }
+                Err(err) => {
+                    eprintln!("回滚失败：{err}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        "uninstall" => {
+            let (Some(id), Some(version)) = (args.get(1), args.get(2)) else {
+                eprintln!("resource uninstall 需要 <id> <version>");
+                return ExitCode::from(2);
+            };
+            match store.uninstall(id, version) {
+                Ok(()) => {
+                    println!("已删除 {id}@{version}");
+                    ExitCode::SUCCESS
+                }
+                Err(err) => {
+                    // 拒绝删除激活版本属于正常保护，不是崩溃
+                    eprintln!("卸载失败：{err}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        "cleanup" => {
+            let Some(id) = args.get(1) else {
+                eprintln!("resource cleanup 需要 <id> [--keep <n>]");
+                return ExitCode::from(2);
+            };
+            let keep = args
+                .iter()
+                .position(|a| a == "--keep")
+                .and_then(|pos| args.get(pos + 1))
+                .and_then(|v| v.parse::<usize>().ok())
+                .unwrap_or(1);
+            match store.cleanup(id, keep) {
+                Ok(removed) if removed.is_empty() => {
+                    println!("没有需要清理的版本");
+                    ExitCode::SUCCESS
+                }
+                Ok(removed) => {
+                    println!("已删除：{}", removed.join(", "));
+                    ExitCode::SUCCESS
+                }
+                Err(err) => {
+                    eprintln!("清理失败：{err}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        other => {
+            eprintln!("未知 resource 子命令：{other}");
+            ExitCode::from(2)
         }
     }
 }

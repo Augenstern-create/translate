@@ -13,6 +13,9 @@
 //! | `nfkc` | 可配置规范化 | 否（需显式开启，不做无条件 NFKC） |
 //! | `replace` | 术语表替换、缩写展开 | 是，因此**必须**带金样本 |
 //!
+//! 两种动作都**不会**碰到受保护跨度（URL / 邮箱 / `{模板变量}` / 反引号代码）：
+//! 引擎按 `translator_core::text::split_protected` 切分后只在纯文本片段上执行。
+//!
 //! 未实现：分句、词形（需要 Lindera 与词典授权）、正则类匹配。
 //! 正则未做是**有意的**——§7.3 明确要求防止灾难性回溯，而一个不带超时/长度限制的
 //! 正则引擎恰好是这个风险的来源；宁可不做，也不做一个能拖死 UI 线程的版本。
@@ -42,6 +45,8 @@
 
 use std::fmt;
 use std::path::Path;
+
+pub mod migrate;
 
 use serde::Deserialize;
 use translator_core::rules::{RuleOutcome, TextRules};
@@ -93,7 +98,7 @@ pub enum RuleError {
         detail: String,
     },
     /// 规则执行语义版本不受支持（防止旧规则包被静默改变行为）。
-    UnsupportedPipeline(u16),
+    UnsupportedPipelineVersion(u16),
     /// 规则没有金样本。§7.2 要求规则必须带测试样本。
     MissingSamples(String),
     /// 金样本未通过。
@@ -123,7 +128,7 @@ impl fmt::Display for RuleError {
                 write!(f, "规则 {rule} 的语言对非法：{detail}")
             }
             Self::InvalidRule { rule, detail } => write!(f, "规则 {rule} 不合法：{detail}"),
-            Self::UnsupportedPipeline(v) => write!(
+            Self::UnsupportedPipelineVersion(v) => write!(
                 f,
                 "不支持的规则执行语义 pipeline_version={v}（本 SDK 为 {CURRENT_PIPELINE_VERSION}）：\
                  旧语义允许规则改写 URL/邮箱/代码，已废弃，请补 pipeline_version 后重新校验金样本"
@@ -362,7 +367,7 @@ impl RuleEngine {
         }
         let pipeline_version = spec.pipeline_version.unwrap_or(CURRENT_PIPELINE_VERSION);
         if pipeline_version != CURRENT_PIPELINE_VERSION {
-            return Err(RuleError::UnsupportedPipeline(pipeline_version));
+            return Err(RuleError::UnsupportedPipelineVersion(pipeline_version));
         }
         if spec.id.trim().is_empty() {
             return Err(RuleError::EmptyId);
@@ -403,47 +408,17 @@ impl RuleEngine {
         Ok(engine)
     }
 
+    /// 规则包里的金样本总数（迁移报告用）。
+    pub fn sample_count(&self) -> usize {
+        self.rules.iter().map(|r| r.samples.len()).sum()
+    }
+
     /// 从二进制形态编译。
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, RuleError> {
-        if bytes.len() < HEADER_LEN + HASH_LEN {
-            return Err(RuleError::Corrupt(format!(
-                "长度不足：{} 字节",
-                bytes.len()
-            )));
-        }
-        if &bytes[..MAGIC.len()] != MAGIC {
-            return Err(RuleError::Corrupt("magic 不匹配".to_string()));
-        }
-
-        let schema = u16::from_le_bytes([bytes[6], bytes[7]]);
-        if schema != SCHEMA_VERSION {
-            return Err(RuleError::UnsupportedSchema(schema));
-        }
-
-        let header_version = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]);
-        let payload_len = u32::from_le_bytes([bytes[12], bytes[13], bytes[14], bytes[15]]) as usize;
-
-        let payload_end = HEADER_LEN
-            .checked_add(payload_len)
-            .ok_or_else(|| RuleError::Corrupt("payload 长度溢出".to_string()))?;
-        if bytes.len() != payload_end + HASH_LEN {
-            return Err(RuleError::Corrupt(format!(
-                "长度不一致：声明 {payload_len} 字节 payload，实际 {} 字节",
-                bytes.len()
-            )));
-        }
-
-        let payload = &bytes[HEADER_LEN..payload_end];
-        let expected = &bytes[payload_end..];
-        if sha256(payload).as_slice() != expected {
-            return Err(RuleError::Corrupt("payload 校验和不匹配".to_string()));
-        }
-
-        let json = std::str::from_utf8(payload)
-            .map_err(|e| RuleError::Corrupt(format!("payload 不是 UTF-8：{e}")))?;
-        let engine = Self::from_json(json)?;
-
+        let json = binary_payload(bytes)?;
+        let engine = Self::from_json(&json)?;
         // 头部版本与 payload 版本必须一致，防止拼装出错包
+        let header_version = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]);
         if engine.version != header_version {
             return Err(RuleError::Corrupt(format!(
                 "头部版本 {header_version} 与 payload 版本 {} 不一致",
@@ -546,6 +521,10 @@ impl RuleEngine {
     }
 
     /// 执行规则；`stop_after` 为包含式上限（金样本验证用）。
+    ///
+    /// **受保护跨度在这里被跳过**：URL / 邮箱 / `{模板变量}` / 反引号代码里的内容
+    /// 规则看不到，原样保留。把保护放在引擎内部（而不是只放在协调器里）是刻意的：
+    /// 只有这样，金样本校验的才是**真实行为**，否则样例可以"通过"而线上却改坏 URL。
     fn run(
         &self,
         input: &str,
@@ -558,21 +537,33 @@ impl RuleEngine {
             None => self.rules.len(),
         };
 
-        let mut current = input.to_string();
-        let mut applied = Vec::new();
-        for rule in self.rules.iter().take(limit) {
-            if !rule.matches(&current, source, target) {
-                continue;
-            }
-            let next = rule.apply(&current);
-            if next != current {
-                applied.push(rule.id.clone());
-                current = next;
+        let mut out = String::with_capacity(input.len());
+        let mut applied: Vec<String> = Vec::new();
+
+        for segment in translator_core::text::split_protected(input) {
+            match segment {
+                translator_core::text::Segment::Plain(plain) => {
+                    let mut current = plain.to_string();
+                    for rule in self.rules.iter().take(limit) {
+                        if !rule.matches(&current, source, target) {
+                            continue;
+                        }
+                        let next = rule.apply(&current);
+                        if next != current {
+                            if !applied.iter().any(|id| id == &rule.id) {
+                                applied.push(rule.id.clone());
+                            }
+                            current = next;
+                        }
+                    }
+                    out.push_str(&current);
+                }
+                translator_core::text::Segment::Protected(protected) => out.push_str(protected),
             }
         }
 
         RuleOutcome {
-            text: current,
+            text: out,
             applied,
             warnings: Vec::new(),
         }
@@ -760,6 +751,47 @@ fn replace_term(text: &str, from: &str, to: &str, whole_word: bool) -> String {
 
 fn is_word_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
+}
+
+/// 校验二进制头部与哈希，返回 payload JSON。
+///
+/// `from_bytes` 与 `migrate::inspect_bytes` 共用，避免两处各自解析头部而出现分歧。
+pub(crate) fn binary_payload(bytes: &[u8]) -> Result<String, RuleError> {
+    if bytes.len() < HEADER_LEN + HASH_LEN {
+        return Err(RuleError::Corrupt(format!(
+            "长度不足：{} 字节",
+            bytes.len()
+        )));
+    }
+    if &bytes[..MAGIC.len()] != MAGIC {
+        return Err(RuleError::Corrupt("magic 不匹配".to_string()));
+    }
+
+    let schema = u16::from_le_bytes([bytes[6], bytes[7]]);
+    if schema != SCHEMA_VERSION {
+        return Err(RuleError::UnsupportedSchema(schema));
+    }
+
+    let payload_len = u32::from_le_bytes([bytes[12], bytes[13], bytes[14], bytes[15]]) as usize;
+    let payload_end = HEADER_LEN
+        .checked_add(payload_len)
+        .ok_or_else(|| RuleError::Corrupt("payload 长度溢出".to_string()))?;
+    if bytes.len() != payload_end + HASH_LEN {
+        return Err(RuleError::Corrupt(format!(
+            "长度不一致：声明 {payload_len} 字节 payload，实际 {} 字节",
+            bytes.len()
+        )));
+    }
+
+    let payload = &bytes[HEADER_LEN..payload_end];
+    let expected = &bytes[payload_end..];
+    if sha256(payload).as_slice() != expected {
+        return Err(RuleError::Corrupt("payload 校验和不匹配".to_string()));
+    }
+
+    std::str::from_utf8(payload)
+        .map(str::to_string)
+        .map_err(|e| RuleError::Corrupt(format!("payload 不是 UTF-8：{e}")))
 }
 
 fn sha256(bytes: &[u8]) -> [u8; HASH_LEN] {
@@ -1103,7 +1135,7 @@ mod tests {
         }"#;
         let err = RuleEngine::from_json(json).unwrap_err();
         assert!(
-            matches!(err, RuleError::UnsupportedPipeline(1)),
+            matches!(err, RuleError::UnsupportedPipelineVersion(1)),
             "实际：{err}"
         );
     }

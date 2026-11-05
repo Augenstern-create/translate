@@ -233,6 +233,15 @@ impl TranslatorBuilder {
         self
     }
 
+    /// 严格占位符恢复：关键占位符（URL/邮箱/代码/模板变量）没能还原时，
+    /// 直接返回 `IntegrityFailure` 错误，而不是给出缺内容的译文。
+    ///
+    /// 默认关闭（与 P0/P1 行为一致）。开启后不再"降级返回"，见 ADR-009。
+    pub fn strict_placeholder_restore(mut self, strict: bool) -> Self {
+        self.config.strict_placeholder_restore = strict;
+        self
+    }
+
     /// 手动指定规则版本。仅在**没有**注入 `rules` 时生效
     /// （注入了规则包时以规则包自报版本为准）。
     pub fn rules_version(mut self, version: u32) -> Self {
@@ -243,6 +252,9 @@ impl TranslatorBuilder {
     /// 构造门面。注册阶段积累的错误在这里一次性暴露，
     /// 避免把错误分散到每个 builder 方法里。
     pub fn build(mut self) -> Result<Translator, TranslationError> {
+        // 已挂载资源的 `id@version`，用于缓存隔离（ADR-011）
+        let mut fingerprint: Vec<String> = Vec::new();
+
         // 先挂载词典包：把包内引擎与查词提供者注册进同一个注册表
         #[cfg(feature = "dictionary")]
         {
@@ -250,6 +262,13 @@ impl TranslatorBuilder {
             for root in roots {
                 match translator_dictionary::open_as_plugins(&root) {
                     Ok((engine, provider)) => {
+                        // 指纹取自清单（只读 manifest.json，不重复打开索引/数据库）
+                        match translator_dictionary::read_manifest(&root) {
+                            Ok(manifest) => {
+                                fingerprint.push(format!("{}@{}", manifest.id, manifest.version));
+                            }
+                            Err(e) => self.errors.push(TranslationError::from(e)),
+                        }
                         if let Err(e) = self.registry.register_engine(engine) {
                             self.errors.push(e);
                         }
@@ -266,11 +285,14 @@ impl TranslatorBuilder {
             return Err(err);
         }
 
+        if let Some(rules) = &self.rules {
+            fingerprint.push(format!("{}@{}", rules.id(), rules.version()));
+        }
         self.config.rules = self.rules.take();
 
-        Ok(Translator {
-            coordinator: Coordinator::new(Arc::new(self.registry), self.config),
-        })
+        let mut coordinator = Coordinator::new(Arc::new(self.registry), self.config);
+        coordinator.bind_resource_fingerprint(fingerprint.join(";"));
+        Ok(Translator { coordinator })
     }
 }
 

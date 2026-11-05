@@ -99,10 +99,44 @@ impl ProtectedText {
     }
 }
 
+/// 受保护内容的种类。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProtectedKind {
+    Url,
+    Email,
+    /// `{name}` 形式的模板变量。
+    TemplateVar,
+    /// 反引号代码片段。
+    Code,
+}
+
+/// 原文里的一段受保护区间。
+///
+/// `start` / `end` 是**字节偏移**，作用域是**传入 `protected_spans()` 的那份文本**。
+///
+/// # 偏移作用域（重要）
+///
+/// 流水线里先做 `normalize()`（折叠空白）再切分跨度，因此偏移是相对**规范化之后**的文本，
+/// 不能直接用于用户原始输入。目前**不提供**回到原文的偏移映射：
+/// 该映射需要规范化保留字符级对应关系（`normalize_with_map`），只有"高亮用户原文"这类需求才需要它。
+/// 如果将来要加，规则是：先 `normalize_with_map()` 得到映射表，再把跨度换算回原文；
+/// 不允许在未映射的情况下把规范化偏移当作原文偏移使用。
+///
+/// # 不暴露给 NMT 插件
+///
+/// 这个类型只在 SDK 内部使用。P3 接入真实 Marain/Bergamot 时，才根据 tokenizer 行为
+/// 决定用文本标记、分段翻译还是别的机制跨过模型边界（ADR-009）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProtectedSpan {
+    pub start: usize,
+    pub end: usize,
+    pub kind: ProtectedKind,
+}
+
 /// 文本片段。
 ///
 /// 规则引擎**只能**改写 `Plain` 片段：URL、邮箱、模板变量、代码里的内容
-/// 必须字节级保持不变（设计文档 §6/§7.3，审查建议 R-01）。
+/// 必须字节级保持不变（设计文档 §6/§7.3，ADR-009）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Segment<'a> {
     /// 普通文本，允许规则改写。
@@ -116,45 +150,60 @@ pub enum Segment<'a> {
 /// 这是 `protect()` 与「规则只在纯文本上生效」共用的**唯一**扫描器，
 /// 避免两套正则各自演化、最终对不上。
 pub fn split_protected(input: &str) -> Vec<Segment<'_>> {
+    let spans = protected_spans(input);
+    let mut out = Vec::with_capacity(spans.len() * 2 + 1);
+    let mut cursor = 0usize;
+
+    for span in spans {
+        if span.start > cursor {
+            out.push(Segment::Plain(&input[cursor..span.start]));
+        }
+        out.push(Segment::Protected(&input[span.start..span.end]));
+        cursor = span.end;
+    }
+
+    if cursor < input.len() {
+        out.push(Segment::Plain(&input[cursor..]));
+    }
+    out
+}
+
+/// 扫描受保护区间。这是 URL / 邮箱 / `{模板变量}` / 反引号代码的**唯一**识别入口。
+pub fn protected_spans(input: &str) -> Vec<ProtectedSpan> {
     let chars: Vec<(usize, char)> = input.char_indices().collect();
     let byte_at = |idx: usize| chars.get(idx).map_or(input.len(), |(b, _)| *b);
 
     let mut out = Vec::new();
-    let mut plain_start = 0usize;
     let mut i = 0usize;
 
     while i < chars.len() {
         let (byte_pos, c) = chars[i];
 
-        let end = if starts_with_url(&chars, i) {
-            url_end(&chars, i)
+        let found = if starts_with_url(&chars, i) {
+            url_end(&chars, i).map(|end| (end, ProtectedKind::Url))
         } else if c == '{' {
-            brace_end(&chars, i)
+            brace_end(&chars, i).map(|end| (end, ProtectedKind::TemplateVar))
         } else if c == '`' {
-            backtick_end(&chars, i)
+            backtick_end(&chars, i).map(|end| (end, ProtectedKind::Code))
         } else if is_email_char(c) && is_token_start(&chars, i) {
-            email_end(&chars, i)
+            email_end(&chars, i).map(|end| (end, ProtectedKind::Email))
         } else {
             None
         };
 
-        match end {
-            Some(end_idx) => {
-                if byte_pos > plain_start {
-                    out.push(Segment::Plain(&input[plain_start..byte_pos]));
-                }
-                let end_byte = byte_at(end_idx);
-                out.push(Segment::Protected(&input[byte_pos..end_byte]));
-                plain_start = end_byte;
+        match found {
+            Some((end_idx, kind)) => {
+                out.push(ProtectedSpan {
+                    start: byte_pos,
+                    end: byte_at(end_idx),
+                    kind,
+                });
                 i = end_idx;
             }
             None => i += 1,
         }
     }
 
-    if plain_start < input.len() {
-        out.push(Segment::Plain(&input[plain_start..]));
-    }
     out
 }
 
@@ -348,6 +397,31 @@ mod tests {
             })
             .collect();
         assert_eq!(rebuilt, text);
+    }
+
+    #[test]
+    fn 受保护跨度带类型与字节偏移() {
+        let text = "x https://a.example/p y a@b.com z {v} `c`";
+        let spans = protected_spans(text);
+        let kinds: Vec<(ProtectedKind, &str)> = spans
+            .iter()
+            .map(|s| (s.kind, &text[s.start..s.end]))
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                (ProtectedKind::Url, "https://a.example/p"),
+                (ProtectedKind::Email, "a@b.com"),
+                (ProtectedKind::TemplateVar, "{v}"),
+                (ProtectedKind::Code, "`c`"),
+            ]
+        );
+        // 偏移必须是字节偏移，且切片不 panic
+        for span in &spans {
+            assert!(span.start < span.end);
+            assert!(span.end <= text.len());
+            assert!(text.is_char_boundary(span.start) && text.is_char_boundary(span.end));
+        }
     }
 
     #[test]

@@ -1,7 +1,7 @@
 # 轻量跨平台混合翻译 SDK — 完整软件开发设计文档
 
-> 文档版本：v1.0（架构基线 / 尚未实施）  
-> 编写日期：2026-11-05  
+> 文档版本：v1.1（架构基线；ADR 增补见 §14 与文末修订记录）  
+> 编写日期：2026-11-05（v1.1 修订 2026-11-05）  
 > 交付形式：Rust Library SDK；**不实现 UI**，但预留桌面、Android、命令行及服务端适配接口  
 > 目标平台：Windows x86_64、Ubuntu Linux x86_64/aarch64、macOS aarch64/x86_64、Android arm64-v8a
 
@@ -255,6 +255,7 @@ pub trait LoadedModel: Send + Sync {
 
 ```text
 Validate request → Normalize → Language ID (optional)
+   → Split protected spans (URL / email / code / {placeholder}) → Rules (plain text only)
    → Protect placeholders/code/URLs → Cache lookup
    → Select eligible engines by policy + capabilities + resource budget
    → Dictionary (only safe exact lexeme / fixed-phrase match)
@@ -273,7 +274,11 @@ Validate request → Normalize → Language ID (optional)
 5. 仅当请求策略明确允许且宿主已经授予联网许可时，才可选择远程引擎。
 6. 缓存键必须包含规范化文本哈希、源/目标语言、引擎和模型版本、术语表版本、规则版本、解码配置、隐私隔离域。
 
-不得把逐词词典的命中当作整句译文，也不得对代码占位符进行破坏性的自动翻译。未能确保占位符恢复时返回警告或错误。
+不得把逐词词典的命中当作整句译文，也不得对代码占位符进行破坏性的自动翻译。未能确保占位符恢复时返回警告或错误；
+关键占位符（URL/邮箱/代码/模板变量）在严格模式下必须失败而不是降级（ADR-009）。
+
+规则**只作用于受保护跨度之外的纯文本**（ADR-009）。这条排在 `Protect` 之前不是顺序偏好，而是安全要求：
+规则先跑就会把 `https://example.com/LLM` 改坏，而之后再做保护已经晚了一步。
 
 ## 7. 字典、语言检测、规则系统
 
@@ -289,6 +294,16 @@ Validate request → Normalize → Language ID (optional)
 ### 7.2 规则引擎范围
 
 只做低成本、可测试的规则：NFC/NFKC 可配置规范化（不能全局无条件 NFKC）、大小写/标点、缩写、词形、分句、术语表替换或约束、URL/邮箱/代码/变量保护、基于语言对的策略。**完整句子仍交给 NMT**。规则格式采用 YAML/JSON 开发，构建时编译为只读二进制，包含 `schema_version`、语言对、优先级、匹配条件和测试样本。可选解析器如 Lindera，但要核实底层词形词典授权和移动端体积。
+
+三条硬约束（ADR-009，P1 已实现）：
+
+1. **规则必须尊重受保护跨度**：URL、邮箱、代码、`{模板变量}` 的内容对规则不可见，字节级不变。
+2. **执行语义必须有版本**：规则包声明 `pipeline_version`；当前语义为 2（跳过受保护跨度）。
+   声明 1 的旧包**不可执行**（返回 `UnsupportedPipelineVersion`），不自动迁移、不静默降级。
+3. **旧包仍可被资源管理器识别、查看元数据与迁移，但不可执行**；迁移工具必须重新跑通金样本才产出新包。
+
+兼容 v1 词典数据格式（ADR-010）与允许执行 `pipeline_version: 1` 的规则包是**两件独立的事**：
+前者是数据格式，后者是不安全行为。
 
 ### 7.3 安全规则示例
 
@@ -308,7 +323,12 @@ exact_phrase_policy:
   require_full_match: true
 ```
 
-规则变更必须通过金样本测试，不允许默认启用会改变语义的任意正则替换。输入属于不可信数据，限制规则执行时间/长度，防止灾难性回溯。
+规则变更必须通过金样本测试，不允许默认启用会改变语义的任意正则替换。输入属于不可信数据，必须限制规则执行时间/长度与匹配次数。
+
+**关于正则的表述更正（2026-11-05 审查）**：不能把"不做正则"的理由写成"正则可能灾难性回溯"。
+Rust `regex` 采用有限自动机，时间线性，不存在 PCRE 式回溯爆炸。暂缓正则 DSL 的真实理由是：
+规则语言越通用越难审计语义、规则包不应具备任意匹配能力、以及在没有真实需求前无法量化
+输入长度/匹配次数/输出尺寸的上限（ADR-014）。
 
 ## 8. NMT 模型、运行时与兼容矩阵
 
@@ -456,6 +476,23 @@ NotInstalled -> Installed/Unloaded -> Loading -> Ready -> InUse
 - ADR-005：按语言包部署小模型优先于巨型单模型常驻；高级多语言模型选装。
 - ADR-006：Resource Manager 按租约与内存预算管理生命周期，不由 UI 控制 raw native handle。
 - ADR-007：任何推理后端切换必须通过契约/质量/性能回归测试。
+- ADR-008（Accepted）：规则 trace 走独立诊断通道，不扩公开枚举。理由：给 `TranslationWarning` 加变体会破坏宿主穷尽 `match`；诊断需要与具体请求关联的快照（`translate_with_diagnostics`），而不是重演的 `explain_rules()`。
+- ADR-009（Accepted，P1 已实现）：规则必须尊重受保护文本跨度。URL/邮箱/代码/模板变量对规则不可见；规则执行语义有版本号，旧语义（`pipeline_version: 1`）不可执行。
+- ADR-010（Accepted，P2.1 已实现）：`manifest_schema_version` 与 `payload_schema_version` 分离。资源协议与词典存储 schema 独立演进；v1 包只读兼容（已实现且用真实 CC-CEDICT 包验证）；v2 的打包工具与迁移脚本尚未实现。
+- ADR-011（Proposed，P2.4 落地）：按资源版本构造执行计划与缓存键。缓存键包含执行计划指纹，Mock 与真实引擎不共享命中空间。
+- ADR-012（Proposed，P2.2 已实现一半）：资源激活采用版本化目录 + 租约 + 原子切换。**已实现**：版本化目录、原子切换、失败自动清理、崩溃恢复（清理 staging）、激活版本拒删；**未实现**：租约（P2.3），因此"活跃请求持有旧版本继续完成"目前靠"安装不夺取激活位 + 旧版本只能显式删除"来保守保证。
+- ADR-013（Proposed，P2.3 落地）：内存预算以软限制 + 准入控制 + 回收为主。跨平台 native/GPU 分配无法靠用户态计数硬保证，不得宣传为硬上限。
+- ADR-014（Accepted）：正则 DSL 暂缓，保留 `PatternMatcher` 扩展点。理由见 §7.3 的更正说明。
+
+> 状态含义：**Accepted** = 已决定并（如注明）已实现；**Proposed** = 已决定方向但尚未实现，写入 ADR 不等于已验证；
+> **Deferred** = 明确延后。上表未标注 Deferred 的项均须在对应阶段交付。
+
+### 14.1 修订记录
+
+| 版本 | 日期 | 变更 |
+|---|---|---|
+| v1.0 | 2026-11-05 | 架构基线 |
+| v1.1 | 2026-11-05 | 新增 ADR-008～014；§6 流水线补「受保护跨度 → 规则（仅纯文本）」；§7.2 增补规则三硬约束与 `pipeline_version`；§7.3 更正正则相关表述 |
 
 ## 15. 主要风险与应对
 

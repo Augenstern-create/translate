@@ -29,6 +29,11 @@ pub struct CacheKey {
     pub decode_config: String,
     /// 隐私隔离域：不同隐私上下文不得共享缓存。
     pub privacy_domain: String,
+    /// 已挂载资源的指纹（`id@version`）。
+    ///
+    /// 资源版本变化必须让旧缓存失效（ADR-011）；P2.4 会把它换成
+    /// `ResolvedExecutionPlan` 的稳定指纹。
+    pub resource_fingerprint: String,
 }
 
 impl CacheKey {
@@ -38,6 +43,7 @@ impl CacheKey {
         source: &str,
         engine_id: &str,
         rules_version: u32,
+        resource_fingerprint: &str,
     ) -> Self {
         let mut hasher = DefaultHasher::new();
         normalized_text.hash(&mut hasher);
@@ -52,6 +58,7 @@ impl CacheKey {
             rules_version,
             decode_config: "default".to_string(),
             privacy_domain: "default".to_string(),
+            resource_fingerprint: resource_fingerprint.to_string(),
         }
     }
 }
@@ -127,7 +134,30 @@ mod tests {
 
     fn sample_key(text: &str) -> CacheKey {
         let req = TranslateRequest::new(text, LanguageTag::new("zh-Hans").unwrap());
-        CacheKey::new(text, &req, "en", "mock.nmt", 1)
+        CacheKey::new(text, &req, "en", "mock.nmt", 1, "")
+    }
+
+    #[test]
+    fn 资源指纹不同不得共享缓存() {
+        let target = LanguageTag::new("zh-Hans").unwrap();
+        let req = TranslateRequest::new("hi", target);
+        let a = CacheKey::new(
+            "hi",
+            &req,
+            "en",
+            "dictionary.package",
+            1,
+            "dict.zh-en@0.1.0",
+        );
+        let b = CacheKey::new(
+            "hi",
+            &req,
+            "en",
+            "dictionary.package",
+            1,
+            "dict.zh-en@0.2.0",
+        );
+        assert_ne!(a, b, "换资源版本后必须换缓存键（ADR-011）");
     }
 
     #[test]
@@ -156,8 +186,8 @@ mod tests {
     #[test]
     fn 不同引擎不得共享缓存() {
         let req = TranslateRequest::new("hi", LanguageTag::new("zh-Hans").unwrap());
-        let a = CacheKey::new("hi", &req, "en", "mock.nmt", 1);
-        let b = CacheKey::new("hi", &req, "en", "mock.dictionary", 1);
+        let a = CacheKey::new("hi", &req, "en", "mock.nmt", 1, "");
+        let b = CacheKey::new("hi", &req, "en", "mock.dictionary", 1, "");
         assert_ne!(a, b);
     }
 
@@ -165,8 +195,8 @@ mod tests {
     fn 不同术语表不得共享缓存() {
         let base = TranslateRequest::new("hi", LanguageTag::new("zh-Hans").unwrap());
         let with_glossary = base.clone().with_glossary("g1");
-        let a = CacheKey::new("hi", &base, "en", "mock.nmt", 1);
-        let b = CacheKey::new("hi", &with_glossary, "en", "mock.nmt", 1);
+        let a = CacheKey::new("hi", &base, "en", "mock.nmt", 1, "");
+        let b = CacheKey::new("hi", &with_glossary, "en", "mock.nmt", 1, "");
         assert_ne!(a, b);
     }
 

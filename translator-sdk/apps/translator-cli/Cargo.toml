@@ -13,5 +13,6 @@ path = "src/main.rs"
 # 注意：CLI 启用 mocks feature，因此这个二进制**完全不需要任何真实模型**
 translator-api = { workspace = true, features = ["mocks", "dictionary", "rules"] }
 translator-types.workspace = true
+translator-resource.workspace = true
 translator-plugin-api = { workspace = true, features = ["mocks"] }
 pollster.workspace = true

@@ -198,6 +198,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "migrate-rules"
+version = "0.1.0"
+dependencies = [
+ "translator-rules",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -413,6 +420,7 @@ dependencies = [
  "pollster",
  "translator-api",
  "translator-plugin-api",
+ "translator-resource",
  "translator-types",
 ]
 
@@ -449,6 +457,16 @@ version = "0.1.0"
 dependencies = [
  "pollster",
  "translator-types",
+]
+
+[[package]]
+name = "translator-resource"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
 ]
 
 [[package]]

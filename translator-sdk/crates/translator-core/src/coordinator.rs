@@ -30,6 +30,13 @@ pub struct CoordinatorConfig {
     pub rules_version: u32,
     /// 文本规则包。`None` 表示不做任何规则处理。
     pub rules: Option<Arc<dyn TextRules>>,
+    /// 占位符恢复失败时是否直接报错。
+    ///
+    /// 默认 `false`：只发 `PlaceholderRestoreFailed` 警告（P0 行为）。
+    /// 置 `true` 时，只要有关键占位符（URL/邮箱/代码/模板变量）没能还原，
+    /// 就返回 `IntegrityFailure` 错误而不是返回一份缺内容的译文。
+    /// 判断"关键"的依据来自 `translate` 拿到的警告与 span 数量，不依赖引擎配合。
+    pub strict_placeholder_restore: bool,
 }
 
 impl Default for CoordinatorConfig {
@@ -38,6 +45,7 @@ impl Default for CoordinatorConfig {
             cache_capacity: 256,
             rules_version: 1,
             rules: None,
+            strict_placeholder_restore: false,
         }
     }
 }
@@ -48,6 +56,8 @@ pub struct Coordinator {
     config: CoordinatorConfig,
     /// 实际参与缓存键的规则版本（规则包自报版本优先）。
     effective_rules_version: u32,
+    /// 实际参与缓存键的资源指纹（挂载的词典/规则包 id@version）。
+    resource_fingerprint: String,
 }
 
 impl Coordinator {
@@ -63,12 +73,28 @@ impl Coordinator {
             cache: Mutex::new(QueryCache::new(capacity)),
             config,
             effective_rules_version,
+            resource_fingerprint: String::new(),
         }
     }
 
     /// 规则包版本（参与缓存键与诊断输出）。
     pub fn rules_version(&self) -> u32 {
         self.effective_rules_version
+    }
+
+    /// 绑定已挂载资源的指纹（`id@version` 用 `;` 连接）。
+    ///
+    /// 资源版本变化必须让旧缓存失效（ADR-011）。目前资源在构建期绑定，
+    /// 换版本等于换 `Translator`（自然是新缓存）；这里仍把指纹写进键，
+    /// 是为了将来支持热替换时不会静默读到旧结果。
+    pub fn bind_resource_fingerprint(&mut self, fingerprint: impl Into<String>) {
+        let fingerprint = fingerprint.into();
+        if !fingerprint.is_empty() {
+            self.resource_fingerprint = fingerprint;
+        }
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.clear();
+        }
     }
 
     /// 预览规则包对输入文本的作用，不执行翻译。
@@ -232,6 +258,7 @@ impl Coordinator {
             source.as_str(),
             &outcome.decision.engine_id,
             self.effective_rules_version,
+            &self.resource_fingerprint,
         );
 
         if let Ok(cache) = self.cache.lock() {
@@ -258,6 +285,17 @@ impl Coordinator {
 
         // 8) 占位符还原；丢失必须告警，不得静默
         let (restored, missing) = text::restore(&protected, &result.text);
+        if !missing.is_empty() && self.config.strict_placeholder_restore {
+            // 严格模式：宁可不给译文，也不返回缺内容的译文
+            return Err(TranslationError::new(
+                TranslationErrorCode::IntegrityFailure,
+                format!(
+                    "占位符恢复失败（严格模式）：{} 个受保护片段未被引擎保留：{}",
+                    missing.len(),
+                    missing.join(", ")
+                ),
+            ));
+        }
         if !missing.is_empty() {
             result
                 .warnings
@@ -292,10 +330,9 @@ impl Coordinator {
 
     /// 应用规则包。返回 (处理后文本, 实际生效的规则 id)。
     ///
-    /// 规则**只作用在纯文本片段上**：URL、邮箱、`{模板变量}`、反引号代码里的内容
-    /// 必须字节级不变（设计文档 §6/§7.3，审查建议 R-01）。
-    /// 否则一条 `LLM → large language model` 的规则会把
-    /// `https://example.com/LLM` 改坏，而后面再保护已经来不及。
+    /// 受保护跨度（URL / 邮箱 / `{模板变量}` / 反引号代码）的跳过由规则引擎自己保证
+    /// （`TextRules::apply` 的契约），这里只负责调用与去重。这样"金样本校验的行为"
+    /// 与"线上行为"是同一套实现，不会出现样例通过、线上改坏的情况。
     fn apply_rules(
         &self,
         text: &str,
@@ -305,27 +342,8 @@ impl Coordinator {
         let Some(rules) = &self.config.rules else {
             return Ok((text.to_string(), Vec::new()));
         };
-
-        let mut out = String::with_capacity(text.len());
-        let mut applied: Vec<String> = Vec::new();
-
-        for segment in text::split_protected(text) {
-            match segment {
-                text::Segment::Plain(plain) => {
-                    let outcome = rules.apply(plain, source, target);
-                    out.push_str(&outcome.text);
-                    for id in outcome.applied {
-                        if !applied.contains(&id) {
-                            applied.push(id);
-                        }
-                    }
-                }
-                // 受保护片段原样保留，规则看不到它的内容
-                text::Segment::Protected(protected) => out.push_str(protected),
-            }
-        }
-
-        Ok((out, applied))
+        let outcome = rules.apply(text, source, target);
+        Ok((outcome.text, outcome.applied))
     }
 
     fn should_fallback(

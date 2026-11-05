@@ -416,6 +416,20 @@ impl std::fmt::Debug for DictionaryPackage {
     }
 }
 
+/// 只读清单（不打开索引与数据库）。
+///
+/// 资源管理器与缓存指纹需要 id/version 时用它，避免为了取一个版本号
+/// 就把 mmap 和 SQLite 都打开一遍。
+pub fn read_manifest(root: impl AsRef<Path>) -> Result<DictionaryManifest, DictionaryError> {
+    let path = root.as_ref().join("manifest.json");
+    let text = std::fs::read_to_string(&path).map_err(|e| {
+        DictionaryError::InvalidPackage(format!("无法读取 {}: {e}", path.display()))
+    })?;
+    let manifest: DictionaryManifest = serde_json::from_str(&text)?;
+    manifest.validate()?;
+    Ok(manifest)
+}
+
 /// 计算文件 sha256。
 pub fn sha256_file(path: impl AsRef<Path>) -> Result<String, DictionaryError> {
     use sha2::{Digest, Sha256};

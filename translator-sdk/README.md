@@ -9,10 +9,11 @@
 - `03_P0骨架与验证报告.md` — P0 骨架与验证证据
 - `04_P1_字典与离线查词报告.md` — P1 词典包格式、基准与限制清单
 - `05_审查响应与P2实施计划.md` — 外部审查的逐条处置、ADR-008~014、P2 拆解与验收映射
+- `06_P2.1-P2.2_资源协议与仓库报告.md` — 资源协议（v1/v2 双版本号）、安装/激活/回滚、偏差清单
 
 ---
 
-## 当前状态：P0 骨架 + P1（离线查词 + 最小规则引擎）已完成
+## 当前状态：P0 + P1 完成；P2.1 + P2.2（资源协议与资源仓库）完成
 
 - **P0**：workspace 结构、核心类型、插件契约、协调器与路由、缓存、门面 API、Mock 插件、CLI。
   **不接任何真实模型、不装任何 native 库**，整条链路即可运行 —— 这是设计文档规定的交付判据。
@@ -22,6 +23,12 @@
 - **P1 规则**：声明式 JSON 规则包（`translator-rules`），构建期编译为带 sha256 的只读二进制，
   **强制金样本校验**（规则改坏了拒绝加载），支持 `nfkc` 与 `replace`（术语替换/缩写展开）两种动作、
   语言对门控、优先级、`contains`/`is_single_word` 条件。短输入开销约 287 ns/次。
+
+- **P2.1**：资源协议 v2（`manifest_schema_version` / `payload_schema_version` 分离）、
+  v1 清单只读兼容、兼容性判定（协议/payload/平台/依赖/kind）、未知版本明确拒收。
+- **P2.2**：资源仓库 `translator-resource`——安装到 staging、逐文件 size+sha256 校验、
+  原子落位、原子写状态、激活/回滚/安全清理、崩溃后清理遗留目录；安装新版本**不夺取激活位**，
+  激活版本拒删（租约留到 P2.3）。
 
 词库与规则都是**可选 feature**：不开 `dictionary` 时 `translator-api` 依赖树里没有 `rusqlite`；
 不开 `rules` 时没有 JSON 解析依赖（但 `TextRules` 契约始终可用，宿主可自己实现）。
@@ -37,11 +44,13 @@ translator-sdk/
 │   ├── translator-analysis/    # 语言识别（当前为启发式，可换 fastText）
 │   ├── translator-rules/       # 声明式规则包：编译、金样本校验、执行
 │   ├── translator-dictionary/  # 词典包读取、FST+SQLite 查询、引擎实现
+│   ├── translator-resource/    # 资源协议（v1/v2）+ 安装/激活/回滚仓库
 │   └── translator-api/         # 唯一对外入口 + Builder
 ├── apps/
 │   └── translator-cli/         # 调试与演示命令行
 ├── tools/
-│   └── pack-dictionary/        # CC-CEDICT → 资源包
+│   ├── pack-dictionary/        # CC-CEDICT → 资源包（v1 清单）
+│   └── migrate-rules/          # 规则包离线迁移（pipeline_version 1 → 2）
 ├── fixtures/                   # 金样本 + 示例规则包（rules/minimal.json）
 ├── resources/                  # 打包产物（体积大，gitignore）
 └── Cargo.toml                  # workspace
@@ -145,6 +154,30 @@ let translator = translator_api::Translator::builder()
 
 规则格式与设计取舍（为什么不做正则、为什么规则 trace 不进 `TranslationResult`）见
 `../docs/04_P1_字典与离线查词报告.md` §5。
+
+旧规则包（`pipeline_version: 1`）**不可执行**，但可以查看与迁移：
+
+```bash
+cargo run --release -p migrate-rules -- old.json --inspect     # 看元数据（不执行）
+cargo run --release -p migrate-rules -- old.json --out new.json # 迁移（金样本不过则失败）
+cargo run --release -p migrate-rules -- new.json --check        # 校验可执行
+```
+
+### 资源仓库：安装 / 激活 / 回滚
+
+```bash
+# 安装（v1 词典包无需重新打包）
+cargo run --release -p translator-cli -- --store .resources resource install resources/zh-en
+cargo run --release -p translator-cli -- --store .resources resource list
+cargo run --release -p translator-cli -- --store .resources resource activate dictionary.cc-cedict.zh-en 0.1.0
+cargo run --release -p translator-cli -- --store .resources resource rollback dictionary.cc-cedict.zh-en
+
+# 直接从激活版本挂载词典（不用记路径）
+cargo run --release -p translator-cli -- --store .resources --dict-id dictionary.cc-cedict.zh-en lookup 计算机
+```
+
+租约与内存预算未实现（P2.3），因此**安装新版本不会自动切换**激活版本，
+旧版本也不会被自动删除。
 
 ## 设计要点（来自设计文档，已在代码中体现）
 
