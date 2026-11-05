@@ -1,7 +1,7 @@
 # 轻量跨平台混合翻译 SDK — 完整软件开发设计文档
 
-> 文档版本：v1.9（架构基线；ADR 增补见 §14 与文末修订记录）  
-> 编写日期：2026-11-05（v1.9 修订 2026-11-05）  
+> 文档版本：v1.10（架构基线；ADR 增补见 §14 与文末修订记录）  
+> 编写日期：2026-11-05（v1.10 修订 2026-11-05）  
 > 交付形式：Rust Library SDK；**不实现 UI**，但预留桌面、Android、命令行及服务端适配接口  
 > 目标平台：Windows x86_64、Ubuntu Linux x86_64/aarch64、macOS aarch64/x86_64、Android arm64-v8a
 
@@ -531,7 +531,7 @@ P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运
 - ADR-025（Accepted，P3.0 已执行）：**先打通原生参考链路，再写 Rust 适配**。顺序是：锁定模型坐标与校验和 → 原生 CLI 出真实译文并记录基线 → 才允许实现 `runtime-bergamot`。理由：参考链路不通时，Rust 侧的"翻译失败"无法区分是 FFI 写错还是模型/配置不对；本次先证明"模型确实能翻"（en→zh-Hans，23/24 金样本），再谈 adapter（`docs/11`）。
 - ADR-026（Proposed，P3.1-B/D 落地）：**模型身份以内容为准，且身份要覆盖整个执行栈**。缓存、实例复用、诊断必须携带一份足以复现译文的摘要集合：**权重内容摘要、Tokenizer/词表摘要、短名单（lexical shortlist）摘要、解码参数（beam、长度惩罚等）、runtime build 标识**；不能只用 `package_id@version`，也不能只摘要权重。同版本不同 hash 视为不同模型。现状（`docs/13` D-02 / `docs/15` D-15 / **`docs/18` §1.2**）：诊断用的 `content_digest = package@version#权重sha256前32位` 仍**只能用于诊断，不得用作缓存键**；P3.1-C/D 新增的 `ResolvedExecutionPlan`（`plan-v1`）已经覆盖本条要求的五项（权重 / tokenizer / 短名单 / 解码参数 / runtime build）与语言方向、保护策略、规则与术语指纹，可算出稳定摘要（ADR-035），P3.2 起真实 NMT **有**缓存了，但键是覆盖五文件的计划摘要而不是 `content_digest`；实测把 `nonbreaking_prefix.en` 改一行，计划摘要从 `dcc88e56…` 变成 `4eba81ed…`，而 `model_id`（`content_digest`）**没有任何变化**（`docs/19` §2.6）——这就是本条结论的直接证据。P2.5 的 `id@version` 指纹缺口仍在（ADR-019/023 已记录）。
 - ADR-027（Accepted，P3.1-A 已落地接口；实例独占未做共享验证）：**原生运行时归受控 worker 独占，且隔离边界必须是进程级故障隔离，不是线程**。理由：`panic = "abort"` 让 `catch_unwind` 失效，线程也无法隔离 SIGSEGV/`abort()`；P3.0 实测缺文件时 `abort()`（信号 6）、截断权重 SIGSEGV（信号 11），只有独立地址空间能把宿主保住。实现约束（`docs/13` §1）：单一 worker 进程独占模型实例，对外只暴露 `Send + Sync` 的消息代理与 `RuntimeTransport` trait；IPC 用长度前缀帧（有上限）、强制 `request_id`/`worker epoch`/`model revision` 关联、请求超时与三级终止（shutdown 帧→SIGTERM→SIGKILL）、无僵尸、受控重启用预算且不静默重放；禁止无依据的 `unsafe impl Send/Sync`；不向 `translator-api` 泄漏 C++ 类型/pid/socket；非 Linux 平台明确返回 `CapabilityUnavailable` 而非空实现。
-- ADR-028（Accepted，P3.0 事实）：**模型权重不入库、许可未确认前不分发**。权重（约 51 MB）只通过 `models.lock.json` 里的 CDN 坐标 + sha256 复现；Remote Settings 记录里没有 license 字段，`mozilla/translations` 仓库代码是 MPL-2.0，但权重的再分发条款需模型卡/法务确认。在结论确定前，仓库只提交锁定记录、配置模板与构建脚本。
+- ADR-028（Accepted，P3.0 事实）：**模型权重不入库、许可未确认前不分发**。权重（约 51 MB）只通过 `models.lock.json` 里的 CDN 坐标 + sha256 复现；Remote Settings 记录里没有 license 字段，`mozilla/translations` 仓库代码是 MPL-2.0，但权重的再分发条款需模型卡/法务确认。在结论确定前，仓库只提交锁定记录、配置模板与构建脚本。**P3.4 已把这条变成机器检查**（ADR-040）：`tools/check-release.py` 的 C1/C3/C4/C6 与 CI 的 `release-redline` job 每次提交都验证「已跟踪文件无权重、打包清单无权重、再分发状态字段未被改成 allowed」。光有人写「我们不分发」是不够的——红线必须能在一次 `git add .` 之后自动抓住。
 
 - ADR-029（Accepted，P3.1-C 已实现）：**占位符与结构化文本的完整性优先于流畅度，且失败必须显式**。`{name}`/`{order_id}` 这类标记、URL/邮箱、反引号代码块在送入真实 NMT 前必须被保护、译后精确还原；数量或身份不一致时返回 `IntegrityFailure`，严格模式下**不得**输出「看起来正常」的译文。理由：P3.0 实测直送真实模型时 `{name}`/`{order_id}` 被吞、反引号被改写（`docs/11` §2.4），说明「模型会照抄标记」的假设不成立，也不能靠无限试探提示词或无条件正则替换来补救。验收：SP-01～12（编号按 `docs/17` §3.2），尤其「标记被删除/复制/篡改 → `IntegrityFailure`」。现状（`docs/18`）：`translator-core::protection` + `translator-nmt-bergamot` 已接到真实 NMT 路径，两层测试覆盖；**默认策略不是标记而是安全分段**（ADR-034），因为实测没有任何一种标记能稳定穿过真实 Marian。
 
@@ -566,6 +566,33 @@ P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运
   P3.3 的 6.78 ms（release + 进程内直调）直接比较。**跨构建、跨机器、跨口径的数字不得并列**，
   只能各自作为自己的基线。
 
+- ADR-040（Accepted，P3.4 已实现）：**权重的「不可分发」必须由机器检查兜住，而不是由文档声明**。
+  三条：`licenses/model-assets.json` 里 `license.status = unconfirmed` 且
+  `redistribution = prohibited-until-confirmed`（**写死**，改它等于解除红线，必须同时给出法务结论与 `reviewed_by`）；
+  `tools/check-release.py` 七项检查（已跟踪文件无权重/大文件、许可清单与依赖树一致、模型坐标三方一致、
+  打包清单无权重、`.gitignore` 覆盖、红线文案存在、可选的本机哈希核对）；CI 的 `release-redline` job 每次提交都跑。
+  理由：红线最容易被「顺手 `git add .`」和「某次打包把 fixtures 里的权重带上」破坏，而这两件事都不会有人故意做。
+  代价：新增模型文件要同时更新 lock、资产清单与基线三处，否则 C3 报错——这是刻意的摩擦。
+- ADR-041（Accepted，P3.4 已实现）：**本项目不以 crates.io 为分发单位，所有 crate `publish = false`**。
+  内部依赖一律 path-only（`[workspace.dependencies]` 不写版本号，避免版本漂移），代价是 `cargo package`
+  只有零依赖的 `translator-types` 与 `translator-resource` 能成功，其余 12 个被 cargo 拒绝
+  （`all dependencies must have a version requirement`）。分发形态定为**源码仓库 + `cargo build --release` 产物**。
+  理由：现在把版本号补上，等于承诺一套人工维护的版本矩阵，而 P3 阶段没有任何 crates.io 消费者。
+  若将来要发布，需要给内部依赖同时写 `version` 并接受该维护成本（`docs/21` D-48）。
+- ADR-042（Accepted，P3.4 已实现）：**平台支持是「证据表」，不是「编译开关」，且必须可单测**。
+  `translator-runtime::platform` 用 `support_for(os: &str)` 判定，`VERIFIED_PLATFORMS = ["linux"]`；
+  非 Linux 返回 `CapabilityUnavailable`，错误信息含平台名与原因。理由：原来写成 `#[cfg]` 两条分支，
+  在 Linux 上编译时非 Linux 分支被裁掉，「非 Linux 会明确报错」这句话**没有任何测试能覆盖**——
+  无法被测试的承诺等于没有承诺。代价：收紧证据表 = 宣布支持新平台，必须同时给出该平台的真机证据；
+  现在 Windows/macOS/Android 只能跑 Mock 与词典路径（P5）。
+- ADR-043（Accepted，P3.4 已实现）：**CI 分流为「默认门禁」与「自托管真实模型」，且缺前置必须快速失败**。
+  `ci.yml` 的 `default-gate`（fmt / clippy `-D warnings` / 双 feature 测试 / 默认依赖树不得出现
+  `translator-runtime` / rustdoc `-D warnings` / 性能冒烟 / 文档编号检查）与 `release-redline`；
+  `real-model.yml` 用 `workflow_dispatch` + 自托管 runner，第一步检查 `NMT_BERGAMOT_BIN`/`NMT_MODEL_DIR`，
+  缺就 `exit 1`。理由：把需要权重的测试塞进默认门禁有两种坏结局——要么 CI 因为拿不到权重长期红，
+  要么有人加 `|| true` 把它变成绿色装饰。而「缺前置就跳过」更坏：它会让「真实模型已验证」变成一句没有证据的话。
+  现状：两个 workflow 都**没有在 GitHub 上真跑过**（无远端 runner，`docs/21` D-47），G11 因此判 Conditional。
+
 > 状态含义：**Accepted** = 已决定并（如注明）已实现；**Proposed** = 已决定方向但尚未实现，写入 ADR 不等于已验证；
 > **Deferred** = 明确延后。上表未标注 Deferred 的项均须在对应阶段交付。
 
@@ -581,6 +608,7 @@ P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运
 | v1.5 | 2026-11-05 | P3.1-A 落地（`docs/13`）：ADR-027 从 Proposed 改为 Accepted，并把措辞从「worker 独占」收紧为「**进程级**故障隔离」（明确线程与 `catch_unwind` 不可用、IPC 硬约束、非 Linux 显式不可用）；ADR-026 把模型身份从「权重 + tokenizer 摘要」扩展为**权重 / Tokenizer / 短名单 / 解码参数 / runtime build** 五项，并注明当前 `content_digest` 只能诊断、不得作缓存键；新增 ADR-029（严格占位符完整性，Proposed，P3.1-C）。编号处理：`docs/12` §6 的候选 ADR 建议按内容并入 026/027/029，**未覆盖任何旧编号**；ADR-029 是当前最大号 028 之后的第一个空号 |
 | v1.6 | 2026-11-05 | P3.1-B 落地（`docs/15`）：新增 ADR-030～033（隔离快照 / 真实 Bergamot 默认单 worker / IPC 与原生版本分离 / 分阶段截止时间）；ADR-026 的现状一栏改为引用 P3.1-B 实测并再次声明「不得作缓存键」。编号处理：`docs/14` §8 的四条建议按内容顺延为 030～033（029 已被占位），**未覆盖任何旧编号** |
 | v1.8 | 2026-11-05 | P3.2 落地（`docs/19`）：新增 ADR-038（计划摘要作缓存键 + 四条纪律）；ADR-023 从 Proposed 改为 Accepted（真实 NMT 的缓存键已换成计划摘要）；ADR-026 增补"换 prefix 表时 `content_digest` 不变"的实测；ADR-017 增补 `recover()` 语义扩大与目录 fsync（仅 Unix）；ADR-037 增补"摘要跨卸载保留 + 空闲回收不内置线程"。编号处理：`docs/17` 未给候选编号，按当前最大号 037 之后顺延 038，**未覆盖任何旧编号** |
+| v1.10 | 2026-11-05 | P3.4 落地（`docs/21`）：新增 ADR-040～043（红线机器化 / 不以 crates.io 分发 / 平台支持是证据表且可单测 / CI 分流与快速失败）；ADR-028 增补「已由 check-release 与 CI 机器验证」；§14 记录 P3 最终裁定为 Conditional（G12 权重许可阻断，G06/G08/G11 为条件项）。编号处理：`docs/17` 未给候选编号，按当前最大号 039 之后顺延 040～043，**未覆盖任何旧编号** |
 | v1.9 | 2026-11-05 | P3.3 落地（`docs/20`）：新增 ADR-039（性能数字的口径纪律与基线文件）；ADR-021 从「未实现」改为「已实现观测部分」（`p33-bench` 读 RSS/VmHWM/PSS 并按进程树汇总，库里仍无 `ProcessMetricsProvider`）；ADR-031 增补 BLAS/OpenMP 线程必须与 native 线程数对齐的实测依据。编号处理：`docs/17` 未给候选编号，按当前最大号 038 之后顺延 039，**未覆盖任何旧编号** |
 | v1.7 | 2026-11-05 | P3.1-C/D/E 合并批次落地（`docs/18`）：新增 ADR-034～037（默认安全分段 / 执行计划摘要即未来缓存身份 / 真实 NMT 以可选 feature 接入 / 卸载等待在飞请求）；ADR-029 从 Proposed 改为 Accepted 并改为引用 SP-01～12 与分段默认策略；ADR-023/026/033 的现状一栏补齐 P3.1-D 已实现与仍未实现的分界（缓存仍未上线、并发仍为 1）。编号处理：`docs/17` 未给候选编号，按当前最大号 033 之后顺延 034～037，**未覆盖任何旧编号**；`docs/17` §12 引用的 `docs/16` 从未到达本仓库，SP 编号沿用 `docs/17` §3.2 |
 

@@ -1,0 +1,115 @@
+{
+  "schema": "sdk-asset-licenses/v1",
+  "generated_at": "2026-11-05",
+  "scope": "本项目在运行时**会用到但不随仓库/发行包分发**的第三方资产（模型权重、native 运行时二进制）",
+  "red_line": {
+    "statement": "Mozilla 模型权重的再分发许可尚未确认。在确认之前：权重不入库、不随 SDK/CLI 产物分发、不在 CI 产物中缓存上传；SDK 只提供坐标（URL + SHA-256）与安装工具。",
+    "enforced_by": [
+      "tools/check-release.py（检查已跟踪文件里没有权重、包清单里没有权重）",
+      ".github/workflows/ci.yml 的 release-redline 任务（每次提交都跑）",
+      "docs/21_P3.4报告.md §发布红线"
+    ],
+    "decided_in": "ADR-040"
+  },
+  "assets": [
+    {
+      "id": "nmt.enzh.mozilla@3.0",
+      "kind": "model-weights",
+      "purpose": "本地 NMT en→zh-Hans（P3 唯一验证方向）",
+      "language_pair": {
+        "source": "en",
+        "target": "zh-Hans"
+      },
+      "origin": {
+        "registry": "Firefox Translations Remote Settings / translations-models-v2",
+        "records_url": "https://firefox.settings.services.mozilla.com/v1/buckets/main/collections/translations-models-v2/records",
+        "catalog_ui": "https://mozilla.github.io/translations/firefox-models/",
+        "snapshot_queried_at": "2026-11-05"
+      },
+      "coordinates": {
+        "lock_file": "fixtures/nmt/models.lock.json",
+        "model": {
+          "record_name": "model.enzh.intgemm.alphas.bin",
+          "version": "3.0",
+          "architecture": "base-memory",
+          "attachment_location": "main-workspace/translations-models-v2/321191b6-2c42-4bca-84ec-b7b074b67bd6.zst",
+          "decompressed_bytes": 43849787,
+          "sha256": "4e5accc141373565ddc8fa1565bceaa8d0c3482a82cab8131c719ebcc6c2157c"
+        },
+        "support_files": [
+          {
+            "record_name": "srcvocab.enzh.spm",
+            "sha256": "bd9b65504acc6d9726dd281f7defc2adb7c2c22d0688fe2f84697de25197c8c5",
+            "decompressed_bytes": 806952
+          },
+          {
+            "record_name": "trgvocab.enzh.spm",
+            "sha256": "aded6993c36e440284d11cec3f6b8aef9c0e43188a772d80be342a713adf223d",
+            "decompressed_bytes": 772004
+          },
+          {
+            "record_name": "lex.50.50.enzh.s2t.bin",
+            "sha256": "4a5e5827788060f1d718a8132b69440929387514a045796e9b77f935db68c055",
+            "decompressed_bytes": 6506248
+          },
+          {
+            "record_name": "nonbreaking_prefix.en",
+            "role": "SplitPrefix（可选）",
+            "provenance": "不来自 Remote Settings；取自上游 3rd_party/ssplit-cpp/nonbreaking_prefixes/nonbreaking_prefix.en（submodule a311f9865ade34db1e8e080e6cc146f55dafb067）",
+            "sha256": "af526c47425bb31b4e7b79ec975c1bb752a34ba21951237d51b965e879d9d51a",
+            "decompressed_bytes": 1360,
+            "locked_in_models_lock": false,
+            "note": "models.lock.json 只锁定 registry 记录（四文件）；该前缀表是上游仓库内的 ssplit 数据文件，本文件按上游 commit 锁定哈希，属于 P3.0 遗留的锁定缺口。"
+          }
+        ],
+        "total_decompressed_bytes": 51936351,
+        "note": "四文件来自 registry 记录，第五个（nonbreaking_prefix.en）来自上游 ssplit 数据；总字节 51,936,351 与 fixtures/nmt/baseline-p33-load.json 的 model_bytes 一致。support_files 的 sha256 以 lock 文件为准（除 nonbreaking_prefix.en），若不一致由 tools/check-release.py 报错。"
+      },
+      "license": {
+        "status": "unconfirmed",
+        "status_detail": "Firefox Translations 模型权重的许可条款未在发行语境下确认（上游为 Mozilla 训练/转换产物，未见明确的再分发授权声明）。",
+        "redistribution": "prohibited-until-confirmed",
+        "vendored_in_repo": false,
+        "shipped_in_artifacts": false,
+        "user_action_required": "使用者在自己的环境按 lock 文件坐标自行获取，并自行承担权利责任；SDK 不代其分发。",
+        "reviewed_by": null,
+        "reviewed_at": null
+      }
+    },
+    {
+      "id": "bergamot-translator@9271618",
+      "kind": "native-runtime-binary",
+      "purpose": "Marian/SSPLIT 推理 CLI（worker 的子进程），由使用者本地构建",
+      "origin": {
+        "project": "https://github.com/browsermt/bergamot-translator",
+        "commit": "9271618ebbdc5d21ac4dc4df9e72beb7ce644774",
+        "commit_date": "2024-05-12",
+        "submodules": {
+          "3rd_party/marian-dev": "2781d735d4a10dca876d61be587afdab2726293c",
+          "3rd_party/ssplit-cpp": "a311f9865ade34db1e8e080e6cc146f55dafb067",
+          "3rd_party/marian-dev/src/3rd_party/intgemm": "f7401513da71758dacce52fed1c7855549abee59",
+          "3rd_party/marian-dev/src/3rd_party/sentencepiece": "ae41b7740d7006596bb9257e83340b2620db9d00"
+        },
+        "build_script": "tools/p3/build-bergamot.sh"
+      },
+      "license": {
+        "status": "declared-upstream",
+        "license_expression": "MPL-2.0",
+        "redistribution": "not-bundled",
+        "vendored_in_repo": false,
+        "shipped_in_artifacts": false,
+        "note": "上游仓库存放 MPL-2.0。本项目不链接、不打包该二进制，只在运行时按用户提供的路径启动它；MPL-2.0 的文件级 copyleft 因此不传染到本 SDK。若将来改为静态链接或随包分发，必须重新评估并在 THIRD_PARTY_NOTICES.md 中列出。"
+      }
+    }
+  ],
+  "not_applicable": [
+    {
+      "item": "词典包（resources/zh-en）",
+      "reason": "本项目自建，数据来源与许可见 docs/02；不入库（体积），由 tools/pack-dictionary 本地生成。"
+    },
+    {
+      "item": "SQLite（rusqlite bundled）",
+      "reason": "已作为 Cargo 依赖进入 licenses/third-party.json（public domain）。"
+    }
+  ]
+}

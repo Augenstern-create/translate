@@ -1,0 +1,139 @@
+name: ci
+
+# 默认门禁：不需要模型权重、不需要 native 二进制。
+# 真实模型的任务在 real-model.yml（手动触发 + 自托管 runner），因为权重不入库、不可分发。
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  default-gate:
+    name: 默认门禁（无模型 / 无 native）
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            translator-sdk/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('translator-sdk/Cargo.lock') }}
+
+      - name: 格式
+        working-directory: translator-sdk
+        run: cargo fmt --all --check
+
+      - name: Clippy（全 target、全 feature、warnings 即错误）
+        working-directory: translator-sdk
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: 默认测试（无 native / 无模型代码进入依赖树）
+        working-directory: translator-sdk
+        run: cargo test --workspace --locked
+
+      - name: 全 feature 测试
+        working-directory: translator-sdk
+        run: cargo test --workspace --all-features --locked
+
+      - name: 默认依赖树里不能出现 runtime / native
+        working-directory: translator-sdk
+        run: |
+          if cargo tree -p translator-api --edges normal | grep -q 'translator-runtime'; then
+            echo "默认依赖树里出现了 translator-runtime（应当只在 nmt-bergamot feature 下）"
+            exit 1
+          fi
+          if cargo tree -p translator-runtime --edges normal | grep -q 'translator-nmt-bergamot'; then
+            echo "runtime 不该依赖 nmt-bergamot"
+            exit 1
+          fi
+
+      - name: 文档构建（rustdoc 警告即错误）
+        working-directory: translator-sdk
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps --all-features
+
+      - name: 性能冒烟（宽松上限，只抓数量级退化）
+        working-directory: translator-sdk
+        run: |
+          cargo build --release -p p33-bench
+          mkdir -p /tmp/gate
+          ./target/release/p33-bench empty --out /tmp/gate/empty.json
+          ./target/release/p33-bench dictionary --dir resources/zh-en --out /tmp/gate/dictionary.json
+          cargo build --release -p translator-runtime --bin nmt-worker
+          ./target/release/p33-bench worker --bin target/release/nmt-worker --out /tmp/gate/worker.json
+          python3 tools/bench-gate.py --case all --actual-dir /tmp/gate
+
+      - name: 文档编号唯一且两位数字前缀
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys
+          docs = pathlib.Path("docs")
+          files = sorted(docs.glob("*.md"))
+          bad = [p.name for p in files if not re.match(r"^\d{2}_", p.name)]
+          nums = [re.match(r"^(\d{2})_", p.name).group(1) for p in files if re.match(r"^\d{2}_", p.name)]
+          dup = sorted({n for n in nums if nums.count(n) > 1})
+          if bad or dup:
+              print("编号不合规：", bad, "重复：", dup)
+              sys.exit(1)
+          print(f"docs 编号检查通过：{len(nums)} 个文件")
+          PY
+
+      - name: 上传基线与冒烟结果
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p33-baselines
+          path: |
+            translator-sdk/fixtures/nmt/baseline-p33-*.json
+            /tmp/gate/*.json
+          if-no-files-found: warn
+
+  release-redline:
+    name: 发行红线（权重不入库 / 许可清单 / 坐标一致）
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 第三方许可清单与依赖树一致
+        working-directory: translator-sdk
+        run: python3 tools/license-audit.py --check
+
+      - name: 发行红线检查
+        working-directory: translator-sdk
+        run: python3 tools/check-release.py
+
+      - name: 权重未被任何包清单包含（显式再证一次）
+        working-directory: translator-sdk
+        run: |
+          for crate in $(cargo metadata --format-version 1 --no-deps | python3 -c 'import json,sys;print(" ".join(p["name"] for p in json.load(sys.stdin)["packages"]))'); do
+            if cargo package --list --allow-dirty -p "$crate" 2>/dev/null | grep -Eq '\.(bin|spm|onnx|npz|gguf|safetensors)$'; then
+              echo "crate $crate 的包清单里有权重文件"
+              exit 1
+            fi
+          done
+          echo "所有可打包 crate 都不含权重"

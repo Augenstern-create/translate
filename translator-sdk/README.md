@@ -25,7 +25,7 @@
 
 ---
 
-## 当前状态：P0 + P1 + P2 + P2-S + P3.0 + P3.1-A/B/C/D/E 完成；**P3.2 完成**（LC-01～10 全部有实现与测试）。P3.3/P3.4 仍 pending
+## 当前状态：P0 + P1 + P2 + P2-S + P3.0 + P3.1-A/B/C/D/E + P3.2 + P3.3 + P3.4 完成，**P3 = Conditional（有条件通过）**：功能可验收，含权重的发行被 G12（权重许可未确认）阻断
 
 - **P0**：workspace 结构、核心类型、插件契约、协调器与路由、缓存、门面 API、Mock 插件、CLI。
   **不接任何真实模型、不装任何 native 库**，整条链路即可运行 —— 这是设计文档规定的交付判据。
@@ -133,8 +133,48 @@
     （稳态 341.9 MiB / 峰值 413.8 MiB）计入装配期预算，超限 `OutOfBudget`；
     `Translator::nmt_states()/nmt_cache_stats()/evict_idle_nmt()/unload_nmt()` 可观测。
   - 实测：默认 361 passed / 0 failed / 37 ignored；真实模型与忽略集 **41/41**。
-  详见 `../docs/19_P3.2报告.md`。**P3.3（PSS、长稳、质量评分）/ P3.4（许可、CI、打包）仍 pending，
-  P3 不标 Done。**
+  详见 `../docs/19_P3.2报告.md`。
+
+- **P3.3**（Linux 性能、质量与低内存，`docs/20`）：`docs/17` §6.1 的九个场景都有**带口径**的数字。
+  - 新增 `tools/p33-bench`：`empty` / `dictionary` / `worker` / `load` / `nmt` / `concurrency` /
+    `unload` / `sustain` / `quality`，每个 JSON 都带 `caliber`（构建、是否含加载、缓存开关、
+    线程/beam、分位算法）。分位数用**最近秩法**，不插值——人能手工复核。
+  - **首次采 PSS**（`smaps_rollup`）并按 `PPid` 建进程树：native RSS 340.80 / **PSS 332.56** MiB（差 2.4%）；
+    卸载后全树 PSS **340.30 → 3.07 MiB**，进程 3 → 2，残留快照 0。
+  - 关键数字（release / 1 线程 / beam=1 / 缓存关闭 / 热态）：17 字 p50 **6.78 ms**、94 字 **25.05 ms**、
+    499 字 **175.67 ms**、分段句（2 个跨度 = 3 次调用）**19.95 ms**、缓存命中 **≈0 ms**；
+    空 SDK 初始化 0.01 ms / RSS 3.16 MiB；IPC 往返 p50 0.04 ms；加载 647 ms、首句 409 ms。
+  - **测量暴露并修掉的真问题**：`native --cpu-threads 1` 不约束 OpenBLAS/OpenMP，线程超订让
+    并发 10 的吞吐只有 15.0 rps、p50 139 ms。worker 现在把 `OPENBLAS_NUM_THREADS`/`OMP_NUM_THREADS`
+    对齐到 native 线程数（**宿主显式设置则不覆盖**）：31.0 rps / p50 35 ms，499 字单句 340 → 176 ms。
+  - **质量三层分离**（结构 / 事实 / 代理指标），24 条金样本：适用 22、结构 22/22、事实 22/22；
+    但 `mix-01` 机器全绿而人读是错的（`参须` 应为 `参数须`）——**代理指标不能替代人读**。
+  - **并发不扩展**：单 worker、单 in-flight，1/2/10 客户端吞吐 39.3 / 37.3 / 31.0 rps，并发 10 的 p95 1.18 s。
+    这是限制，不是特性；FIFO 排队仍是待办。真冷盘（清 page cache）本轮未测（需要 root）。
+  详见 `../docs/20_P3.3报告.md`。
+
+- **P3.4**（发行候选，`docs/21`）：把"包里有什么、红线守不守、别人能不能复现"变成机器检查。
+  - **许可清单**：`licenses/third-party.json`（53 个依赖，SPDX + checksum + `legacy_notation` 标记）、
+    `licenses/model-assets.json`（权重/Bergamot 的坐标、哈希、许可状态与再分发结论）、
+    `THIRD_PARTY_NOTICES.md`（发行物里的人可读声明）。
+  - **发行红线** `tools/check-release.py` 七项：已跟踪文件无权重/大文件、许可清单与依赖树一致、
+    模型坐标三方一致、打包清单不含权重、`.gitignore` 覆盖、红线文案存在、可选的本机权重哈希核对。
+    CI 的 `release-redline` job 每次提交都跑。写死"权重再分发必须是 `prohibited-until-confirmed`"，
+    谁改成 `allowed` 立刻红。
+  - **CI 分流**：`.github/workflows/ci.yml`（默认门禁：fmt / clippy -D warnings / 双 feature 测试 /
+    默认依赖树不得出现 runtime / rustdoc -D warnings / 性能冒烟 / 文档编号检查）
+    与 `.github/workflows/real-model.yml`（自托管、手动触发、缺前置**快速失败**）。
+    **本仓库没有远端 runner，这两个 workflow 没在 GitHub 上真跑过**（`docs/21` D-47）。
+  - **平台门禁可测了**：`translator-runtime::platform` 把 `#[cfg]` 分支换成判定表，
+    非 Linux（windows/macos/android/ios/freebsd/openbsd）明确 `CapabilityUnavailable`，
+    错误信息带平台名与原因；CLI `--diagnose` 增加"平台"一行。
+  - **打包**：全部 crate `publish = false`；实测只有 `translator-types` / `translator-resource`
+    能 `cargo package`（其余 12 个因 path-only 内部依赖不可打包，属设计取舍）。
+  - 实测：**365 passed / 0 failed / 41 ignored**，真实模型 **41 passed**，红线 7 项全 PASS，
+    `LICENSE-MIT`/`LICENSE-APACHE` 正文尚未入库（D-46）。
+  - **P3 最终裁定：Conditional（有条件通过）**。功能门槛可验收；**含权重发行仍被阻断**（G12：
+    权重许可未确认），G06/G08（取消在途请求、真 `kill -9`）、G11（真实 runner）也是条件项。
+    见 `../docs/21_P3.4报告.md` §4。
 
 词库与规则都是**可选 feature**：不开 `dictionary` 时 `translator-api` 依赖树里没有 `rusqlite`；
 不开 `rules` 时没有 JSON 解析依赖（但 `TextRules` 契约始终可用，宿主可自己实现）。
@@ -159,11 +199,18 @@ translator-sdk/
 ├── tools/
 │   ├── pack-dictionary/        # CC-CEDICT → 资源包（payload v1/v2）
 │   ├── migrate-rules/          # 规则包离线迁移（pipeline_version 1 → 2）
+│   ├── p33-bench/              # P3.3：性能/质量测量工具（九个场景，输出带口径的 JSON）
+│   ├── license-audit.py        # P3.4：许可清单生成（--write）与策略校验（--check）
+│   ├── check-release.py        # P3.4：发行红线七项检查（权重不入库 / 许可一致 / 打包清单 …）
+│   ├── bench-gate.py           # P3.4：CI 的宽松性能上限（只抓数量级退化）
 │   └── p3/                     # P3.0 原生参考链路：构建/取模型/基线采集脚本 + CLI 补丁（非 cargo 包）
 ├── fixtures/                   # 金样本 + 示例规则包（rules/minimal.json）+ 示例术语表（terms/zh-en.json）
 │   └── nmt/                    # P3.0：NMT 金样本、模型锁定记录、配置模板、基线 JSON（权重不入库）
+├── licenses/                   # P3.4：第三方依赖清单 + 模型/运行时资产清单（机器可读）
 ├── resources/                  # 打包产物（体积大，gitignore）
-└── Cargo.toml                  # workspace
+├── THIRD_PARTY_NOTICES.md      # P3.4：发行物里的人可读第三方声明
+├── CHANGELOG.md                # 每阶段变更与证据位置（tag 名 = 阶段名）
+└── Cargo.toml                  # workspace（所有 crate publish = false）
 ```
 
 依赖方向严格单向：
@@ -494,36 +541,67 @@ NMT_BASELINE_OUT=fixtures/nmt/baseline-p3.1b-linux-x86_64-1thread.json \
 
 ## 尚未实现
 
-- 除 CC-CEDICT 之外的词库（Kaikki / JMdict 各有解析器与许可审查）
-- en→zh 方向的词库（CC-CEDICT 是汉英单向）
+按"会不会阻断发行"排序，不是按工作量。
+
+### 阻断发行（P3 = Conditional 的原因）
+
+- **模型权重再分发许可结论**：Remote Settings 记录里没有 license 字段，`mozilla/translations`
+  代码是 MPL-2.0，但权重的再分发条款要模型卡/法务确认。当前结论是"不打包、不缓存、不分发"，
+  所以**不存在**"开箱即用的离线翻译包"这种交付物。
+- **`LICENSE-MIT` / `LICENSE-APACHE` 正文未入库**：只声明了 SPDX（`docs/21` D-46）。
+- **CI 未在真实 runner 上跑过**：workflow 与本地等价命令都在，但本仓库没有远端（D-47）。
+- **真实模型 job 未运行**：需要一台有权重与 native 二进制的自托管机器（D-50）。
+
+### 功能缺口
+
+- **取消在途请求**：有排队绝对截止时间（`Timeout{operation:"queue"}`）与卸载等待，
+  但没有"取消一个已经在 native 里跑的请求"（G06）。
+- **FIFO 排队**：当前并发恒为 1，排队靠 `try_lock` 竞争、**非公平**；实测并发 10 的 p95 达 1.18 s。
+  修法是票据队列 + 条件变量，属于并发语义重新设计（`docs/20` D-42）。
+- **真 `kill -9` 恢复测试**：现在用 `abort()` 模拟"进程在任意点死掉"（D-53），
+  对"留下半成品目录"等价，对信号/时序不等价。
+- **断电一致性加固**：文件与父目录 fsync 已做（仅 Unix），但电源级掉电仍未验证。
+- **真冷盘加载**：清 page cache 需要 root，本轮所有加载数字都是"页缓存较热"口径（D-40）。
+
+### 归后续阶段
+
+- 多后端替换验证（ncnn / ONNX Runtime）与 Bergamot 的正式对照 —— **P4**
+- Windows / macOS / Android 的构建与真机测量（当前非 Linux 一律 `CapabilityUnavailable`）—— **P5**
+- 远程 LLM Provider、凭据注入与隐私开关 —— **P6**
+- 多 worker / 多 native 的容量规划（单实例 PSS 约 337 MiB）；内存**硬**上限与库内
+  `ProcessMetricsProvider`（观测代码目前只在 `p33-bench` 里）—— P4/P6
 - 真正的语言识别（fastText `lid.176.ftz`），当前是零模型启发式
+- 除 CC-CEDICT 之外的词库（Kaikki / JMdict 各有解析器与许可审查）、en→zh 词库
 - 术语表与 `glossary_id` 联动（多术语表选择属宿主策略）
 - 规则包的其余能力：分句、词形；正则类匹配按 §7.3 的风险评估后决定不做
-- 词形分析（Lindera 等）
-- 内存**硬**上限与 RSS 监控；`ProcessMetricsProvider`（各平台真实占用观测，ADR-021，未实现）
-- `translator-runtime` 接入 `translator-api`/CLI 的端到端路径——P3.1-E
-  （P3.1-B 只做到"Rust 宿主 + 测试"级别，`translator-api` 仍未被真实模型使用）
-- 占位符保护接真实 NMT（SP-01～08，ADR-029）——P3.1-C，未开始
-  （真实模型会吞 `{name}`/`{order_id}`，反引号会被换成中文引号，见 `docs/15` §2.5）
-- 卸载后 native **进程内** RSS 收敛（本轮只证明了进程消失，`docs/15` D-11）
-- 模型实例租约、single-flight、排队超时、`ResolvedExecutionPlan`、`content_digest` 进缓存键（ADR-023/026）——P3.1-D
-- 加载/卸载多轮 RSS 收敛、PSS、`VmHWM`（ADR-021 的 `ProcessMetricsProvider`）——P3.1-D / P3.3
-- Linux CI 与多轮基准（P3.1-E / P3.3）
-- 卸载后 RSS、TTL/LRU 回收（需要 Rust API 才能测）
-- 模型权重再分发许可结论（注册表未声明，待模型卡/法务确认；当前只在开发机本地验证）
-- 断电一致性加固（fsync 父目录/目录树）、加载前内容重新校验、依赖反向引用检查、崩溃注入测试
-- 术语"源文命中但译文缺失 → 建议重译"（当前只做到不误改）
-- `content_digest` 进缓存键（术语表快照，ADR-019 只落了 `id@version`）
-- single-flight、引用计数、TTL/LRU 热卸载（P2 没有按需加载/卸载路径）
-- `ResolvedExecutionPlan` 与执行计划哈希（ADR-011，等 P3 后端形状稳定）
-- Bergamot / ncnn / ONNX Runtime 适配
-- C ABI / JNI 绑定
-- Windows / macOS / Android 的构建与实证（**未在目标平台编译或运行过，明确 pending**）
-- 远程 LLM Provider 与凭据注入
+- 可读性的大规模人工评分（当前只做了 22 条抽样、单人打分，`docs/20` §5）
 
 各项的具体原因与去向见 `../docs/04_P1_字典与离线查词报告.md` §8、§9
-与 `../docs/07_P2.3-P2.5_租约预算与术语约束报告.md` §6。
+与 `../docs/21_P3.4报告.md` §4.1。
+
+## 无权重发行模式（当前唯一的合规形态）
+
+SDK 本身**不含任何模型权重**，这是有意为之，不是"还没打包"：
+
+```bash
+# 1) 自行获取权重：按 lock 文件里的坐标下载，并逐个核对 sha256
+#    （Remote Settings 的 translations-models-v2，5 个文件 / 49.5 MiB）
+# 2) 自行构建 native（约 6 分钟；钉 commit 9271618）
+tools/p3/build-bergamot.sh
+# 3) 校验"我现在用的是哪版权重"
+NMT_MODEL_DIR=/path/to/models python3 tools/check-release.py --verbose
+```
+
+- 权重与 Bergamot 二进制的许可状态、坐标、哈希：`licenses/model-assets.json`
+- 第三方依赖许可：`licenses/third-party.json` + `THIRD_PARTY_NOTICES.md`
+- 红线检查（CI 每次提交都跑）：`python3 tools/check-release.py`
+
+**责任边界**：使用者自行获取权重并自行承担权利责任；SDK 不代下载、不代分发、不缓存上传。
+Bergamot 以**独立进程**按路径启动（不链接、不打包），因此 MPL-2.0 的文件级 copyleft 不外溢到本 SDK。
 
 ## 许可证
 
-Apache-2.0 OR MIT（见 `Cargo.toml`）。第三方资源包另行登记，勿默认继承本仓库许可。
+- 本项目源码：`Apache-2.0 OR MIT`（见各 `Cargo.toml` 的 `license` 字段；正文文件待补，`docs/21` D-46）。
+- 第三方 Cargo 依赖：见 `THIRD_PARTY_NOTICES.md` 与 `licenses/third-party.json`（53 个包，全部宽松许可）。
+- 模型权重：**许可未确认**，不随本仓库/发行物分发 → `licenses/model-assets.json`。
+- 词典数据：本项目自建，来源见 `../docs/02`；资源包不默认继承本仓库许可。

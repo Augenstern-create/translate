@@ -1,0 +1,513 @@
+{
+  "schema": "sdk-third-party-licenses/v1",
+  "generated_by": "tools/license-audit.py --write",
+  "generated_at": "2026-11-05",
+  "toolchain": "cargo 1.99.1 (5f94df478 2026-08-27)",
+  "feature_set": "--all-features (含 mocks / dictionary / rules / resource / nmt-bergamot)",
+  "policy": {
+    "allowed_atoms": [
+      "0BSD",
+      "Apache-2.0",
+      "Apache-2.0 WITH LLVM-exception",
+      "BSD-2-Clause",
+      "BSD-3-Clause",
+      "CC0-1.0",
+      "ISC",
+      "MIT",
+      "MIT-0",
+      "MPL-2.0",
+      "Unicode-3.0",
+      "Unlicense",
+      "Zlib"
+    ],
+    "denied_atoms": [
+      "AGPL-3.0",
+      "BUSL-1.1",
+      "Commons-Clause",
+      "GPL-2.0",
+      "GPL-3.0",
+      "SSPL-1.0"
+    ],
+    "note": "判定只针对 SPDX 表达式，不构成法律意见；权重的许可另行记录在 licenses/model-weights.json"
+  },
+  "packages": [
+    {
+      "name": "ahash",
+      "version": "0.8.12",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "bitflags",
+      "version": "2.13.2",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "block-buffer",
+      "version": "0.10.4",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "cc",
+      "version": "1.11.0",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "cfg-if",
+      "version": "1.0.5",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "cpufeatures",
+      "version": "0.2.17",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "crypto-common",
+      "version": "0.1.7",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "digest",
+      "version": "0.10.7",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "errno",
+      "version": "0.3.14",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "fallible-iterator",
+      "version": "0.3.0",
+      "license": "MIT/Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": true,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "fallible-streaming-iterator",
+      "version": "0.1.9",
+      "license": "MIT/Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": true,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "fastrand",
+      "version": "2.5.0",
+      "license": "Apache-2.0 OR MIT",
+      "license_normalized": "Apache-2.0 OR MIT",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "find-msvc-tools",
+      "version": "0.1.15",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "fst",
+      "version": "0.4.7",
+      "license": "Unlicense/MIT",
+      "license_normalized": "Unlicense OR MIT",
+      "legacy_notation": true,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "generic-array",
+      "version": "0.14.7",
+      "license": "MIT",
+      "license_normalized": "MIT",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "getrandom",
+      "version": "0.4.3",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "hashbrown",
+      "version": "0.14.5",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "hashlink",
+      "version": "0.9.1",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "itoa",
+      "version": "1.0.18",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "libc",
+      "version": "0.2.191",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "libsqlite3-sys",
+      "version": "0.30.1",
+      "license": "MIT",
+      "license_normalized": "MIT",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "linux-raw-sys",
+      "version": "0.12.1",
+      "license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+      "license_normalized": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "memchr",
+      "version": "2.8.3",
+      "license": "Unlicense OR MIT",
+      "license_normalized": "Unlicense OR MIT",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "memmap2",
+      "version": "0.9.12",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "once_cell",
+      "version": "1.21.4",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "pkg-config",
+      "version": "0.3.34",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "pollster",
+      "version": "0.4.0",
+      "license": "Apache-2.0/MIT",
+      "license_normalized": "Apache-2.0 OR MIT",
+      "legacy_notation": true,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "proc-macro2",
+      "version": "1.0.107",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "quote",
+      "version": "1.0.47",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "r-efi",
+      "version": "6.0.0",
+      "license": "MIT OR Apache-2.0 OR LGPL-2.1-or-later",
+      "license_normalized": "MIT OR Apache-2.0 OR LGPL-2.1-or-later",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "rusqlite",
+      "version": "0.32.1",
+      "license": "MIT",
+      "license_normalized": "MIT",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "rustix",
+      "version": "1.1.6",
+      "license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+      "license_normalized": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "serde",
+      "version": "1.0.229",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "serde_core",
+      "version": "1.0.229",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "serde_derive",
+      "version": "1.0.229",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "serde_json",
+      "version": "1.0.154",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "sha2",
+      "version": "0.10.9",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "shlex",
+      "version": "2.0.1",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "smallvec",
+      "version": "1.16.4",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "syn",
+      "version": "2.0.119",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "syn",
+      "version": "3.0.9",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "tempfile",
+      "version": "3.27.0",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "tinyvec",
+      "version": "1.13.3",
+      "license": "Zlib OR Apache-2.0 OR MIT",
+      "license_normalized": "Zlib OR Apache-2.0 OR MIT",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "typenum",
+      "version": "1.20.1",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "unicode-ident",
+      "version": "1.0.27",
+      "license": "(MIT OR Apache-2.0) AND Unicode-3.0",
+      "license_normalized": "(MIT OR Apache-2.0) AND Unicode-3.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "unicode-normalization",
+      "version": "0.1.26",
+      "license": "(MIT OR Apache-2.0) AND Unicode-3.0",
+      "license_normalized": "(MIT OR Apache-2.0) AND Unicode-3.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "vcpkg",
+      "version": "0.2.15",
+      "license": "MIT/Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": true,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "version_check",
+      "version": "0.9.5",
+      "license": "MIT/Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": true,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "windows-link",
+      "version": "0.2.1",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "windows-sys",
+      "version": "0.61.2",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "zerocopy",
+      "version": "0.8.63",
+      "license": "BSD-2-Clause OR Apache-2.0 OR MIT",
+      "license_normalized": "BSD-2-Clause OR Apache-2.0 OR MIT",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "zerocopy-derive",
+      "version": "0.8.63",
+      "license": "BSD-2-Clause OR Apache-2.0 OR MIT",
+      "license_normalized": "BSD-2-Clause OR Apache-2.0 OR MIT",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "zmij",
+      "version": "1.0.23",
+      "license": "MIT",
+      "license_normalized": "MIT",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    }
+  ],
+  "count": 53
+}
