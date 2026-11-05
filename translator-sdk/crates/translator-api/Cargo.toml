@@ -20,6 +20,12 @@ resource = ["dep:translator-resource"]
 # 真实本地 NMT（P3.1-E）：启用后可通过 `nmt_bergamot()` 挂载 Bergamot 引擎。
 # 默认关闭：默认依赖树里不出现任何 native runtime / 进程管理代码。
 nmt-bergamot = ["dep:translator-nmt-bergamot"]
+# 第二本地 NMT（P4）：启用后可通过 `nmt_ort()` 挂载 ONNX Runtime 引擎。
+# 默认关闭，且需要 translator-nmt-ort 自己的 `ort-runtime` feature 才真正链接 ORT。
+nmt-ort = ["dep:translator-nmt-ort"]
+# 连 ORT 运行时一起编进来（会链接 onnxruntime 动态库，显著增加体积与内存）。
+# 分两层是为了让 CI 能在**没有运行时的机器**上先检查上层契约编译通过。
+nmt-ort-runtime = ["nmt-ort", "translator-nmt-ort/ort-runtime"]
 
 [dependencies]
 translator-types.workspace = true
@@ -29,6 +35,7 @@ translator-dictionary = { workspace = true, optional = true }
 translator-rules = { workspace = true, optional = true }
 translator-resource = { workspace = true, optional = true }
 translator-nmt-bergamot = { workspace = true, optional = true }
+translator-nmt-ort = { workspace = true, optional = true }
 
 [dev-dependencies]
 # 测试通过 `--all-features` 启用 mocks，解析出的特性对本 crate 同样生效

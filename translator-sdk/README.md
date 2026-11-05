@@ -22,10 +22,13 @@
 - `17_P3完整实施与验收总报告.md` — 外部 P3 验收框架归档：C/D/E 待办、SP-01～12 与 LC-01～10 矩阵、发布红线
 - `18_P3.1-CDE集成验收报告.md` — 严格文本保护（默认安全分段）+ 执行计划/single-flight/排队截止时间 + 真实 NMT 接入 `Translator`/CLI
 - `19_P3.2报告.md` — **本轮**：反向依赖（LC-07）、安装崩溃注入与修复（LC-08）、残留回收 + PID 复用、计划摘要作键的缓存（LC-09）、空闲回收与内存准入
+- `23_P3冻结审查与P4插件替换建议.md` — 外部审查归档：P3 冻结规范、P4-01～07 工作包、P4-G01～08 门禁
+- `24_P3冻结与P4-02可行性门禁报告.md` — P3 冻结（`p3-frozen` + 自校验清单 + 阻断台账）+ 候选门禁（三个 ONNX 陷阱、B 类测量）
+- `25_P4-03与P4-04_第二NMT后端与插件替换验证报告.md` — **本轮**：第二个真实 NMT 后端（ONNX Runtime）进 `Translator` 契约、退化抑制、同文本对照与门禁判定
 
 ---
 
-## 当前状态：P0～P3 完成并**已冻结**（`p3.4` / 分支 `p3-frozen`），**P3 = Conditional**：功能可验收，含权重的发行被 release-blockers（G12 等五项）阻断。P4 已启动：候选后端可行性门禁通过（`p4.0`），Rust 插件待实现
+## 当前状态：P0～P3 完成并**已冻结**（`p3.4` / 分支 `p3-frozen`），**P3 = Conditional**：功能可验收，含权重的发行被 release-blockers（G12 等五项）阻断。P4 的 P4-01～P4-04 已完成：第二个真实后端（ONNX Runtime + opus-mt）已在同一 `Translator` 契约下产出真实译文（`p4.1`），**但它是 B 类候选，不能替换 P3 后端**
 
 - **P0**：workspace 结构、核心类型、插件契约、协调器与路由、缓存、门面 API、Mock 插件、CLI。
   **不接任何真实模型、不装任何 native 库**，整条链路即可运行 —— 这是设计文档规定的交付判据。
@@ -191,7 +194,19 @@
     侧 K/V 必须给真实长度；带缓存步的 `present.encoder.*` 是 0 长度占位、不能回喂。
   - **诚实结论**：这是 **B 类比较**（不同模型）。本机 1 线程实测 17 字 118.6 ms / 94 字 647.6 ms、
     进程 909 MiB，**明显差于** Bergamot（6.78 / 25.05 ms、341 MiB）——不得归因于 runtime。
-    本轮**没有** Rust 插件，P4-G01/G02 未满足。
+  - **P4-03 插件实现**（`docs/25`）：新 crate `translator-nmt-ort`（`nmt.ort.opus-mt`）。
+    两层 feature：`nmt-ort` 只编契约、`nmt-ort-runtime` 连 ORT 一起编；**默认构建依赖图里 `ort` 出现 0 次**，
+    默认 CLI 的 `ldd` 里没有 `libonnxruntime.so`。真实模型测试 6 项 + 门面测试 5 项全部通过；
+    `tools/p4/build-tokenizer.py` 复现 `tokenizer.json` 并自检 id 空间（`Hello world!` → `[3828, 431, 50]`）。
+  - **P4-04 替换验证**：只挂 ORT 后端（无词典/无规则/无 Bergamot）时 `Translator::translate()` 正常出译文，
+    `engine_id = nmt.ort.opus-mt`，受保护跨度逐字节保留。
+  - **退化抑制**（本后端自己的解码策略）：纯贪心会把 `Hello ` 这种碎片重复 97 次「你好」（同一模型在 Python
+    参考实现里同样如此）。已加长度上界 + 无重复 3-gram + 三连停 + 尾部收敛，`degeneracy_count()` 可观测。
+  - **同文本同预算对照**：Rust 插件 123 / 653 / 2752 ms，Python 参考 120.0 / 651.3 / 2652.3 ms
+    —— 说明"实现没写歪"，**不**说明 runtime 优劣。内存 PSS：Rust 574.8 MiB vs Python 870 MiB。
+  - **质量**：短句可用（`The cat is on the table.` → `猫在桌子上`），长句不可用
+    （`model weights` → `模型重量`、`load time` → `负载时间`）。P4-G05（计划摘要）与 P4-G06（隔离/租约/崩溃恢复）
+    只部分满足，见 `docs/25` §4。
 
 ## 目录结构
 
@@ -579,7 +594,9 @@ NMT_BASELINE_OUT=fixtures/nmt/baseline-p3.1b-linux-x86_64-1thread.json \
 
 ### 归后续阶段
 
-- 多后端替换验证（ncnn / ONNX Runtime）与 Bergamot 的正式对照 —— **P4**
+- 第二后端的**缓存**（`plan-v1` 摘要未覆盖 ORT，P4-G05 部分）、**worker 隔离**（仍跑在宿主进程内，D-60）、
+  **取消/超时**（`timeout_ms` 被忽略，D-63）、**Marker 保护模式**（显式拒绝，D-61）—— P4 遗留项
+- ncnn 分支的可行性（本轮只验了 ONNX Runtime；按 `docs/23` §4，ncnn 不通过也不阻塞 P4 结束）
 - Windows / macOS / Android 的构建与真机测量（当前非 Linux 一律 `CapabilityUnavailable`）—— **P5**
 - 远程 LLM Provider、凭据注入与隐私开关 —— **P6**
 - 多 worker / 多 native 的容量规划（单实例 PSS 约 337 MiB）；内存**硬**上限与库内

@@ -1,0 +1,35 @@
+[package]
+name = "translator-nmt-ort"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "P4: ONNX Runtime 本地 NMT 插件（第二后端，opus-mt-en-zh）"
+
+[features]
+default = []
+# ONNX Runtime 会话编译进依赖树（默认不引入：默认构建里不能出现 native 依赖）
+ort-runtime = ["dep:ort", "dep:ndarray"]
+
+[dependencies]
+translator-types.workspace = true
+translator-plugin-api.workspace = true
+translator-core.workspace = true
+tokenizers = { version = "0.23", default-features = false, features = ["fancy-regex"] }
+ort = { version = "2.0.0-rc.15", optional = true, features = ["ndarray"] }
+ndarray = { version = "0.17", optional = true, features = ["std"] }
+sha2.workspace = true
+
+[dev-dependencies]
+pollster.workspace = true
+tempfile.workspace = true
+
+# 两个示例都要真实 ORT 运行时；没开 feature 时直接不编，避免 `cargo test` 被它们拖挂。
+[[example]]
+name = "p4_bench"
+required-features = ["ort-runtime"]
+
+[[example]]
+name = "dump_io"
+required-features = ["ort-runtime"]

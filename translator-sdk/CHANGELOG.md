@@ -1,10 +1,44 @@
 # 变更记录
 
 版本号策略：P3 期间一律 `0.1.0`（**不发布**，`publish = false`）；每次阶段结束打 tag，
-tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4`）。
+tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1`）。
 真正的语义化版本从 P7（SDK 发行）开始。
 
 每条都标注证据所在：能复现的测试或 `docs/NN` 报告。
+
+## P4-03 / P4-04 — 第二个真实 NMT 后端与插件替换验证（tag `p4.1`，报告 `docs/25`）
+
+### 新增
+
+- `crates/translator-nmt-ort`：`nmt.ort.opus-mt` 引擎（ONNX Runtime + opus-mt int8）。
+  契约与 Bergamot 后端完全一致；`OrtIdentity` 给出三文件摘要 / runtime build / 线程 / token 上限。
+- `translator-api`：feature `nmt-ort`（只编契约）/ `nmt-ort-runtime`（链接 ORT），
+  `TranslatorBuilder::nmt_ort()`、`Translator::nmt_ort_engines()`、`Translator::unload_nmt_ort()`。
+- `tools/p4/build-tokenizer.py`：`source.spm` + `vocab.json` → `tokenizer.json`，并在写文件**之前**用
+  `Hello world! → [3828, 431, 50]` 自检 id 空间（门禁阶段就是在这里被骗过一次）。
+- `examples/p4_bench.rs`（延迟/内存基线）、`examples/dump_io.rs`（打印 ORT 会话真实 I/O 名）。
+- `fixtures/nmt/baseline-p4-ort-linux-x86_64.json`、`fixtures/p4/python-merged-parity.json`：同文本对照证据。
+- 真实模型测试 11 项（`p4_ort.rs` 6 + `nmt_ort_facade.rs` 5），全部 `#[ignore]`，需 `P4_ORT_MODEL_DIR`。
+
+### 变更
+
+- `ORT_STEADY_BYTES` **420 → 600 MiB**：门禁阶段是照 Python 宿主 RSS 折算的估计，Rust 进程内实测
+  PSS 574.8 / RSS 578.1 MiB；准入估计偏低会让宿主高估可用内存。
+- 解码加入退化抑制（长度上界 + 无重复 3-gram + 三连停 + 尾部收敛），触发次数经 `degeneracy_count()` 暴露；
+  **不**新增 `TranslationWarning` 变体（会破坏宿主穷尽匹配）。
+- `Translator` 在语言对不符时**自己**报错，不再只依赖 `Coordinator` 的 `supports()` 预检。
+- `tools/freeze-manifest.py --check`：`Cargo.lock` 改为按**冻结提交**比对，工作区漂移只打印 `DRIFT`
+  （原实现按 HEAD 比，第一次正常新增依赖就会误报）。
+- `tools/license-audit.py`：白名单新增 `CDLA-Permissive-2.0`（`ort-sys` 的 build-dependency `ureq`
+  需要根证书数据，只在构建期用于下载 ORT 预编译包）；清单 53 → 152 个包。
+
+### 结论
+
+- P4-G01/G02/G03/G04/G07/G08 通过；**P4-G05（计划摘要）/ P4-G06（隔离、租约、崩溃恢复）部分通过**。
+- 与 P3 基线（Bergamot）的距离：延迟 15.7～26.1×、PSS 1.7×；**B 类比较，不得归因于 runtime**。
+- 质量：短句可用、长句不可用（`model weights` → `模型重量`）。这是**插件替换可行**，不是"可以替换 P3 后端"。
+
+---
 
 ## P4-01 / P4-02 — P3 冻结与候选门禁（tag `p4.0`，报告 `docs/24`）
 

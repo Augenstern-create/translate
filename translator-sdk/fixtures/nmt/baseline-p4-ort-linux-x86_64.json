@@ -1,0 +1,27 @@
+{
+  "schema": "p4-ort-bench/v1",
+  "caliber": {
+    "build": "release",
+    "intra_op_threads": 1,
+    "cache": "none",
+    "decoding": "greedy + no-repeat-3gram + 3-run stop",
+    "note": "进程内单线程；内存含 ORT 运行库与 int8 权重；不是 Python 侧数字的对照"
+  },
+  "identity": {
+    "engine_id": "nmt.ort.opus-mt",
+    "model_revision": "nmt.ort.opus-mt#b89bdb6823b90643",
+    "runtime_build": "onnxruntime api 1.31（ort 2.0.0-rc.15 prebuilt）",
+    "load_ms": 1301
+  },
+  "memory_mib": {
+    "rss_before_load": 8.4,
+    "rss_after_load": 313.6,
+    "rss_after_bench": 578.1,
+    "pss_after_bench": 574.8
+  },
+  "rows": [
+    {"chars": 17, "first_ms": 177, "p50_ms": 123, "reps": 10,"output": "图书馆9点开放"},
+    {"chars": 94, "first_ms": 751, "p50_ms": 653, "reps": 10,"output": "翻译质量取决于培训数据、代谢器和解码参数,因此在装运之前,每一批产品都必须对照固定的金币进行检查。"},
+    {"chars": 499, "first_ms": 2759, "p50_ms": 2752, "reps": 10,"output": "完全运行于设备上的翻译引擎必须平衡三点: 内存、 延时和质量。 内存储由模型重量决定, 模型重量在负载时间固定, 引擎卸载时释放。 延迟取决于解码步骤的数量, 每一个步骤重读相同的重量, 所以缓存行为很重要 。 质量取决于培训数据, 以及质地标记器圆曲写源文本的忠实程度。 当句子包含保护范围, 如 URL 或模板变量, 发动机只看到普通部分, 需要每段多一个解码器运行, 并且保持结构精确 。"}
+  ]
+}

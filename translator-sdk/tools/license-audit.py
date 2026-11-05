@@ -48,6 +48,10 @@ ALLOWED = {
     "CC0-1.0",
     "Unicode-3.0",
     "MPL-2.0",  # 文件级 copyleft，允许在动态链接/独立进程场景使用；需保留声明
+    # CDLA-Permissive-2.0：数据许可（不是代码许可），OSI 认可、无 copyleft、只要求保留声明。
+    # P4 引入：`ort-sys` 的 **build-dependency** `ureq` 需要根证书数据（`webpki-root-certs`）。
+    # 该依赖**只在构建期**用于下载 ONNX Runtime 预编译包，不进发行产物；详见 docs/25 §3。
+    "CDLA-Permissive-2.0",
 }
 
 # 明确拒绝（即使出现在 OR 里也不作为唯一出路时需要人工复核）

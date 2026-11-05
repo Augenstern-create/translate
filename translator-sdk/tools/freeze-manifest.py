@@ -12,9 +12,15 @@
 `--check` 的判据（任一不满足即 FAIL）：
   * tag `p3.4` 仍指向 manifest 里记录的 commit；
   * 分支 `p3-frozen` 存在且指向同一 commit；
-  * `Cargo.lock` 与基线 JSON 的 sha256 未变；
+  * **冻结提交上**的 `Cargo.lock` 与基线 JSON 的 sha256 未变；
+  * 工作区里的基线 JSON 没有被改写（基线是证据，不能就地改）；
   * 若 manifest 记录了模型文件哈希，且当前 `NMT_MODEL_DIR` 存在，则重新核对；
   * release-blockers 台账存在且条目 id 与 manifest 记录一致。
+
+**为什么 Cargo.lock 要按冻结提交比、而不是按 HEAD 比**：P3 之后每个阶段都可能合法地新增依赖
+（P4 就新增了 `ort`/`tokenizers`）。冻结承诺的对象是 tag `p3.4` 那个提交，不是"HEAD 永远不变"。
+按 HEAD 比会在第一次正常新增依赖时就误报，把"冻结"变成"禁止前进"。HEAD 与冻结提交的差异
+以 `DRIFT` 行打印出来（信息性，不算失败）。
 
 注意：清单**不是**模型再分发授权，只是版本证据。
 """
@@ -53,6 +59,16 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def git_blob_sha(commit: str, relpath: str) -> str:
+    """某个提交里某个文件的 sha256（relpath 相对仓库根，POSIX 分隔）。"""
+    blob = subprocess.run(
+        ["git", "show", f"{commit}:{relpath}"], cwd=REPO, capture_output=True
+    )
+    if blob.returncode != 0:
+        return ""
+    return hashlib.sha256(blob.stdout).hexdigest()
 
 
 def git(*args: str) -> str:
@@ -166,8 +182,17 @@ def cmd_check() -> int:
         problems.append("tag p3.4 已移动（不可变承诺被破坏）")
     if git("rev-parse", "p3-frozen") != want["git"]["frozen_commit"]:
         problems.append("分支 p3-frozen 不再指向冻结提交")
-    if sha256_file(SDK / "Cargo.lock") != want["cargo_lock_sha256"]:
-        problems.append("Cargo.lock 与冻结时不同（冻结基线被改动）")
+    frozen = want["git"]["frozen_commit"]
+    frozen_lock = git_blob_sha(frozen, "translator-sdk/Cargo.lock")
+    if not frozen_lock:
+        problems.append("无法读取冻结提交上的 translator-sdk/Cargo.lock")
+    elif frozen_lock != want["cargo_lock_sha256"]:
+        problems.append("冻结提交上的 Cargo.lock 摘要与清单不符（清单被改写？）")
+
+    head_lock = sha256_file(SDK / "Cargo.lock") if (SDK / "Cargo.lock").exists() else ""
+    if head_lock and head_lock != want["cargo_lock_sha256"]:
+        print(f"DRIFT 工作区 Cargo.lock 与冻结基线不同（HEAD 前进的正常结果，不算失败）："
+              f"{want['cargo_lock_sha256'][:12]}… → {head_lock[:12]}…")
 
     current_baselines = baseline_files()
     for name, sha in want["baselines"].items():
@@ -175,6 +200,8 @@ def cmd_check() -> int:
             problems.append(f"基线文件缺失：{name}")
         elif current_baselines[name] != sha:
             problems.append(f"基线文件被改写：{name}")
+        elif git_blob_sha(frozen, f"translator-sdk/{name}") != sha:
+            problems.append(f"冻结提交里的基线文件与清单不符：{name}")
 
     model_dir = os.environ.get("NMT_MODEL_DIR")
     if model_dir:

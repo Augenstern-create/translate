@@ -30,6 +30,8 @@ pub use translator_rules as rules;
 
 #[cfg(feature = "nmt-bergamot")]
 pub use translator_nmt_bergamot as nmt_bergamot;
+#[cfg(feature = "nmt-ort")]
+pub use translator_nmt_ort as nmt_ort;
 
 // 规则契约：即使不开 `rules` feature，宿主也可以自己实现 `TextRules` 注入。
 pub use translator_core::rules::{NoRules, RuleOutcome, RulePreview, TextRules};
@@ -57,6 +59,8 @@ pub struct Translator {
     /// 真实 NMT 引擎句柄（`docs/17` §5：加载/卸载必须能被 SDK 侧观测）。
     #[cfg(feature = "nmt-bergamot")]
     nmt_engines: Vec<Arc<translator_nmt_bergamot::BergamotNmtEngine>>,
+    #[cfg(feature = "nmt-ort")]
+    ort_engines: Vec<Arc<translator_nmt_ort::OrtNmtEngine>>,
 }
 
 impl Translator {
@@ -175,6 +179,18 @@ impl Translator {
         self.coordinator.explain_route(req)
     }
 
+    /// 真实 NMT 引擎句柄（Bergamot）：加载/卸载/缓存统计都得能被宿主观测。
+    #[cfg(feature = "nmt-bergamot")]
+    pub fn nmt_engines(&self) -> &[Arc<translator_nmt_bergamot::BergamotNmtEngine>] {
+        &self.nmt_engines
+    }
+
+    /// 第二后端（ORT）的引擎句柄：加载/卸载/身份观测用，不参与路由决策。
+    #[cfg(feature = "nmt-ort")]
+    pub fn nmt_ort_engines(&self) -> &[Arc<translator_nmt_ort::OrtNmtEngine>] {
+        &self.ort_engines
+    }
+
     /// 真实 NMT 引擎的加载状态（没挂真实引擎时是空表）。
     #[cfg(feature = "nmt-bergamot")]
     pub fn nmt_states(&self) -> Vec<translator_nmt_bergamot::LoadState> {
@@ -205,6 +221,15 @@ impl Translator {
     #[cfg(feature = "nmt-bergamot")]
     pub fn unload_nmt(&self) -> Result<(), TranslationError> {
         for engine in &self.nmt_engines {
+            engine.unload()?;
+        }
+        Ok(())
+    }
+
+    /// 显式卸载 ORT 模型（会话 drop 后 ORT arena 随之释放）。
+    #[cfg(feature = "nmt-ort")]
+    pub fn unload_nmt_ort(&self) -> Result<(), TranslationError> {
+        for engine in &self.ort_engines {
             engine.unload()?;
         }
         Ok(())
@@ -263,6 +288,8 @@ pub struct TranslatorBuilder {
     /// 真实 NMT 引擎句柄与被拒绝的构造错误。
     #[cfg(feature = "nmt-bergamot")]
     nmt_engines: Vec<Arc<translator_nmt_bergamot::BergamotNmtEngine>>,
+    #[cfg(feature = "nmt-ort")]
+    ort_engines: Vec<Arc<translator_nmt_ort::OrtNmtEngine>>,
 }
 
 impl Default for TranslatorBuilder {
@@ -287,6 +314,8 @@ impl TranslatorBuilder {
             leases: Vec::new(),
             #[cfg(feature = "nmt-bergamot")]
             nmt_engines: Vec::new(),
+            #[cfg(feature = "nmt-ort")]
+            ort_engines: Vec::new(),
         }
     }
 
@@ -302,6 +331,25 @@ impl TranslatorBuilder {
                 let engine = Arc::new(engine);
                 // 句柄要留一份给 `Translator`：加载/卸载/缓存统计得能被观测（docs/17 §5）
                 self.nmt_engines.push(engine.clone());
+                self.engine(engine)
+            }
+            Err(err) => {
+                self.errors.push(err);
+                self
+            }
+        }
+    }
+
+    /// 挂载第二个本地 NMT 引擎（ONNX Runtime + opus-mt，需启用 `nmt-ort` feature）。
+    ///
+    /// P4 的意义：**同一个 `Translator` 契约下换掉整个 native 运行时**。
+    /// 构造期只检查文件与配置，不加载权重；默认 feature 下这段代码不会进依赖树。
+    #[cfg(feature = "nmt-ort")]
+    pub fn nmt_ort(mut self, config: translator_nmt_ort::OrtNmtConfig) -> Self {
+        match translator_nmt_ort::OrtNmtEngine::new(config) {
+            Ok(engine) => {
+                let engine = Arc::new(engine);
+                self.ort_engines.push(engine.clone());
                 self.engine(engine)
             }
             Err(err) => {
@@ -548,6 +596,16 @@ impl TranslatorBuilder {
             }
         }
 
+        #[cfg(feature = "nmt-ort")]
+        for engine in &self.ort_engines {
+            let footprint = engine.memory_footprint_bytes();
+            let label = format!("nmt:{}", translator_nmt_ort::ENGINE_ID);
+            match budget.try_reserve(label, footprint) {
+                Ok(reservation) => reservations.push(reservation),
+                Err(e) => self.errors.push(TranslationError::from(e)),
+            }
+        }
+
         if let Some(err) = self.errors.into_iter().next() {
             return Err(err);
         }
@@ -573,6 +631,8 @@ impl TranslatorBuilder {
             _leases: self.leases,
             #[cfg(feature = "nmt-bergamot")]
             nmt_engines: self.nmt_engines,
+            #[cfg(feature = "nmt-ort")]
+            ort_engines: self.ort_engines,
         })
     }
 }

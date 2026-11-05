@@ -11,6 +11,7 @@ members = [
     "crates/translator-resource",
     "crates/translator-runtime",
     "crates/translator-nmt-bergamot",
+    "crates/translator-nmt-ort",
     "tools/pack-dictionary",
     "tools/p33-bench",
     "tools/migrate-rules",
@@ -39,6 +40,7 @@ translator-rules = { path = "crates/translator-rules" }
 translator-resource = { path = "crates/translator-resource" }
 translator-runtime = { path = "crates/translator-runtime" }
 translator-nmt-bergamot = { path = "crates/translator-nmt-bergamot" }
+translator-nmt-ort = { path = "crates/translator-nmt-ort" }
 pack-dictionary = { path = "tools/pack-dictionary" }
 p33-bench = { path = "tools/p33-bench" }
 migrate-rules = { path = "tools/migrate-rules" }
