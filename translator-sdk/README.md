@@ -14,11 +14,13 @@
 - `08_P2完整技术审查与P3开发建议.md` — 外部审查归档：四个 P3 前决策、P0/P1 风险表、C-01～C-12 测试矩阵、P2-S 方案
 - `09_P2-S稳定化报告.md` — P2-S 稳定化：P0 收口（租约/卸载原子性、锁回收、术语默认值）+ 明确 pending 清单
 - `10_P3_Linux本地NMT开发建议与验收计划.md` — 外部输入：P3 分阶段（P3.0～P3.4）目标、准入门槛与测试矩阵
-- `11_P3.0_原生模型验证报告.md` — **本轮**：真实模型 + Bergamot 原生链路的实测报告（译文/延迟/RSS/失败项）
+- `11_P3.0_原生模型验证报告.md` — 真实模型 + Bergamot 原生链路的实测报告（译文/延迟/RSS/失败项）
+- `12_P3.0技术审查与P3.1准入决策.md` — 外部审查归档：P3.0 有条件通过、三个 P0 门槛、P3.1-A～E 拆分与测试矩阵
+- `13_P3.1-A报告.md` — **本轮**：独立 worker 进程 + 帧协议 + mock worker（实现/测试/偏差三部分）
 
 ---
 
-## 当前状态：P0 + P1 + P2 + P2-S 完成；**P3.0 完成**（原生参考链路已跑通，Rust 接入尚未开始）
+## 当前状态：P0 + P1 + P2 + P2-S + P3.0 完成；**P3.1-A 完成**（worker 进程边界已钉死，真实模型接入从 P3.1-B 开始）
 
 - **P0**：workspace 结构、核心类型、插件契约、协调器与路由、缓存、门面 API、Mock 插件、CLI。
   **不接任何真实模型、不装任何 native 库**，整条链路即可运行 —— 这是设计文档规定的交付判据。
@@ -59,6 +61,20 @@
   24 条固定样本 23 条通过；**模板变量 `{name}` 会被模型吞掉**——占位符保护必须在 P3.1 里前置。
   详见 `../docs/11_P3.0_原生模型验证报告.md`。
 
+- **P3.1-A**（新增 crate `translator-runtime`，**mock worker，未接真实模型**）：
+  把原生推理关进**独立进程**，因为 `panic = "abort"` 让 `catch_unwind` 失效、线程也拦不住 SIGSEGV/`abort()`。
+  - `RuntimeTransport` trait + `ProcessTransport`：长度前缀帧（4 字节大端、上限 8 MiB、超限在**分配前**拒绝）、
+    `request_id` + `worker epoch` + `model revision` 关联、请求超时、三级终止（shutdown 帧 → SIGTERM → SIGKILL）、
+    无僵尸、受控重启（预算用尽即 `CapabilityUnavailable`）、**不静默重放失败请求**；
+  - 加载前校验：四文件齐全 / 非符号链接 / 大小 / 流式 sha256，且**在 spawn 之前**做（缺文件不再触发 native `abort()`）；
+  - 失败映射逐条对应 `docs/12` §3.2；worker 崩溃带**信号号**（`abort` → SIGABRT 6、截断权重 → SIGSEGV 11），
+    因为被信号杀死的进程 `ExitStatus::code()` 是 `None`；
+  - `nmt-worker --mock` 能真的 `abort()`、真的超时、真的吐坏帧（不是返回错误码假装）；
+  - 实测（本机 release，mock）：IPC 往返 p50 **0.016 ms** / p95 0.019 ms（n=200），
+    宿主 2.8 MiB + worker 2.1 MiB（**空壳**，不含权重），`shutdown` 5.1 ms；
+  - **这些数字不能当内存预算**：预算口径仍是 P3.0 的 413.8 MiB（1 线程峰值）/ 678.5 MiB（2 线程峰值）。
+  详见 `../docs/13_P3.1-A报告.md`。
+
 词库与规则都是**可选 feature**：不开 `dictionary` 时 `translator-api` 依赖树里没有 `rusqlite`；
 不开 `rules` 时没有 JSON 解析依赖（但 `TextRules` 契约始终可用，宿主可自己实现）。
 
@@ -74,6 +90,7 @@ translator-sdk/
 │   ├── translator-rules/       # 声明式规则包：编译、金样本校验、执行
 │   ├── translator-dictionary/  # 词典包读取、FST+SQLite 查询、引擎实现
 │   ├── translator-resource/    # 资源协议（v1/v2）+ 安装/激活/回滚仓库 + 租约 + 跨进程锁
+│   ├── translator-runtime/     # P3.1-A：worker 进程边界（帧协议 / 生命周期 / 模型校验）+ mock worker
 │   └── translator-api/         # 唯一对外入口 + Builder
 ├── apps/
 │   └── translator-cli/         # 调试与演示命令行
@@ -96,6 +113,7 @@ translator-types  ←  translator-plugin-api  ←  translator-core  ←  transla
 translator-dictionary  ←  translator-api（仅 `dictionary` feature）
 translator-rules       ←  translator-api（仅 `rules` feature；内含术语表编译）
 translator-resource    ←  translator-api（仅 `resource` feature）
+translator-runtime     ←  （尚无上层消费者；P3.1-D 由 translator-api 接入）
 ```
 
 `translator-types` 与 `translator-plugin-api` **不依赖任何** native runtime、HTTP 客户端或 SQLite。
@@ -337,6 +355,20 @@ python3 tools/p3/nmt_baseline.py --bergamot /tmp/p3/bergamot-translator/build/ap
 **这条链路只用于验证"模型确实可用"，`translator-api` 还没有接入真实模型**（P3.1）。
 模型权重不入库（43 MB + 许可未确认），复现靠 `models.lock.json` 里的坐标与 sha256。
 
+### P3.1-A：worker 进程边界（mock，不接真实模型）
+
+```bash
+cargo test -p translator-runtime           # 20 单元 + 17 集成（跑真实子进程）
+
+# 可复现证据：IPC 分位数、宿主/worker RSS、崩溃隔离、受控重启、shutdown 延迟
+cargo build -p translator-runtime --release --bins
+cargo run -p translator-runtime --release --example p3_1a_evidence
+```
+
+**这里没有任何真实翻译**：mock worker 的译文是 `[目标语言] 原文`，`--bergamot` 会明确返回
+`CapabilityUnavailable`（真实接线是 P3.1-B）。本轮证明的是"崩了宿主还活着、超时能收尸、坏帧不会卡住"，
+不是"模型能翻"。
+
 ## 尚未实现
 
 - 除 CC-CEDICT 之外的词库（Kaikki / JMdict 各有解析器与许可审查）
@@ -346,8 +378,12 @@ python3 tools/p3/nmt_baseline.py --bergamot /tmp/p3/bergamot-translator/build/ap
 - 规则包的其余能力：分句、词形；正则类匹配按 §7.3 的风险评估后决定不做
 - 词形分析（Lindera 等）
 - 内存**硬**上限与 RSS 监控；`ProcessMetricsProvider`（各平台真实占用观测，ADR-021，未实现）
-- **真实 NMT 的 Rust 接入**（`runtime-bergamot`、`LoadedModel`、worker 归属、错误映射）——P3.1，未开始
-- 模型实例租约、single-flight、`ResolvedExecutionPlan`、`content_digest`（ADR-023/026/027）
+- **真实 NMT 的 worker**（Bergamot 进子进程、`Load` 参数、加载前核验与只读快照）——P3.1-B，未开始
+  （P3.1-A 只做了协议与进程边界，`translator-runtime` **尚未被 `translator-api` 使用**）
+- 占位符保护接真实 NMT（SP-01～08，ADR-029）——P3.1-C，未开始
+- 模型实例租约、single-flight、排队超时、`ResolvedExecutionPlan`、`content_digest` 进缓存键（ADR-023/026）——P3.1-D
+- 加载/卸载多轮 RSS 收敛、PSS、`VmHWM`（ADR-021 的 `ProcessMetricsProvider`）——P3.1-D / P3.3
+- Linux CI 与多轮基准（P3.1-E / P3.3）
 - 卸载后 RSS、TTL/LRU 回收（需要 Rust API 才能测）
 - 模型权重再分发许可结论（注册表未声明，待模型卡/法务确认；当前只在开发机本地验证）
 - 断电一致性加固（fsync 父目录/目录树）、加载前内容重新校验、依赖反向引用检查、崩溃注入测试

@@ -9,6 +9,7 @@ members = [
     "crates/translator-analysis",
     "crates/translator-rules",
     "crates/translator-resource",
+    "crates/translator-runtime",
     "tools/pack-dictionary",
     "tools/migrate-rules",
     "apps/translator-cli",
@@ -32,6 +33,7 @@ translator-dictionary = { path = "crates/translator-dictionary" }
 translator-analysis = { path = "crates/translator-analysis" }
 translator-rules = { path = "crates/translator-rules" }
 translator-resource = { path = "crates/translator-resource" }
+translator-runtime = { path = "crates/translator-runtime" }
 pack-dictionary = { path = "tools/pack-dictionary" }
 migrate-rules = { path = "tools/migrate-rules" }
 

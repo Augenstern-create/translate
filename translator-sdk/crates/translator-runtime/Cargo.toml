@@ -1,0 +1,25 @@
+[package]
+name = "translator-runtime"
+description = "进程级隔离的 NMT 运行时传输层（P3.1-A）：帧协议、worker 生命周期、错误映射"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+translator-types.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+
+# 只为一件事引入：给 worker 发 SIGTERM 做「TERM → 等待 → KILL」的升级终止。
+# std 没有可移植的 SIGTERM；Windows 上这个 section 不参与编译。
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "nmt-worker"
+path = "src/bin/nmt-worker.rs"

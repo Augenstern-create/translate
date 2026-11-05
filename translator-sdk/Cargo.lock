@@ -486,6 +486,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "translator-runtime"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "translator-types",
+]
+
+[[package]]
 name = "translator-types"
 version = "0.1.0"
 
