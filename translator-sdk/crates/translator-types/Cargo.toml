@@ -1,0 +1,10 @@
+[package]
+name = "translator-types"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# 刻意零外部依赖：本 crate 是全部插件契约的类型基础，
+# 任何重型依赖都会污染整个依赖树（设计文档 §2 依赖规则）。

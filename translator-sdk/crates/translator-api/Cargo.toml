@@ -1,0 +1,21 @@
+[package]
+name = "translator-api"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+default = []
+# 把 Mock 插件透传给下游（CLI / 测试用）
+mocks = ["translator-plugin-api/mocks"]
+
+[dependencies]
+translator-types.workspace = true
+translator-plugin-api.workspace = true
+translator-core.workspace = true
+
+[dev-dependencies]
+# 测试通过 `--all-features` 启用 mocks，解析出的特性对本 crate 同样生效
+translator-plugin-api = { workspace = true, features = ["mocks"] }
+pollster.workspace = true

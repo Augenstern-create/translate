@@ -1,0 +1,15 @@
+[package]
+name = "translator-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+translator-types.workspace = true
+translator-plugin-api.workspace = true
+
+[dev-dependencies]
+# 路由测试需要 Mock 引擎
+translator-plugin-api = { workspace = true, features = ["mocks"] }
+pollster.workspace = true

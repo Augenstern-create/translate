@@ -1,0 +1,13 @@
+# Rust 构建产物
+/target
+**/*.rs.bk
+
+# 本地资源与模型（体积大，不入库）
+/resources
+/models
+/tmp
+
+# 编辑器
+.vscode/
+.idea/
+*.swp

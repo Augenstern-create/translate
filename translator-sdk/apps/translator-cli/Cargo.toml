@@ -1,0 +1,17 @@
+[package]
+name = "translator-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "translator-cli"
+path = "src/main.rs"
+
+[dependencies]
+# 注意：CLI 启用 mocks feature，因此这个二进制**完全不需要任何真实模型**
+translator-api = { workspace = true, features = ["mocks"] }
+translator-types.workspace = true
+translator-plugin-api = { workspace = true, features = ["mocks"] }
+pollster.workspace = true

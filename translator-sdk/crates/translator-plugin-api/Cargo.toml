@@ -1,0 +1,16 @@
+[package]
+name = "translator-plugin-api"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+# Mock 插件用于 CLI 演示与契约测试；发行版可关闭，不进最终二进制。
+mocks = []
+
+[dependencies]
+translator-types.workspace = true
+
+[dev-dependencies]
+pollster.workspace = true

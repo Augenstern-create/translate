@@ -1,0 +1,32 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/translator-types",
+    "crates/translator-plugin-api",
+    "crates/translator-core",
+    "crates/translator-api",
+    "apps/translator-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "Apache-2.0 OR MIT"
+authors = ["translator-sdk contributors"]
+repository = "https://example.invalid/translator-sdk"
+
+[workspace.dependencies]
+# 内部 crate：一律走 path 依赖，禁止出现版本号，避免发布时漂移
+translator-types = { path = "crates/translator-types" }
+translator-plugin-api = { path = "crates/translator-plugin-api" }
+translator-core = { path = "crates/translator-core" }
+translator-api = { path = "crates/translator-api" }
+
+# 外部依赖：P0 阶段刻意保持极简
+pollster = "0.4"   # 仅 CLI 使用，用于在同步 main 里驱动 async 调用
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"

@@ -1,0 +1,566 @@
+//! 核心值类型：语言标签、请求、结果、错误码、能力与插件描述。
+//!
+//! 对应设计文档 `docs/01_翻译SDK完整开发设计.md` §4「稳定公共 API」。
+//!
+//! **本 crate 是整棵依赖树的最底层，必须保持零外部依赖。**
+//! 任何插件（dictionary / nmt / llm / runtime）都只依赖这里的类型，
+//! 而不应各自定义一套。
+
+use std::fmt;
+
+// ============================================================
+// 语言标签
+// ============================================================
+
+/// BCP-47 风格的语言标签，例如 `en`、`zh-Hans`、`ja`。
+///
+/// P0 只做最基本的规范化与校验；完整的 BCP-47 校验留给后续阶段。
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct LanguageTag(String);
+
+impl LanguageTag {
+    /// 构造并规范化语言标签。
+    ///
+    /// 规范化规则（简化版）：
+    /// - 第一段小写（语言）
+    /// - 长度为 4 的段首字母大写（文字，如 `Hans`）
+    /// - 长度为 2 或 3 的后续段大写（地区，如 `CN`）
+    pub fn new(tag: impl AsRef<str>) -> Result<Self, TranslationError> {
+        let raw = tag.as_ref().trim();
+        if raw.is_empty() {
+            return Err(TranslationError::new(
+                TranslationErrorCode::InvalidRequest,
+                "语言标签不能为空",
+            ));
+        }
+        if !raw
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err(TranslationError::new(
+                TranslationErrorCode::UnsupportedLanguage,
+                format!("非法的语言标签：{raw}"),
+            ));
+        }
+
+        let mut parts = Vec::new();
+        for (idx, part) in raw.split(['-', '_']).filter(|s| !s.is_empty()).enumerate() {
+            if idx == 0 {
+                parts.push(part.to_ascii_lowercase());
+            } else if part.len() == 4 {
+                // 文字子标签：首字母大写
+                let mut chars = part.chars();
+                let head = chars
+                    .next()
+                    .map(|c| c.to_ascii_uppercase())
+                    .unwrap_or_default();
+                parts.push(format!("{head}{}", chars.as_str().to_ascii_lowercase()));
+            } else {
+                parts.push(part.to_ascii_uppercase());
+            }
+        }
+
+        if parts.is_empty() {
+            return Err(TranslationError::new(
+                TranslationErrorCode::InvalidRequest,
+                format!("无法解析的语言标签：{raw}"),
+            ));
+        }
+
+        Ok(Self(parts.join("-")))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for LanguageTag {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::str::FromStr for LanguageTag {
+    type Err = TranslationError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::new(s)
+    }
+}
+
+// ============================================================
+// 能力枚举
+// ============================================================
+
+/// 引擎能力类别。字符串形式与设计文档 §2.1 的能力标识一一对应。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Capability {
+    /// `translation.dictionary`
+    Dictionary,
+    /// `translation.nmt`
+    Nmt,
+    /// `translation.remote`
+    Remote,
+}
+
+impl Capability {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Capability::Dictionary => "translation.dictionary",
+            Capability::Nmt => "translation.nmt",
+            Capability::Remote => "translation.remote",
+        }
+    }
+}
+
+impl fmt::Display for Capability {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+// ============================================================
+// 请求与策略
+// ============================================================
+
+/// 引擎选择策略。
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub enum TranslationPolicy {
+    /// 默认策略：能本地就本地，绝不自动回退到远程。
+    #[default]
+    AutoLocalFirst,
+    /// 只允许词典（精确词条/短语）。
+    DictionaryOnly,
+    /// 只允许本地 NMT。
+    LocalOnly,
+    /// 只允许远程 LLM（需宿主显式授权，见设计文档 §11）。
+    RemoteOnly,
+    /// 指名使用某个引擎（调试与测试用）。
+    ExplicitEngine(String),
+}
+
+impl TranslationPolicy {
+    pub fn is_remote_allowed(&self) -> bool {
+        matches!(
+            self,
+            TranslationPolicy::RemoteOnly | TranslationPolicy::AutoLocalFirst
+        )
+    }
+}
+
+/// 一次翻译请求。
+#[derive(Clone, Debug)]
+pub struct TranslateRequest {
+    pub text: String,
+    /// `None` 表示自动识别语言。
+    pub source: Option<LanguageTag>,
+    pub target: LanguageTag,
+    pub policy: TranslationPolicy,
+    pub glossary_id: Option<String>,
+    pub timeout_ms: Option<u64>,
+}
+
+impl TranslateRequest {
+    /// 便捷构造：默认 `AutoLocalFirst` 策略、自动识别源语言。
+    pub fn new(text: impl Into<String>, target: LanguageTag) -> Self {
+        Self {
+            text: text.into(),
+            source: None,
+            target,
+            policy: TranslationPolicy::default(),
+            glossary_id: None,
+            timeout_ms: None,
+        }
+    }
+
+    pub fn with_source(mut self, source: LanguageTag) -> Self {
+        self.source = Some(source);
+        self
+    }
+
+    pub fn with_policy(mut self, policy: TranslationPolicy) -> Self {
+        self.policy = policy;
+        self
+    }
+
+    pub fn with_glossary(mut self, glossary_id: impl Into<String>) -> Self {
+        self.glossary_id = Some(glossary_id.into());
+        self
+    }
+
+    pub fn with_timeout_ms(mut self, ms: u64) -> Self {
+        self.timeout_ms = Some(ms);
+        self
+    }
+}
+
+/// 一次翻译结果，带来源可追溯信息。
+#[derive(Clone, Debug)]
+pub struct TranslationResult {
+    pub text: String,
+    pub source: LanguageTag,
+    pub target: LanguageTag,
+    /// 实际产出结果的引擎 id。
+    pub engine_id: String,
+    /// 使用的模型 id（词典引擎一般为 `None`）。
+    pub model_id: Option<String>,
+    pub elapsed_ms: u64,
+    pub warnings: Vec<TranslationWarning>,
+}
+
+/// 非致命警告。不得用警告替代错误。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TranslationWarning {
+    /// 占位符未能完整还原（设计文档 §6 要求必须暴露）。
+    PlaceholderRestoreFailed(String),
+    /// 源语言是猜测得到的，而非用户指定。
+    LanguageAssumed(String),
+    /// 命中缓存。
+    CacheHit,
+    /// 术语校验未通过。
+    TermMismatch(String),
+    /// 经英语中转（设计文档 §5.2，会降低质量并增加延迟）。
+    PivotRoute(String),
+}
+
+// ============================================================
+// 查词
+// ============================================================
+
+#[derive(Clone, Debug)]
+pub struct LookupRequest {
+    pub term: String,
+    pub language: Option<LanguageTag>,
+    pub limit: usize,
+}
+
+impl LookupRequest {
+    pub fn new(term: impl Into<String>) -> Self {
+        Self {
+            term: term.into(),
+            language: None,
+            limit: 10,
+        }
+    }
+
+    pub fn with_language(mut self, language: LanguageTag) -> Self {
+        self.language = Some(language);
+        self
+    }
+
+    pub fn with_limit(mut self, limit: usize) -> Self {
+        self.limit = limit;
+        self
+    }
+}
+
+/// 单条释义。每条释义都带 `source_id`，避免二次打包丢失许可来源
+/// （设计文档 §7.1）。
+#[derive(Clone, Debug)]
+pub struct Sense {
+    pub definition: String,
+    pub source_id: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct DictionaryEntry {
+    pub headword: String,
+    pub normalized: String,
+    pub language: LanguageTag,
+    pub readings: Vec<String>,
+    pub parts_of_speech: Vec<String>,
+    pub senses: Vec<Sense>,
+    pub source_id: String,
+    pub source_license: String,
+    pub confidence: f32,
+}
+
+/// 语言识别候选。短文本或低置信度时必须返回多个候选，
+/// 不要强行判定（设计文档 §7 与资源文档 §4）。
+#[derive(Clone, Debug)]
+pub struct LanguageGuess {
+    pub language: LanguageTag,
+    pub confidence: f32,
+}
+
+// ============================================================
+// 模型与推理
+// ============================================================
+
+/// 模型清单。P0 只保留最小字段，完整 schema 见设计文档 §8.2。
+#[derive(Clone, Debug)]
+pub struct ModelManifest {
+    pub id: String,
+    pub architecture: String,
+    pub source_language: LanguageTag,
+    pub target_languages: Vec<LanguageTag>,
+    pub estimated_peak_ram_bytes: Option<u64>,
+}
+
+/// 兼容性判定结果。**不允许通过字符串猜测兼容**（设计文档 §2.1）。
+#[derive(Clone, Debug)]
+pub struct CompatibilityReport {
+    pub compatible: bool,
+    pub reasons: Vec<String>,
+}
+
+impl CompatibilityReport {
+    pub fn ok() -> Self {
+        Self {
+            compatible: true,
+            reasons: Vec::new(),
+        }
+    }
+
+    pub fn incompatible(reason: impl Into<String>) -> Self {
+        Self {
+            compatible: false,
+            reasons: vec![reason.into()],
+        }
+    }
+}
+
+/// 资源预算约束（设计文档 §9.3）。
+#[derive(Clone, Debug)]
+pub struct ResourceLimits {
+    /// 峰值内存上限（字节）。
+    pub max_peak_ram_bytes: Option<u64>,
+    /// 允许并发的推理数，移动端通常为 1。
+    pub max_concurrent_inference: usize,
+}
+
+impl Default for ResourceLimits {
+    fn default() -> Self {
+        Self {
+            max_peak_ram_bytes: None,
+            max_concurrent_inference: 1,
+        }
+    }
+}
+
+/// NMT 输入。
+#[derive(Clone, Debug)]
+pub struct NmtInput {
+    pub text: String,
+    pub source: LanguageTag,
+    pub target: LanguageTag,
+}
+
+/// NMT 输出。
+#[derive(Clone, Debug)]
+pub struct NmtOutput {
+    pub text: String,
+}
+
+// ============================================================
+// 插件描述
+// ============================================================
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PluginApiVersion {
+    pub major: u16,
+    pub minor: u16,
+}
+
+impl PluginApiVersion {
+    pub const CURRENT: Self = Self { major: 0, minor: 1 };
+
+    pub const fn new(major: u16, minor: u16) -> Self {
+        Self { major, minor }
+    }
+
+    /// 主版本必须一致，次版本只要求“不低于”最低能力。
+    pub fn accepts(&self, required: PluginApiVersion) -> bool {
+        self.major == required.major && self.minor >= required.minor
+    }
+}
+
+impl fmt::Display for PluginApiVersion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}.{}", self.major, self.minor)
+    }
+}
+
+/// 翻译引擎描述。
+#[derive(Clone, Debug)]
+pub struct EngineDescriptor {
+    /// 全局唯一 id，形如 `org.example.nmt.mock`。
+    pub id: &'static str,
+    pub capabilities: &'static [Capability],
+    /// 仅在**可兼容**插件之间用于排序，不能绕过质量/内存要求。
+    pub priority: i32,
+    pub plugin_api: PluginApiVersion,
+    pub license: &'static str,
+}
+
+impl EngineDescriptor {
+    pub fn supports(&self, capability: Capability) -> bool {
+        self.capabilities.contains(&capability)
+    }
+}
+
+/// 词典/语言学提供者描述。
+#[derive(Clone, Debug)]
+pub struct ProviderDescriptor {
+    pub id: &'static str,
+    pub plugin_api: PluginApiVersion,
+    pub license: &'static str,
+}
+
+/// 推理后端描述。
+#[derive(Clone, Debug)]
+pub struct BackendDescriptor {
+    pub id: &'static str,
+    pub plugin_api: PluginApiVersion,
+    pub license: &'static str,
+}
+
+/// 对外暴露的能力清单条目。
+#[derive(Clone, Debug)]
+pub struct CapabilityInfo {
+    pub engine_id: String,
+    pub capabilities: Vec<Capability>,
+    pub priority: i32,
+    pub license: String,
+}
+
+/// 路由决策说明。`explain_route()` 返回此结构，
+/// **不得把用户原文写进日志**（设计文档 §4.1）。
+#[derive(Clone, Debug)]
+pub struct RouteDecision {
+    pub engine_id: String,
+    pub capability: Capability,
+    /// 人类可读的选择理由，仅描述规则命中情况，不含原文。
+    pub reason: String,
+}
+
+// ============================================================
+// 错误
+// ============================================================
+
+/// 错误码。由设计文档 §4 固定，不得随意增删。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TranslationErrorCode {
+    InvalidRequest,
+    UnsupportedLanguage,
+    ResourceNotInstalled,
+    CapabilityUnavailable,
+    RuntimeInitFailed,
+    OutOfBudget,
+    Cancelled,
+    Timeout,
+    BackendFailed,
+    NetworkNotAuthorized,
+    ProviderRejected,
+    IntegrityFailure,
+}
+
+impl TranslationErrorCode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::InvalidRequest => "InvalidRequest",
+            Self::UnsupportedLanguage => "UnsupportedLanguage",
+            Self::ResourceNotInstalled => "ResourceNotInstalled",
+            Self::CapabilityUnavailable => "CapabilityUnavailable",
+            Self::RuntimeInitFailed => "RuntimeInitFailed",
+            Self::OutOfBudget => "OutOfBudget",
+            Self::Cancelled => "Cancelled",
+            Self::Timeout => "Timeout",
+            Self::BackendFailed => "BackendFailed",
+            Self::NetworkNotAuthorized => "NetworkNotAuthorized",
+            Self::ProviderRejected => "ProviderRejected",
+            Self::IntegrityFailure => "IntegrityFailure",
+        }
+    }
+}
+
+impl fmt::Display for TranslationErrorCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// 统一错误类型。附带可安装资源建议，便于 UI 直接引导用户。
+#[derive(Clone, Debug)]
+pub struct TranslationError {
+    pub code: TranslationErrorCode,
+    pub message: String,
+    pub suggested_packages: Vec<String>,
+}
+
+impl TranslationError {
+    pub fn new(code: TranslationErrorCode, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+            suggested_packages: Vec::new(),
+        }
+    }
+
+    pub fn with_suggestions<S: Into<String>, I: IntoIterator<Item = S>>(
+        mut self,
+        items: I,
+    ) -> Self {
+        self.suggested_packages = items.into_iter().map(Into::into).collect();
+        self
+    }
+}
+
+impl fmt::Display for TranslationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[{}] {}", self.code, self.message)?;
+        if !self.suggested_packages.is_empty() {
+            write!(f, "（建议安装：{}）", self.suggested_packages.join(", "))?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for TranslationError {}
+
+// ============================================================
+// 测试
+// ============================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn 语言标签应被规范化() {
+        assert_eq!(LanguageTag::new("ZH_hans").unwrap().as_str(), "zh-Hans");
+        assert_eq!(LanguageTag::new("EN").unwrap().as_str(), "en");
+        assert_eq!(LanguageTag::new("zh-CN").unwrap().as_str(), "zh-CN");
+        assert_eq!(LanguageTag::new("  ja  ").unwrap().as_str(), "ja");
+    }
+
+    #[test]
+    fn 空标签应被拒绝() {
+        assert_eq!(
+            LanguageTag::new("   ").unwrap_err().code,
+            TranslationErrorCode::InvalidRequest
+        );
+    }
+
+    #[test]
+    fn 非法字符应被拒绝() {
+        assert_eq!(
+            LanguageTag::new("en us!").unwrap_err().code,
+            TranslationErrorCode::UnsupportedLanguage
+        );
+    }
+
+    #[test]
+    fn 插件版本需主版本一致() {
+        let v = PluginApiVersion::new(0, 2);
+        assert!(v.accepts(PluginApiVersion::new(0, 1)));
+        assert!(!v.accepts(PluginApiVersion::new(0, 3)));
+        assert!(!v.accepts(PluginApiVersion::new(1, 0)));
+    }
+
+    #[test]
+    fn 默认策略不允许远程() {
+        assert!(!TranslationPolicy::LocalOnly.is_remote_allowed());
+        assert!(TranslationPolicy::RemoteOnly.is_remote_allowed());
+    }
+}
