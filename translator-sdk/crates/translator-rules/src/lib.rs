@@ -52,6 +52,15 @@ use unicode_normalization::UnicodeNormalization;
 /// 当前规则格式版本。格式不兼容变更时必须自增。
 pub const SCHEMA_VERSION: u16 = 1;
 
+/// 当前规则**执行语义**版本。
+///
+/// - `1`：规则作用于整段原文（P1 初版，会把 URL 里的词也改掉）；
+/// - `2`：规则只作用于纯文本片段，URL/邮箱/模板变量/代码字节级不变。
+///
+/// 语义变更必须让旧规则包**显式失败**而不是悄悄改变行为（审查建议 R-01）。
+/// 目前没有外部规则包，因此不提供 `1` 的兼容模式。
+pub const CURRENT_PIPELINE_VERSION: u16 = 2;
+
 const MAGIC: &[u8] = b"TRULE\0";
 const HEADER_LEN: usize = 16;
 const HASH_LEN: usize = 32;
@@ -83,6 +92,8 @@ pub enum RuleError {
         rule: String,
         detail: String,
     },
+    /// 规则执行语义版本不受支持（防止旧规则包被静默改变行为）。
+    UnsupportedPipeline(u16),
     /// 规则没有金样本。§7.2 要求规则必须带测试样本。
     MissingSamples(String),
     /// 金样本未通过。
@@ -112,6 +123,11 @@ impl fmt::Display for RuleError {
                 write!(f, "规则 {rule} 的语言对非法：{detail}")
             }
             Self::InvalidRule { rule, detail } => write!(f, "规则 {rule} 不合法：{detail}"),
+            Self::UnsupportedPipeline(v) => write!(
+                f,
+                "不支持的规则执行语义 pipeline_version={v}（本 SDK 为 {CURRENT_PIPELINE_VERSION}）：\
+                 旧语义允许规则改写 URL/邮箱/代码，已废弃，请补 pipeline_version 后重新校验金样本"
+            ),
             Self::MissingSamples(id) => write!(
                 f,
                 "规则 {id} 缺少金样本（samples）：设计文档 §7.2 要求每条规则都必须带样本"
@@ -165,6 +181,9 @@ struct RuleSpec {
     /// 规则包自身的许可证（规则也是可分发资源，必须可追溯）。
     #[serde(default)]
     license: Option<String>,
+    /// 规则执行语义版本；省略视为当前版本。
+    #[serde(default)]
+    pipeline_version: Option<u16>,
     /// 金样本未显式写 `source`/`target` 时使用的语言对。
     #[serde(default)]
     sample_pair: Vec<String>,
@@ -325,6 +344,7 @@ pub struct RuleEngine {
     id: String,
     version: u32,
     license: Option<String>,
+    pipeline_version: u16,
     /// 已按优先级稳定排序。
     rules: Vec<Rule>,
     sample_pair: (LanguageTag, LanguageTag),
@@ -339,6 +359,10 @@ impl RuleEngine {
 
         if spec.schema_version != SCHEMA_VERSION {
             return Err(RuleError::UnsupportedSchema(spec.schema_version));
+        }
+        let pipeline_version = spec.pipeline_version.unwrap_or(CURRENT_PIPELINE_VERSION);
+        if pipeline_version != CURRENT_PIPELINE_VERSION {
+            return Err(RuleError::UnsupportedPipeline(pipeline_version));
         }
         if spec.id.trim().is_empty() {
             return Err(RuleError::EmptyId);
@@ -368,6 +392,7 @@ impl RuleEngine {
             id: spec.id,
             version: spec.version,
             license: spec.license,
+            pipeline_version,
             rules,
             sample_pair,
             source_json: json.to_string(),
@@ -493,6 +518,11 @@ impl RuleEngine {
     /// 规则数量（`TextRules::rule_count` 的固有方法版本）。
     pub fn rule_count(&self) -> usize {
         self.rules.len()
+    }
+
+    /// 规则执行语义版本。
+    pub fn pipeline_version(&self) -> u16 {
+        self.pipeline_version
     }
 
     /// 规则包许可证（SPDX），未声明时为 `None`。
@@ -1057,6 +1087,31 @@ mod tests {
         let engine = RuleEngine::from_json(json).unwrap();
         assert_eq!(engine.apply("Ａ", &en(), &zh()).text, "A");
         assert_eq!(engine.apply("Ａ", &zh(), &en()).text, "A");
+    }
+
+    #[test]
+    fn 旧执行语义版本被拒绝() {
+        let json = r#"{
+            "schema_version": 1,
+            "id": "rules.test.legacy",
+            "version": 1,
+            "pipeline_version": 1,
+            "rules": [
+                { "id": "term.x", "action": { "kind": "replace", "from": "a", "to": "b" },
+                  "samples": [{ "input": "a", "expect": "b" }] }
+            ]
+        }"#;
+        let err = RuleEngine::from_json(json).unwrap_err();
+        assert!(
+            matches!(err, RuleError::UnsupportedPipeline(1)),
+            "实际：{err}"
+        );
+    }
+
+    #[test]
+    fn 省略执行语义版本时视为当前版本() {
+        let engine = RuleEngine::from_json(BASE).unwrap();
+        assert_eq!(engine.pipeline_version(), CURRENT_PIPELINE_VERSION);
     }
 
     #[test]

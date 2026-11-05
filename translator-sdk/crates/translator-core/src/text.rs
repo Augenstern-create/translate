@@ -99,6 +99,65 @@ impl ProtectedText {
     }
 }
 
+/// 文本片段。
+///
+/// 规则引擎**只能**改写 `Plain` 片段：URL、邮箱、模板变量、代码里的内容
+/// 必须字节级保持不变（设计文档 §6/§7.3，审查建议 R-01）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Segment<'a> {
+    /// 普通文本，允许规则改写。
+    Plain(&'a str),
+    /// 受保护片段，规则不得改动。
+    Protected(&'a str),
+}
+
+/// 把输入切成「纯文本 / 受保护」片段。
+///
+/// 这是 `protect()` 与「规则只在纯文本上生效」共用的**唯一**扫描器，
+/// 避免两套正则各自演化、最终对不上。
+pub fn split_protected(input: &str) -> Vec<Segment<'_>> {
+    let chars: Vec<(usize, char)> = input.char_indices().collect();
+    let byte_at = |idx: usize| chars.get(idx).map_or(input.len(), |(b, _)| *b);
+
+    let mut out = Vec::new();
+    let mut plain_start = 0usize;
+    let mut i = 0usize;
+
+    while i < chars.len() {
+        let (byte_pos, c) = chars[i];
+
+        let end = if starts_with_url(&chars, i) {
+            url_end(&chars, i)
+        } else if c == '{' {
+            brace_end(&chars, i)
+        } else if c == '`' {
+            backtick_end(&chars, i)
+        } else if is_email_char(c) && is_token_start(&chars, i) {
+            email_end(&chars, i)
+        } else {
+            None
+        };
+
+        match end {
+            Some(end_idx) => {
+                if byte_pos > plain_start {
+                    out.push(Segment::Plain(&input[plain_start..byte_pos]));
+                }
+                let end_byte = byte_at(end_idx);
+                out.push(Segment::Protected(&input[byte_pos..end_byte]));
+                plain_start = end_byte;
+                i = end_idx;
+            }
+            None => i += 1,
+        }
+    }
+
+    if plain_start < input.len() {
+        out.push(Segment::Plain(&input[plain_start..]));
+    }
+    out
+}
+
 /// 保护 URL、邮箱、`{占位符}` 与反引号代码块。
 ///
 /// 设计文档 §6 明确要求：未能确保占位符恢复时必须返回警告或错误，
@@ -107,56 +166,102 @@ pub fn protect(input: &str) -> ProtectedText {
     let mut segments: Vec<String> = Vec::new();
     let mut out = String::with_capacity(input.len());
 
-    let chars: Vec<char> = input.chars().collect();
-    let mut i = 0;
-
-    while i < chars.len() {
-        // URL：http:// 或 https:// 直到空白
-        let rest: String = chars[i..chars.len().min(i + 8)].iter().collect();
-        if rest.starts_with("http://") || rest.starts_with("https://") {
-            let mut j = i;
-            while j < chars.len() && !chars[j].is_whitespace() {
-                j += 1;
-            }
-            let seg: String = chars[i..j].iter().collect();
-            out.push_str(&ProtectedText::marker(segments.len()));
-            segments.push(seg);
-            i = j;
-            continue;
-        }
-
-        // {占位符}
-        if chars[i] == '{' {
-            if let Some(offset) = chars[i..].iter().position(|c| *c == '}') {
-                let j = i + offset;
-                let seg: String = chars[i..=j].iter().collect();
+    for segment in split_protected(input) {
+        match segment {
+            Segment::Plain(text) => out.push_str(text),
+            Segment::Protected(text) => {
                 out.push_str(&ProtectedText::marker(segments.len()));
-                segments.push(seg);
-                i = j + 1;
-                continue;
+                segments.push(text.to_string());
             }
         }
-
-        // `code`
-        if chars[i] == '`' {
-            if let Some(offset) = chars[i + 1..].iter().position(|c| *c == '`') {
-                let j = i + 1 + offset;
-                let seg: String = chars[i..=j].iter().collect();
-                out.push_str(&ProtectedText::marker(segments.len()));
-                segments.push(seg);
-                i = j + 1;
-                continue;
-            }
-        }
-
-        out.push(chars[i]);
-        i += 1;
     }
 
     ProtectedText {
         text: out,
         segments,
     }
+}
+
+fn starts_with_url(chars: &[(usize, char)], i: usize) -> bool {
+    let head: String = chars[i..chars.len().min(i + 8)]
+        .iter()
+        .map(|(_, c)| *c)
+        .collect();
+    head.starts_with("http://") || head.starts_with("https://")
+}
+
+fn url_end(chars: &[(usize, char)], i: usize) -> Option<usize> {
+    let mut j = i;
+    while j < chars.len() && !chars[j].1.is_whitespace() {
+        j += 1;
+    }
+    Some(j)
+}
+
+fn brace_end(chars: &[(usize, char)], i: usize) -> Option<usize> {
+    chars[i..]
+        .iter()
+        .position(|(_, c)| *c == '}')
+        .map(|offset| i + offset + 1)
+}
+
+fn backtick_end(chars: &[(usize, char)], i: usize) -> Option<usize> {
+    chars[i + 1..]
+        .iter()
+        .position(|(_, c)| *c == '`')
+        .map(|offset| i + 1 + offset + 1)
+}
+
+fn is_email_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '%' | '+' | '-')
+}
+
+/// 只在"词的起点"尝试匹配邮箱，避免把 `a@b.c` 里的片段重复匹配。
+fn is_token_start(chars: &[(usize, char)], i: usize) -> bool {
+    match i.checked_sub(1).and_then(|prev| chars.get(prev)) {
+        Some((_, c)) => !is_email_char(*c),
+        None => true,
+    }
+}
+
+/// 匹配 `local@domain.tld`。域名至少一个点、TLD 至少两个字母。
+fn email_end(chars: &[(usize, char)], i: usize) -> Option<usize> {
+    let mut j = i;
+    while j < chars.len() && is_email_char(chars[j].1) {
+        j += 1;
+    }
+    if j >= chars.len() || chars[j].1 != '@' {
+        return None;
+    }
+    let at = j;
+    j += 1;
+
+    let mut seen_dot = false;
+    while j < chars.len() {
+        let c = chars[j].1;
+        if c == '.' {
+            seen_dot = true;
+            j += 1;
+        } else if c.is_ascii_alphanumeric() || c == '-' {
+            j += 1;
+        } else {
+            break;
+        }
+    }
+    if !seen_dot || j == at + 1 {
+        return None;
+    }
+
+    // TLD 必须是至少两个字母（否则 `a@b.c` 这种不像邮箱，保持原样）
+    let tld_start = chars[..j]
+        .iter()
+        .rposition(|(_, c)| *c == '.')
+        .map(|pos| pos + 1)?;
+    let tld: String = chars[tld_start..j].iter().map(|(_, c)| *c).collect();
+    if tld.len() < 2 || !tld.chars().all(|c| c.is_ascii_alphabetic()) {
+        return None;
+    }
+    Some(j)
 }
 
 /// 还原占位符。
@@ -210,6 +315,51 @@ mod tests {
     #[test]
     fn 长英文单词仍算单词() {
         assert!(looks_like_single_word("internationalization"));
+    }
+
+    #[test]
+    fn 切分受保护片段() {
+        // URL、邮箱、模板变量、反引号代码都必须是 Protected
+        let text =
+            "see https://example.com/LLM and mail a.b@example.com, then `code_x` and {token}";
+        let segments = split_protected(text);
+        let protected: Vec<&str> = segments
+            .iter()
+            .filter_map(|s| match s {
+                Segment::Protected(t) => Some(*t),
+                Segment::Plain(_) => None,
+            })
+            .collect();
+        assert_eq!(
+            protected,
+            vec![
+                "https://example.com/LLM",
+                "a.b@example.com",
+                "`code_x`",
+                "{token}"
+            ]
+        );
+
+        // 拼回原文必须无损
+        let rebuilt: String = segments
+            .iter()
+            .map(|s| match s {
+                Segment::Plain(t) | Segment::Protected(t) => *t,
+            })
+            .collect();
+        assert_eq!(rebuilt, text);
+    }
+
+    #[test]
+    fn 邮箱识别不应误伤普通文本() {
+        // 没有 TLD / TLD 太短 / 没有 @ 的情况都不该被当成邮箱
+        for text in ["a@b", "a@b.c", "hello world", "价格 100@50"] {
+            let segments = split_protected(text);
+            assert!(
+                segments.iter().all(|s| matches!(s, Segment::Plain(_))),
+                "{text:?} 被误判为受保护片段：{segments:?}"
+            );
+        }
     }
 
     #[test]

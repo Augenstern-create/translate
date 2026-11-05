@@ -82,12 +82,15 @@ impl Coordinator {
         match &self.config.rules {
             None => RulePreview::none(normalized),
             Some(rules) => {
-                let outcome = rules.apply(&normalized, source, target);
+                // 与真实翻译走同一条路径（含受保护片段跳过），否则预览会骗人
+                let (text, applied) = self
+                    .apply_rules(&normalized, source, target)
+                    .unwrap_or_else(|_| (normalized.clone(), Vec::new()));
                 RulePreview {
                     rules_id: Some(rules.id().to_string()),
                     version: rules.version(),
-                    text: outcome.text,
-                    applied: outcome.applied,
+                    text,
+                    applied,
                     rule_count: rules.rule_count(),
                 }
             }
@@ -288,19 +291,41 @@ impl Coordinator {
     }
 
     /// 应用规则包。返回 (处理后文本, 实际生效的规则 id)。
+    ///
+    /// 规则**只作用在纯文本片段上**：URL、邮箱、`{模板变量}`、反引号代码里的内容
+    /// 必须字节级不变（设计文档 §6/§7.3，审查建议 R-01）。
+    /// 否则一条 `LLM → large language model` 的规则会把
+    /// `https://example.com/LLM` 改坏，而后面再保护已经来不及。
     fn apply_rules(
         &self,
         text: &str,
         source: &translator_types::LanguageTag,
         target: &translator_types::LanguageTag,
     ) -> Result<(String, Vec<String>), TranslationError> {
-        match &self.config.rules {
-            None => Ok((text.to_string(), Vec::new())),
-            Some(rules) => {
-                let outcome = rules.apply(text, source, target);
-                Ok((outcome.text, outcome.applied))
+        let Some(rules) = &self.config.rules else {
+            return Ok((text.to_string(), Vec::new()));
+        };
+
+        let mut out = String::with_capacity(text.len());
+        let mut applied: Vec<String> = Vec::new();
+
+        for segment in text::split_protected(text) {
+            match segment {
+                text::Segment::Plain(plain) => {
+                    let outcome = rules.apply(plain, source, target);
+                    out.push_str(&outcome.text);
+                    for id in outcome.applied {
+                        if !applied.contains(&id) {
+                            applied.push(id);
+                        }
+                    }
+                }
+                // 受保护片段原样保留，规则看不到它的内容
+                text::Segment::Protected(protected) => out.push_str(protected),
             }
         }
+
+        Ok((out, applied))
     }
 
     fn should_fallback(

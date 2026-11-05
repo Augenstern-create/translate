@@ -184,3 +184,57 @@ fn 规则版本变化会改变缓存键() {
     assert_eq!(v1.explain_rules("cat", &en(), &zh()).version, 1);
     assert_eq!(v9.explain_rules("cat", &en(), &zh()).version, 9);
 }
+
+#[test]
+fn 规则不得改写url里的内容() {
+    // 审查建议 R-01：规则必须先跳过受保护跨度，否则 `LLM` 规则会把 URL 改坏，
+    // 而后面再做占位符保护已经来不及。
+    let translator = build_with_rules();
+    let url = "https://example.com/LLM/path?a=1";
+    let req = TranslateRequest::new(format!("see {url} for details"), zh()).with_source(en());
+
+    let result = pollster::block_on(translator.translate(&req)).unwrap();
+    assert!(
+        result.text.contains(url),
+        "URL 必须字节级不变，实际译文：{}",
+        result.text
+    );
+    assert!(
+        !result.text.contains("large language model"),
+        "URL 内的 LLM 不得被规则改写，实际译文：{}",
+        result.text
+    );
+
+    // 预览与实际翻译必须一致
+    let preview = translator.explain_rules(&req.text, &en(), &zh());
+    assert!(
+        preview.applied.is_empty(),
+        "预览也不应报告规则生效，实际：{:?}",
+        preview.applied
+    );
+    assert!(preview.text.contains(url));
+}
+
+#[test]
+fn 规则不得改写邮箱里的内容() {
+    let translator = build_with_rules();
+    let address = "LLM@example.com";
+    let req = TranslateRequest::new(format!("mail {address} now"), zh()).with_source(en());
+
+    let result = pollster::block_on(translator.translate(&req)).unwrap();
+    assert!(
+        result.text.contains(address),
+        "邮箱必须原样保留，实际译文：{}",
+        result.text
+    );
+    assert!(!result.text.contains("large language model"));
+
+    // 对照组：同样的词出现在纯文本里时规则应当生效
+    let plain = TranslateRequest::new("mail the LLM now", zh()).with_source(en());
+    let applied = pollster::block_on(translator.translate(&plain)).unwrap();
+    assert!(
+        applied.text.contains("large language model"),
+        "纯文本里的 LLM 仍应被规则处理，实际：{}",
+        applied.text
+    );
+}
