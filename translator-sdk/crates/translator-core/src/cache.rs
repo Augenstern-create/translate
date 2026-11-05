@@ -14,6 +14,18 @@ use std::hash::{Hash, Hasher};
 
 use translator_types::{TranslateRequest, TranslationResult};
 
+use crate::diagnostics::TranslationDiagnostics;
+
+/// 缓存条目：译文 + 当时算出来的诊断。
+///
+/// 诊断也要缓存，否则同一次请求"第一次报术语违规、第二次不报"，
+/// 会让宿主以为问题自己好了。易变字段（耗时、`cache_hit`）在写入前清零。
+#[derive(Clone, Debug)]
+pub struct CacheEntry {
+    pub result: TranslationResult,
+    pub diagnostics: TranslationDiagnostics,
+}
+
 /// 缓存键。所有影响译文结果的维度都必须进入键。
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct CacheKey {
@@ -66,7 +78,7 @@ impl CacheKey {
 /// 带容量上限的查询缓存（简单 FIFO 淘汰）。
 pub struct QueryCache {
     capacity: usize,
-    map: HashMap<CacheKey, TranslationResult>,
+    map: HashMap<CacheKey, CacheEntry>,
     order: VecDeque<CacheKey>,
 }
 
@@ -91,11 +103,11 @@ impl QueryCache {
         self.map.is_empty()
     }
 
-    pub fn get(&self, key: &CacheKey) -> Option<&TranslationResult> {
+    pub fn get(&self, key: &CacheKey) -> Option<&CacheEntry> {
         self.map.get(key)
     }
 
-    pub fn insert(&mut self, key: CacheKey, value: TranslationResult) {
+    pub fn insert(&mut self, key: CacheKey, value: CacheEntry) {
         if self.capacity == 0 {
             return;
         }
@@ -163,7 +175,7 @@ mod tests {
     #[test]
     fn 容量为0时不缓存() {
         let mut cache = QueryCache::new(0);
-        cache.insert(sample_key("a"), dummy_result());
+        cache.insert(sample_key("a"), dummy_entry());
         assert!(cache.is_empty());
     }
 
@@ -174,13 +186,21 @@ mod tests {
         let k2 = sample_key("b");
         let k3 = sample_key("c");
 
-        cache.insert(k1.clone(), dummy_result());
-        cache.insert(k2.clone(), dummy_result());
-        cache.insert(k3.clone(), dummy_result());
+        cache.insert(k1.clone(), dummy_entry());
+        cache.insert(k2.clone(), dummy_entry());
+        cache.insert(k3.clone(), dummy_entry());
 
         assert_eq!(cache.len(), 2);
         assert!(cache.get(&k1).is_none(), "最旧的应被淘汰");
         assert!(cache.get(&k3).is_some());
+    }
+
+    #[test]
+    fn 缓存条目带诊断可按文本取回() {
+        let mut cache = QueryCache::new(2);
+        let key = sample_key("hi");
+        cache.insert(key.clone(), dummy_entry());
+        assert_eq!(cache.get(&key).unwrap().diagnostics.engine_id, "mock.nmt");
     }
 
     #[test]
@@ -209,6 +229,25 @@ mod tests {
             model_id: None,
             elapsed_ms: 0,
             warnings: Vec::new(),
+        }
+    }
+
+    fn dummy_entry() -> CacheEntry {
+        CacheEntry {
+            result: dummy_result(),
+            diagnostics: TranslationDiagnostics {
+                engine_id: "mock.nmt".to_string(),
+                capability: translator_types::Capability::Nmt,
+                route_reason: "测试".to_string(),
+                cache_hit: false,
+                source_assumed: false,
+                rules_version: 1,
+                resource_fingerprint: String::new(),
+                rules: None,
+                protected_spans: Vec::new(),
+                restore_missing: Vec::new(),
+                term: None,
+            },
         }
     }
 }

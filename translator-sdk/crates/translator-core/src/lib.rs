@@ -14,16 +14,24 @@
 //!   → Select eligible engine  ✅ 按策略 + 能力 + 语言对
 //!   → 执行翻译                 ✅
 //!   → Restore placeholders    ✅ 含失败检测
+//!   → Term constraint (output)✅ P2.4，不碰受保护跨度
 //!   → 结果 + 来源 + 警告        ✅
+//!   → 结构化诊断（可选入口）    ✅ P2.4 `translate_with_diagnostics`
 //! ```
 
+pub mod budget;
 pub mod cache;
 pub mod coordinator;
+pub mod diagnostics;
 pub mod routing;
 pub mod rules;
+pub mod terms;
 pub mod text;
 
-pub use cache::{CacheKey, QueryCache};
+pub use budget::{BudgetError, BudgetReservation, MemoryBudget, MemoryReport};
+pub use cache::{CacheEntry, CacheKey, QueryCache};
 pub use coordinator::{Coordinator, CoordinatorConfig};
+pub use diagnostics::{RuleTrace, TermTrace, TranslateOutput, TranslationDiagnostics};
 pub use routing::RouteOutcome;
 pub use rules::{NoRules, RuleOutcome, RulePreview, TextRules};
+pub use terms::{NoTermGuard, TargetTermGuard, TermOutcome, TermPolicy, TermViolation};

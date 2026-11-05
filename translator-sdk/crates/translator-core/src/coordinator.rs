@@ -1,4 +1,4 @@
-//! 协调器：串起校验 → 规范化 → 语言识别 → 占位符保护 → 路由 → 执行 → 还原 → 缓存。
+//! 协调器：串起校验 → 规范化 → 语言识别 → 占位符保护 → 路由 → 执行 → 还原 → 术语约束 → 缓存。
 //!
 //! 对应设计文档 §6 的流水线。Coordinator 不认识任何具体引擎，
 //! 只依赖 `translator-plugin-api` 的 trait，因此替换后端不需要改这里。
@@ -13,13 +13,18 @@ use translator_types::{
     TranslationWarning,
 };
 
-use crate::cache::{CacheKey, QueryCache};
+use crate::cache::{CacheEntry, CacheKey, QueryCache};
+use crate::diagnostics::{RuleTrace, TermTrace, TranslateOutput, TranslationDiagnostics};
 use crate::routing;
 use crate::rules::{RulePreview, TextRules};
+use crate::terms::{TargetTermGuard, TermOutcome, TermPolicy};
 use crate::text;
 
 /// 协调器配置。
-#[derive(Clone, Debug)]
+///
+/// 手写 `Debug`：`term_guard` 是 trait object，不该为了可打印而逼所有实现者
+/// 额外实现 `Debug`。这里只打印它的 id/version。
+#[derive(Clone)]
 pub struct CoordinatorConfig {
     /// 查询缓存容量（0 表示禁用）。
     pub cache_capacity: usize,
@@ -37,6 +42,38 @@ pub struct CoordinatorConfig {
     /// 就返回 `IntegrityFailure` 错误而不是返回一份缺内容的译文。
     /// 判断"关键"的依据来自 `translate` 拿到的警告与 span 数量，不依赖引擎配合。
     pub strict_placeholder_restore: bool,
+    /// 输出侧术语约束（P2.4）。`None` 表示不约束。
+    pub term_guard: Option<Arc<dyn TargetTermGuard>>,
+    /// 术语约束策略。仅在配置了 `term_guard` 时有效。
+    pub term_policy: TermPolicy,
+}
+
+impl std::fmt::Debug for CoordinatorConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let term = self
+            .term_guard
+            .as_ref()
+            .map(|g| format!("{}@{}", g.id(), g.version()));
+        f.debug_struct("CoordinatorConfig")
+            .field("cache_capacity", &self.cache_capacity)
+            .field("rules_version", &self.rules_version)
+            .field("rules", &self.config_rules_label())
+            .field(
+                "strict_placeholder_restore",
+                &self.strict_placeholder_restore,
+            )
+            .field("term_guard", &term)
+            .field("term_policy", &self.term_policy)
+            .finish()
+    }
+}
+
+impl CoordinatorConfig {
+    fn config_rules_label(&self) -> Option<String> {
+        self.rules
+            .as_ref()
+            .map(|r| format!("{}@{}", r.id(), r.version()))
+    }
 }
 
 impl Default for CoordinatorConfig {
@@ -46,6 +83,8 @@ impl Default for CoordinatorConfig {
             rules_version: 1,
             rules: None,
             strict_placeholder_restore: false,
+            term_guard: None,
+            term_policy: TermPolicy::default(),
         }
     }
 }
@@ -56,7 +95,7 @@ pub struct Coordinator {
     config: CoordinatorConfig,
     /// 实际参与缓存键的规则版本（规则包自报版本优先）。
     effective_rules_version: u32,
-    /// 实际参与缓存键的资源指纹（挂载的词典/规则包 id@version）。
+    /// 实际参与缓存键的资源指纹（挂载的词典/规则包/术语表 id@version）。
     resource_fingerprint: String,
 }
 
@@ -82,6 +121,11 @@ impl Coordinator {
         self.effective_rules_version
     }
 
+    /// 术语约束策略（诊断用）。
+    pub fn term_policy(&self) -> TermPolicy {
+        self.config.term_policy
+    }
+
     /// 绑定已挂载资源的指纹（`id@version` 用 `;` 连接）。
     ///
     /// 资源版本变化必须让旧缓存失效（ADR-011）。目前资源在构建期绑定，
@@ -95,6 +139,11 @@ impl Coordinator {
         if let Ok(mut cache) = self.cache.lock() {
             cache.clear();
         }
+    }
+
+    /// 当前资源指纹（诊断用）。
+    pub fn resource_fingerprint(&self) -> &str {
+        &self.resource_fingerprint
     }
 
     /// 预览规则包对输入文本的作用，不执行翻译。
@@ -121,6 +170,19 @@ impl Coordinator {
                 }
             }
         }
+    }
+
+    /// 预览术语约束会怎么改一段**译文**（不翻译、不写缓存）。
+    ///
+    /// 返回 `None` 表示没有配置术语表（与"配了但无违规"区分开）。
+    pub fn explain_terms(
+        &self,
+        text: &str,
+        source: &translator_types::LanguageTag,
+        target: &translator_types::LanguageTag,
+    ) -> Option<TermOutcome> {
+        let guard = self.config.term_guard.as_ref()?;
+        Some(guard.apply(text, source, target))
     }
 
     pub fn registry(&self) -> &PluginRegistry {
@@ -155,11 +217,23 @@ impl Coordinator {
         Ok(outcome.decision)
     }
 
+    /// 仅返回译文（对外主路径）。
     pub fn translate<'a>(
         &'a self,
         req: &'a TranslateRequest,
     ) -> BoxFuture<'a, Result<TranslationResult, TranslationError>> {
-        Box::pin(async move { self.run_translate(req).await })
+        Box::pin(async move { self.run(req).await.map(|out| out.result) })
+    }
+
+    /// 返回译文 + 结构化诊断（P2.4）。
+    ///
+    /// 与 [`Self::translate`] 走**同一条**实现路径，只是多带出一份诊断，
+    /// 因此两者不可能给出不同译文。
+    pub fn translate_with_diagnostics<'a>(
+        &'a self,
+        req: &'a TranslateRequest,
+    ) -> BoxFuture<'a, Result<TranslateOutput, TranslationError>> {
+        Box::pin(async move { self.run(req).await })
     }
 
     pub fn lookup<'a>(
@@ -207,10 +281,7 @@ impl Coordinator {
         })
     }
 
-    async fn run_translate(
-        &self,
-        req: &TranslateRequest,
-    ) -> Result<TranslationResult, TranslationError> {
+    async fn run(&self, req: &TranslateRequest) -> Result<TranslateOutput, TranslationError> {
         // 1) 校验 + 规范化
         let normalized = text::normalize(&req.text);
         if normalized.is_empty() {
@@ -220,7 +291,8 @@ impl Coordinator {
             ));
         }
 
-        // 2) 源语言解析
+        // 2) 源语言解析（记录"是猜的"还是"用户指定的"）
+        let source_assumed = req.source.is_none();
         let source = self.resolve_source(&normalized, req)?;
         if source == req.target {
             return Err(TranslationError::new(
@@ -240,21 +312,21 @@ impl Coordinator {
 
         // 4) 占位符保护
         let protected = text::protect(&work_text);
+        let spans = text::protected_spans(&work_text);
 
         // 5) 路由（用的是规则处理后的文本）
         let outcome = routing::select(&self.registry, req, &source, &protected.text)?;
 
-        // 5) 交给引擎的请求：文本已保护、源语言已确定
-        let resolved = TranslateRequest {
-            text: protected.text.clone(),
-            source: Some(source.clone()),
-            ..req.clone()
-        };
+        let rules_trace = self.config.rules.as_ref().map(|rules| RuleTrace {
+            id: rules.id().to_string(),
+            version: rules.version(),
+            applied: rule_applied,
+        });
 
         // 6) 缓存查询
         let key = CacheKey::new(
             &protected.text,
-            &resolved,
+            req,
             source.as_str(),
             &outcome.decision.engine_id,
             self.effective_rules_version,
@@ -263,14 +335,29 @@ impl Coordinator {
 
         if let Ok(cache) = self.cache.lock() {
             if let Some(hit) = cache.get(&key) {
-                let mut hit = hit.clone();
-                hit.warnings.push(TranslationWarning::CacheHit);
-                hit.elapsed_ms = 0;
-                return Ok(hit);
+                let mut entry = hit.clone();
+                entry.result.warnings.push(TranslationWarning::CacheHit);
+                entry.result.elapsed_ms = 0;
+                entry.diagnostics.mark_cached();
+                // 跨度与规则命中随当前输入重算（与首次一致，因为键包含文本哈希）
+                entry.diagnostics.protected_spans = spans;
+                if entry.diagnostics.rules.is_none() {
+                    entry.diagnostics.rules = rules_trace;
+                }
+                return Ok(TranslateOutput {
+                    result: entry.result,
+                    diagnostics: entry.diagnostics,
+                });
             }
         }
 
-        // 7) 执行，词典未命中时在 AutoLocalFirst 下回退到 NMT
+        // 7) 交给引擎的请求：文本已保护、源语言已确定
+        let resolved = TranslateRequest {
+            text: protected.text.clone(),
+            source: Some(source.clone()),
+            ..req.clone()
+        };
+
         let started = Instant::now();
         let mut result = match outcome.engine.translate(&resolved).await {
             Ok(result) => result,
@@ -306,26 +393,47 @@ impl Coordinator {
                 )));
         }
         result.text = restored;
-        // 规则 trace 不进 TranslationResult：给公开枚举加变体会破坏宿主的穷尽匹配，
-        // 因此只保留内部应用（见 `explain_rules`）。这里显式忽略以避免误用。
-        let _ = rule_applied;
 
-        // 9) 补全结果元信息
+        // 9) 输出侧术语约束（P2.4）：只在译文上做，且不得触碰受保护跨度
+        let term_trace = self.apply_term_guard(&source, &req.target, &mut result);
+
+        // 10) 补全结果元信息
         result.source = source;
         result.target = req.target.clone();
         result.elapsed_ms = started.elapsed().as_millis() as u64;
 
-        // 10) 写缓存（缓存副本不含 CacheHit 警告与耗时）
+        let diagnostics = TranslationDiagnostics {
+            engine_id: outcome.decision.engine_id.clone(),
+            capability: outcome.decision.capability,
+            route_reason: outcome.decision.reason.clone(),
+            cache_hit: false,
+            source_assumed,
+            rules_version: self.effective_rules_version,
+            resource_fingerprint: self.resource_fingerprint.clone(),
+            rules: rules_trace,
+            protected_spans: spans,
+            restore_missing: missing,
+            term: term_trace,
+        };
+
+        // 11) 写缓存（缓存副本不含 CacheHit 警告与耗时）
         if let Ok(mut cache) = self.cache.lock() {
-            let mut cached = result.clone();
+            let mut cached = CacheEntry {
+                result: result.clone(),
+                diagnostics: diagnostics.clone(),
+            };
             cached
+                .result
                 .warnings
                 .retain(|w| !matches!(w, TranslationWarning::CacheHit));
-            cached.elapsed_ms = 0;
+            cached.result.elapsed_ms = 0;
             cache.insert(key, cached);
         }
 
-        Ok(result)
+        Ok(TranslateOutput {
+            result,
+            diagnostics,
+        })
     }
 
     /// 应用规则包。返回 (处理后文本, 实际生效的规则 id)。
@@ -344,6 +452,61 @@ impl Coordinator {
         };
         let outcome = rules.apply(text, source, target);
         Ok((outcome.text, outcome.applied))
+    }
+
+    /// 输出侧术语约束。返回 `None` 表示"没跑"（未配置或策略为 `Off`）。
+    fn apply_term_guard(
+        &self,
+        source: &translator_types::LanguageTag,
+        target: &translator_types::LanguageTag,
+        result: &mut TranslationResult,
+    ) -> Option<TermTrace> {
+        if !self.config.term_policy.runs() {
+            return None;
+        }
+        let guard = self.config.term_guard.as_ref()?;
+        let outcome = guard.apply(&result.text, source, target);
+
+        let enforced = self.config.term_policy.applies_text();
+        if enforced {
+            result.text = outcome.text;
+        }
+
+        if !outcome.violations.is_empty() {
+            // 已有枚举变体（P0 就存在），不新增变体：结构化信息走诊断
+            let head: Vec<String> = outcome
+                .violations
+                .iter()
+                .take(3)
+                .map(|v| v.to_string())
+                .collect();
+            let more = outcome.violations.len().saturating_sub(head.len());
+            result
+                .warnings
+                .push(TranslationWarning::TermMismatch(format!(
+                    "术语不一致 {} 处（策略 {}）：{}{}",
+                    outcome.violations.len(),
+                    self.config.term_policy.as_str(),
+                    head.join("；"),
+                    if more > 0 {
+                        format!("；另有 {more} 处")
+                    } else {
+                        String::new()
+                    }
+                )));
+        }
+
+        Some(TermTrace {
+            id: guard.id().to_string(),
+            version: guard.version(),
+            policy: self.config.term_policy,
+            replaced: if enforced {
+                outcome.violations.len()
+            } else {
+                0
+            },
+            violations: outcome.violations,
+        })
     }
 
     fn should_fallback(

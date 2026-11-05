@@ -11,7 +11,7 @@
 use std::process::ExitCode;
 
 use pack_dictionary::{pack, parse_cedict, PackOptions};
-use translator_dictionary::Provenance;
+use translator_dictionary::{PayloadKind, Provenance};
 
 const USAGE: &str = "\
 pack-dictionary —— 把 CC-CEDICT 词表编译为词典包
@@ -29,6 +29,7 @@ pack-dictionary —— 把 CC-CEDICT 词表编译为词典包
   --url <URL>           来源地址
   --license <SPDX>      许可证（默认 CC-BY-SA-4.0）
   --revision <REV>      数据 revision（默认取源文件 #! version=，否则用当天日期）
+  --payload-schema <S>  释义库格式：dictionary.sqlite.v1 | dictionary.sqlite.v2（默认 v2）
   -h, --help            显示本帮助
 
 输出:
@@ -53,6 +54,7 @@ fn main() -> ExitCode {
     let mut url = "https://www.mdbg.net/chinese/dictionary?page=cc-cedict".to_string();
     let mut license_spdx = "CC-BY-SA-4.0".to_string();
     let mut revision: Option<String> = None;
+    let mut payload = PayloadKind::V2;
 
     let mut i = 0;
     while i < args.len() {
@@ -73,6 +75,20 @@ fn main() -> ExitCode {
                 i += 1;
                 if let Some(t) = args.get(i) {
                     targets.push(t.clone());
+                }
+            }
+            "--payload-schema" => {
+                i += 1;
+                match args.get(i).map(String::as_str) {
+                    Some("dictionary.sqlite.v1") => payload = PayloadKind::V1,
+                    Some("dictionary.sqlite.v2") => payload = PayloadKind::V2,
+                    other => {
+                        eprintln!(
+                            "--payload-schema 只能是 dictionary.sqlite.v1 | dictionary.sqlite.v2：{}",
+                            other.unwrap_or("（缺失）")
+                        );
+                        return ExitCode::from(2);
+                    }
                 }
             }
             "--limit" => {
@@ -155,6 +171,7 @@ fn main() -> ExitCode {
     let opts = PackOptions {
         id,
         version,
+        payload,
         language,
         target_languages: targets,
         provenance: Provenance {
@@ -175,6 +192,7 @@ fn main() -> ExitCode {
     println!("打包到 {out_dir} ...");
     match pack(parsed.entries, out_dir, &opts) {
         Ok(stats) => {
+            println!("  payload {} ", payload.as_str());
             println!("  记录 {} 条 / 索引键 {} 个", stats.records, stats.keys);
             println!(
                 "  index.fst {:.1} KB / entries.sqlite {:.1} MB",

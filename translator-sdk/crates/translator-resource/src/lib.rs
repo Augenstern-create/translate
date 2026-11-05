@@ -19,11 +19,17 @@
 //! # }
 //! ```
 //!
-//! 明确**不在**本 crate 范围内的（见 `docs/06_P2.1-P2.2_资源协议与仓库报告.md`）：
-//! 租约与内存预算（P2.3）、执行计划与缓存指纹（P2.4）、SQLite 查询优化（P2.5）。
+//! 3. **租约与跨进程锁**（`leases` / `lockfile`，P2.3）：每个使用方一个租约文件，
+//!    删除前必须确认没有有效租约；`state.json` 的读改写由 `O_EXCL` 锁保护。
+//!
+//! 明确**不在**本 crate 范围内的（见 `docs/06` 与 `docs/07`）：
+//! 内存预算记账（在 `translator-core::budget`，因为它是宿主侧装配逻辑）、
+//! 执行计划与缓存指纹（P2.4）、SQLite 查询优化（P2.5）。
 
 pub mod compat;
 pub mod error;
+mod leases;
+mod lockfile;
 pub mod manifest;
 pub mod store;
 
@@ -32,11 +38,13 @@ pub use compat::{
     HostSupport,
 };
 pub use error::{ResourceError, ResourceResult};
+pub use leases::{process_alive, LeaseInfo, LeaseRecord, ResourceLease};
+pub use lockfile::{StateLock, DEFAULT_LOCK_TIMEOUT};
 pub use manifest::{
     Dependency, ManifestSchema, PackageFile, PayloadSchema, Provenance, ResourceKind,
     ResourceManifest, MANIFEST_SCHEMA_V1, MANIFEST_SCHEMA_V2,
 };
 pub use store::{
-    read_manifest_from, sha256_file, verify_files, InstallOutcome, InstalledResource,
-    RecoverReport, ResourceStatus, ResourceStore,
+    read_manifest_from, sha256_file, verify_files, CleanupReport, InstallOutcome,
+    InstalledResource, RecoverReport, ResourceStatus, ResourceStore,
 };

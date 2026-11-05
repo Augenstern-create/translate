@@ -16,7 +16,13 @@ use std::io::BufRead;
 use std::path::Path;
 
 use sha2::{Digest, Sha256};
-use translator_dictionary::{DictionaryManifest, PackageFile, Provenance, SCHEMA_VERSION};
+use translator_dictionary::{
+    DictionaryManifest, PackageFile, PayloadKind, Provenance, MANIFEST_SCHEMA_V2, SCHEMA_VERSION,
+    SENSE_SEPARATOR,
+};
+
+/// 与 [`SENSE_SEPARATOR`] 等价的字符串常量（`join` 需要 `&str`）。
+const SENSE_SEP_STR: &str = "\u{1f}";
 
 pub use translator_dictionary::DictionaryError as PackError;
 
@@ -165,6 +171,10 @@ fn take_token<'a>(rest: &mut &'a str) -> Option<&'a str> {
 pub struct PackOptions {
     pub id: String,
     pub version: String,
+    /// `entries.sqlite` 的存储格式（v1 两张表 / v2 释义内联）。
+    ///
+    /// 新包默认 v2；要复现历史包（例如给已发布版本对齐 sha256）时显式选 v1。
+    pub payload: PayloadKind,
     /// 词条语言，如 `zh-Hans`。
     pub language: String,
     /// 释义语言，如 `["en"]`。
@@ -193,7 +203,7 @@ struct RecordRow<'a> {
     source_license: &'a str,
 }
 
-/// 写入一条记录到 SQLite。
+/// 写入一条记录到 SQLite（v1：entries + senses 两张表）。
 fn insert_record(tx: &rusqlite::Transaction<'_>, row: RecordRow<'_>) -> Result<i64, PackError> {
     let id = row.id as i64;
     tx.execute(
@@ -217,6 +227,34 @@ fn insert_record(tx: &rusqlite::Transaction<'_>, row: RecordRow<'_>) -> Result<i
         )?;
     }
 
+    Ok(id)
+}
+
+/// 写入一条记录到 SQLite（v2：释义内联进 entries.senses）。
+fn insert_record_v2(tx: &rusqlite::Transaction<'_>, row: RecordRow<'_>) -> Result<i64, PackError> {
+    let id = row.id as i64;
+    // U+001F 是 C0 控制符，正常释义里不会出现；出现就拒绝，避免把一条释义劈成两条
+    if row.definitions.iter().any(|d| d.contains(SENSE_SEPARATOR)) {
+        return Err(PackError::InvalidPackage(format!(
+            "词条 {} 的释义里出现了分隔符 U+001F",
+            row.headword
+        )));
+    }
+    let senses = row.definitions.join(SENSE_SEP_STR);
+    tx.execute(
+        "INSERT INTO entries (id, headword, normalized, traditional, pinyin, pos, source_id, source_license, confidence, senses)
+         VALUES (?1, ?2, ?2, ?3, ?4, ?5, ?6, ?7, 1.0, ?8)",
+        rusqlite::params![
+            id,
+            row.headword,
+            row.traditional,
+            row.pinyin,
+            row.pos,
+            row.source_id,
+            row.source_license,
+            senses
+        ],
+    )?;
     Ok(id)
 }
 
@@ -297,44 +335,66 @@ pub fn pack(
              PRAGMA synchronous = OFF;",
         )?;
         let tx = conn.transaction()?;
-        tx.execute_batch(
-            "CREATE TABLE entries (
-                 id INTEGER PRIMARY KEY,
-                 headword TEXT NOT NULL,
-                 normalized TEXT NOT NULL,
-                 traditional TEXT,
-                 pinyin TEXT,
-                 pos TEXT,
-                 source_id TEXT NOT NULL,
-                 source_license TEXT NOT NULL,
-                 confidence REAL NOT NULL
-             );
-             CREATE TABLE senses (
-                 entry_id INTEGER NOT NULL,
-                 idx INTEGER NOT NULL,
-                 definition TEXT NOT NULL,
-                 PRIMARY KEY (entry_id, idx)
-             );",
-        )?;
+        match opts.payload {
+            PayloadKind::V1 => tx.execute_batch(
+                "CREATE TABLE entries (
+                     id INTEGER PRIMARY KEY,
+                     headword TEXT NOT NULL,
+                     normalized TEXT NOT NULL,
+                     traditional TEXT,
+                     pinyin TEXT,
+                     pos TEXT,
+                     source_id TEXT NOT NULL,
+                     source_license TEXT NOT NULL,
+                     confidence REAL NOT NULL
+                 );
+                 CREATE TABLE senses (
+                     entry_id INTEGER NOT NULL,
+                     idx INTEGER NOT NULL,
+                     definition TEXT NOT NULL,
+                     PRIMARY KEY (entry_id, idx)
+                 );",
+            )?,
+            PayloadKind::V2 => tx.execute_batch(
+                "CREATE TABLE entries (
+                     id INTEGER PRIMARY KEY,
+                     headword TEXT NOT NULL,
+                     normalized TEXT NOT NULL,
+                     traditional TEXT,
+                     pinyin TEXT,
+                     pos TEXT,
+                     source_id TEXT NOT NULL,
+                     source_license TEXT NOT NULL,
+                     confidence REAL NOT NULL,
+                     senses TEXT NOT NULL
+                 );",
+            )?,
+        }
 
         let source_id = opts.provenance.name.to_lowercase().replace(' ', "-");
         for (idx, (entry, definitions)) in records.iter().enumerate() {
-            insert_record(
-                &tx,
-                RecordRow {
-                    id: idx as u64 + 1,
-                    headword: &entry.headword,
-                    traditional: entry.traditional.as_deref(),
-                    pinyin: entry.pinyin.as_deref(),
-                    pos: entry.pos.as_deref(),
-                    definitions,
-                    source_id: &source_id,
-                    source_license: &opts.provenance.license_spdx,
-                },
-            )?;
+            let row = RecordRow {
+                id: idx as u64 + 1,
+                headword: &entry.headword,
+                traditional: entry.traditional.as_deref(),
+                pinyin: entry.pinyin.as_deref(),
+                pos: entry.pos.as_deref(),
+                definitions,
+                source_id: &source_id,
+                source_license: &opts.provenance.license_spdx,
+            };
+            match opts.payload {
+                PayloadKind::V1 => insert_record(&tx, row)?,
+                PayloadKind::V2 => insert_record_v2(&tx, row)?,
+            };
         }
 
         tx.commit()?;
+        // 库文件自报格式：清单与库必须一致，读取侧会当场校验
+        conn.execute_batch(&format!(
+            "PRAGMA user_version = {};",
+            opts.payload.user_version()
+        ))?;
         conn.execute_batch("VACUUM;")?;
     }
 
@@ -346,8 +406,18 @@ pub fn pack(
     let index_bytes = std::fs::metadata(&fst_path)?.len();
     let db_bytes = std::fs::metadata(&db_path)?.len();
 
+    let (schema_version, manifest_schema_version, payload_schema_version) = match opts.payload {
+        PayloadKind::V1 => (Some(SCHEMA_VERSION), None, None),
+        PayloadKind::V2 => (
+            None,
+            Some(MANIFEST_SCHEMA_V2),
+            Some(opts.payload.as_str().to_string()),
+        ),
+    };
     let manifest = DictionaryManifest {
-        schema_version: SCHEMA_VERSION,
+        schema_version,
+        manifest_schema_version,
+        payload_schema_version,
         id: opts.id.clone(),
         version: opts.version.clone(),
         kind: "dictionary".to_string(),
@@ -417,6 +487,7 @@ mod tests {
         PackOptions {
             id: "dictionary.test.zh-en".to_string(),
             version: "0.0.1".to_string(),
+            payload: PayloadKind::V1,
             language: "zh-Hans".to_string(),
             target_languages: vec!["en".to_string()],
             provenance: Provenance {

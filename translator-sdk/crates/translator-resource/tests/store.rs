@@ -408,8 +408,9 @@ fn cleanup只删超出保留数的旧版本() {
         store.activate("dictionary.test", version).unwrap();
     }
     // 现在 active=4.0.0，history=[3.0.0, 2.0.0, 1.0.0]
-    let removed = store.cleanup("dictionary.test", 1).unwrap();
-    assert_eq!(removed, vec!["1.0.0", "2.0.0"]);
+    let report = store.cleanup("dictionary.test", 1).unwrap();
+    assert_eq!(report.removed, vec!["1.0.0", "2.0.0"]);
+    assert!(report.kept_leased.is_empty());
 
     let status = store.inspect("dictionary.test").unwrap();
     assert_eq!(status.active.as_deref(), Some("4.0.0"));
@@ -554,4 +555,223 @@ fn 兼容性报告能同时报出多个问题() {
         .issues
         .iter()
         .any(|i| matches!(i, CompatibilityIssue::MissingDependency { .. })));
+}
+
+// ============================================================
+// P2.3：租约
+// ============================================================
+
+#[test]
+fn 租约保护非激活版本不被卸载() {
+    let (root, store) = store();
+    let v1 = build_package(root.path(), PackageSpec::v2("dictionary.test", "1.0.0"));
+    let v2 = build_package(root.path(), PackageSpec::v2("dictionary.test", "2.0.0"));
+    store.install_from_dir(&v1).unwrap();
+    store.install_from_dir(&v2).unwrap();
+    store.activate("dictionary.test", "2.0.0").unwrap();
+
+    let lease = store
+        .acquire_lease("dictionary.test", "1.0.0", "test")
+        .unwrap();
+    let err = store.uninstall("dictionary.test", "1.0.0").unwrap_err();
+    match &err {
+        ResourceError::ResourceLeased { holders, .. } => {
+            assert_eq!(holders.len(), 1);
+            assert!(holders[0].contains("holder=test"), "实际：{holders:?}");
+        }
+        other => panic!("期望 ResourceLeased，实际 {other:?}"),
+    }
+    let _ = err;
+
+    // 释放后就可以删了
+    lease.release().unwrap();
+    store.uninstall("dictionary.test", "1.0.0").unwrap();
+}
+
+#[test]
+fn 租约文件随drop消失并清理空目录() {
+    let (root, store) = store();
+    let pkg = build_package(root.path(), PackageSpec::v2("dictionary.test", "1.0.0"));
+    store.install_from_dir(&pkg).unwrap();
+
+    {
+        let _lease = store
+            .acquire_lease("dictionary.test", "1.0.0", "test")
+            .unwrap();
+        assert_eq!(store.all_leases().unwrap().len(), 1);
+        assert!(root.path().join("leases/dictionary.test/1.0.0").exists());
+    }
+    assert!(store.all_leases().unwrap().is_empty());
+    assert!(
+        !root.path().join("leases/dictionary.test").exists(),
+        "空目录应被顺手清掉"
+    );
+}
+
+#[test]
+fn 租约不阻止安装与激活() {
+    let (root, store) = store();
+    let v1 = build_package(root.path(), PackageSpec::v2("dictionary.test", "1.0.0"));
+    let v2 = build_package(root.path(), PackageSpec::v2("dictionary.test", "2.0.0"));
+    store.install_from_dir(&v1).unwrap();
+    let _lease = store
+        .acquire_lease("dictionary.test", "1.0.0", "test")
+        .unwrap();
+
+    // 装新版本、切换激活都不该受旧版本租约影响
+    store.install_from_dir(&v2).unwrap();
+    store.activate("dictionary.test", "2.0.0").unwrap();
+    assert_eq!(
+        store.inspect("dictionary.test").unwrap().active.as_deref(),
+        Some("2.0.0")
+    );
+    // 旧版本仍然可读
+    assert!(store
+        .version_dir("dictionary.test", "1.0.0")
+        .unwrap()
+        .exists());
+}
+
+#[test]
+fn cleanup保留被租用的版本并如实报告() {
+    let (root, store) = store();
+    for version in ["1.0.0", "2.0.0", "3.0.0", "4.0.0"] {
+        let pkg = build_package(root.path(), PackageSpec::v2("dictionary.test", version));
+        store.install_from_dir(&pkg).unwrap();
+        store.activate("dictionary.test", version).unwrap();
+    }
+    let _lease = store
+        .acquire_lease("dictionary.test", "1.0.0", "test")
+        .unwrap();
+
+    // active=4.0.0，history=[3.0.0, 2.0.0, 1.0.0]；keep=1 时 1.0.0/2.0.0 是候选
+    let report = store.cleanup("dictionary.test", 1).unwrap();
+    assert_eq!(report.removed, vec!["2.0.0"]);
+    assert_eq!(report.kept_leased.len(), 1);
+    assert_eq!(report.kept_leased[0].0, "1.0.0");
+    assert!(store
+        .version_dir("dictionary.test", "1.0.0")
+        .unwrap()
+        .exists());
+}
+
+#[test]
+fn 未安装的版本不能登记租约() {
+    let (_root, store) = store();
+    let err = store
+        .acquire_lease("dictionary.test", "9.9.9", "test")
+        .unwrap_err();
+    assert!(
+        matches!(err, ResourceError::NotInstalled { .. }),
+        "实际：{err}"
+    );
+}
+
+#[test]
+fn recover回收死进程的租约() {
+    let (root, store) = store();
+    let pkg = build_package(root.path(), PackageSpec::v2("dictionary.test", "1.0.0"));
+    store.install_from_dir(&pkg).unwrap();
+
+    // 手工造一个"上个进程崩溃留下"的租约
+    let dir = root.path().join("leases/dictionary.test/1.0.0");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("4194303-1.json"),
+        r#"{"pid":4194303,"holder":"ghost","acquired_at_unix":0}"#,
+    )
+    .unwrap();
+
+    #[cfg(target_os = "linux")]
+    {
+        let report = store.recover().unwrap();
+        assert_eq!(report.reclaimed_leases, 1);
+        assert!(store.all_leases().unwrap().is_empty());
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        // 非 Linux 无法判定存活：必须保留，绝不猜
+        let report = store.recover().unwrap();
+        assert_eq!(report.reclaimed_leases, 0);
+        assert_eq!(store.all_leases().unwrap().len(), 1);
+    }
+}
+
+#[test]
+fn 多个租约按pid稳定排序() {
+    let (root, store) = store();
+    let pkg = build_package(root.path(), PackageSpec::v2("dictionary.test", "1.0.0"));
+    store.install_from_dir(&pkg).unwrap();
+
+    let a = store
+        .acquire_lease("dictionary.test", "1.0.0", "a")
+        .unwrap();
+    let b = store
+        .acquire_lease("dictionary.test", "1.0.0", "b")
+        .unwrap();
+    let leases = store.leases("dictionary.test", "1.0.0").unwrap();
+    assert_eq!(leases.len(), 2);
+    assert!(leases.iter().all(|l| l.is_active()));
+    assert_eq!(leases[0].pid, leases[1].pid);
+    // 同 pid 时按 holder 名字排（a 在 b 前）
+    assert_eq!(leases[0].holder, "a");
+    drop((a, b));
+}
+
+// ============================================================
+// P2.3：跨进程锁
+// ============================================================
+
+#[test]
+fn 另一个持有者占着状态锁时安装会超时且不留残骸() {
+    let (root, store) = store();
+    let held = store.lock_state("外部备份工具").unwrap();
+
+    let other = ResourceStore::open_with_timeout(root.path(), std::time::Duration::from_millis(80))
+        .unwrap();
+    let pkg = build_package(root.path(), PackageSpec::v2("dictionary.test", "1.0.0"));
+    let err = other.install_from_dir(&pkg).unwrap_err();
+    match err {
+        ResourceError::LockTimeout { holder, .. } => {
+            assert!(holder.contains("外部备份工具"), "实际：{holder}");
+        }
+        other => panic!("期望 LockTimeout，实际 {other:?}"),
+    }
+
+    // 失败不得留下 staging 残骸或半个安装
+    let staging = std::fs::read_dir(root.path().join("staging"))
+        .unwrap()
+        .count();
+    assert_eq!(staging, 0, "失败后 staging 必须清空");
+    assert!(!root.path().join("installed/dictionary.test/1.0.0").exists());
+
+    drop(held);
+    // 锁释放后同一个包可以正常安装
+    other.install_from_dir(&pkg).unwrap();
+}
+
+#[test]
+fn 状态锁释放后可被下一个持有者获得() {
+    let (_root, store) = store();
+    let first = store.lock_state("first").unwrap();
+    let path = first.path().to_path_buf();
+    assert!(path.exists());
+    drop(first);
+    assert!(!path.exists());
+    let _second = store.lock_state("second").unwrap();
+}
+
+#[test]
+fn 并发安装同一版本只有一次成功() {
+    let (root, store) = store();
+    let pkg = build_package(root.path(), PackageSpec::v2("dictionary.test", "1.0.0"));
+    let s1 = ResourceStore::open(root.path()).unwrap();
+    let s2 = ResourceStore::open(root.path()).unwrap();
+    let p1 = pkg.clone();
+    let p2 = pkg.clone();
+    let t1 = std::thread::spawn(move || s1.install_from_dir(&p1).is_ok());
+    let t2 = std::thread::spawn(move || s2.install_from_dir(&p2).is_ok());
+    let (a, b) = (t1.join().unwrap(), t2.join().unwrap());
+    assert!(a ^ b, "必须恰好一次成功，实际 a={a} b={b}");
+    assert!(store.inspect("dictionary.test").unwrap().versions.len() == 1);
 }

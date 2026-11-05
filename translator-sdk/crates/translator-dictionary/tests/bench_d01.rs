@@ -147,6 +147,9 @@ fn pack_options() -> PackOptions {
     PackOptions {
         id: "dictionary.bench.synthetic".to_string(),
         version: "0.0.1".to_string(),
+        // D-01 是 `docs/04` §6 的历史基线，固定在 payload v1 上，
+        // 否则时过境迁就再也复现不出那批数字。v1/v2 的对比见 `bench_d02`。
+        payload: translator_dictionary::PayloadKind::V1,
         language: "zh-Hans".to_string(),
         target_languages: vec!["en".to_string()],
         provenance: Provenance {

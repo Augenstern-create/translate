@@ -39,6 +39,8 @@ pub const MANIFEST_SCHEMA_V1: u32 = 1;
 pub enum PayloadSchema {
     /// `entries.sqlite` 两张表：entries + senses。
     DictionarySqliteV1,
+    /// `entries.sqlite` 释义内联进 `entries.senses`（P2.5）。
+    DictionarySqliteV2,
     /// 规则包 JSON（`translator-rules` 的 schema_version=1）。
     RulesJsonV1,
     Unknown(String),
@@ -48,6 +50,7 @@ impl PayloadSchema {
     pub fn parse(raw: &str) -> Self {
         match raw {
             "dictionary.sqlite.v1" => Self::DictionarySqliteV1,
+            "dictionary.sqlite.v2" => Self::DictionarySqliteV2,
             "rules.json.v1" => Self::RulesJsonV1,
             other => Self::Unknown(other.to_string()),
         }
@@ -56,6 +59,7 @@ impl PayloadSchema {
     pub fn as_str(&self) -> &str {
         match self {
             Self::DictionarySqliteV1 => "dictionary.sqlite.v1",
+            Self::DictionarySqliteV2 => "dictionary.sqlite.v2",
             Self::RulesJsonV1 => "rules.json.v1",
             Self::Unknown(raw) => raw,
         }
@@ -63,7 +67,10 @@ impl PayloadSchema {
 
     /// 本 SDK 能否读取该 payload 格式。
     pub fn is_supported(&self) -> bool {
-        matches!(self, Self::DictionarySqliteV1 | Self::RulesJsonV1)
+        matches!(
+            self,
+            Self::DictionarySqliteV1 | Self::DictionarySqliteV2 | Self::RulesJsonV1
+        )
     }
 }
 
@@ -295,8 +302,12 @@ impl ResourceManifest {
         if !matches!(self.payload_schema, PayloadSchema::Unknown(_)) {
             // 已知 payload 必须有对应文件，否则读的时候才发现就太晚了
             let expected = self.payload_schema.as_str();
+            let is_dictionary = matches!(
+                self.payload_schema,
+                PayloadSchema::DictionarySqliteV1 | PayloadSchema::DictionarySqliteV2
+            );
             let has = self.files.iter().any(|f| {
-                (expected == "dictionary.sqlite.v1" && f.path == "entries.sqlite")
+                (is_dictionary && f.path == "entries.sqlite")
                     || (expected == "rules.json.v1" && f.path.ends_with(".json"))
             });
             if !has {

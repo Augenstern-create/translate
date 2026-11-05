@@ -280,6 +280,16 @@ Validate request → Normalize → Language ID (optional)
 规则**只作用于受保护跨度之外的纯文本**（ADR-009）。这条排在 `Protect` 之前不是顺序偏好，而是安全要求：
 规则先跑就会把 `https://example.com/LLM` 改坏，而之后再做保护已经晚了一步。
 
+**术语约束（输出侧）** 是流水线的最后一道，P2.4 起实现（ADR-015）：
+
+- 契约是 `TargetTermGuard`，与输入侧 `TextRules` 分开——输入侧改写"送进引擎的文本"，
+  输出侧约束"引擎写出来的词"，两者不可互相替代；
+- 实现方必须自己重新切分受保护跨度并跳过（还原后的文本仍能被同一套扫描器认出）；
+- 策略三档：`off`（不跑）/ `warn`（只报不改）/ `enforce`（改写，默认）；
+- 受保护跨度、规则命中、术语违规、还原缺失等结构化信息**不进** `TranslationResult`，
+  而是走独立入口 `translate_with_diagnostics()`（ADR-008/015）。两条入口共用同一段实现，
+  因此不可能给出不同译文。
+
 ## 7. 字典、语言检测、规则系统
 
 ### 7.1 统一词条数据模型
@@ -405,6 +415,20 @@ NotInstalled -> Installed/Unloaded -> Loading -> Ready -> InUse
 
 这些数字是**目标/停止条件**。不得在 README/市场文案中称为已验证性能。内存限制可先软预算+加载前预测，再通过工作线程/进程隔离和实际峰值统计完善。
 
+P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运行时限流，原因是数值来源有限：
+
+| 项 | 来源 | 与真实 RSS 的关系 |
+|---|---|---|
+| FST 索引 | `index.fst` 文件大小（mmap） | 上界：页可能从未换入 |
+| SQLite 页缓存 | `PRAGMA cache_size` 配置值 | 精确（就是配置的那个数） |
+| 连接/语句/分配器 | 一个**写死的猜测值**（256 KiB） | 无实测依据，已显式标注 |
+| 释义库 mmap | 只进"最坏情况"上限，不进记账 | 与实际触达页数相关 |
+
+真实对照（`docs/04` §6.2，本机、CC-CEDICT 121,584 条）：索引 1.7 MB + 释义库 18.2 MB 的包，
+查词后进程 RSS **+9.8 MB**，总占用 24.3–24.9 MB——远大于记账用的下界（约 3 MB）。
+因此预算判定只能回答"**肯定不够**"，不能回答"够用"。
+宿主若需要硬保证，必须自己用系统手段监控 RSS；本 SDK 不提供、也不宣称提供硬上限。
+
 ## 10. 跨平台 ABI 与执行模型
 
 | 平台 | SDK 发布物 | CPU/GPU 方案 | 注意 |
@@ -478,11 +502,15 @@ NotInstalled -> Installed/Unloaded -> Loading -> Ready -> InUse
 - ADR-007：任何推理后端切换必须通过契约/质量/性能回归测试。
 - ADR-008（Accepted）：规则 trace 走独立诊断通道，不扩公开枚举。理由：给 `TranslationWarning` 加变体会破坏宿主穷尽 `match`；诊断需要与具体请求关联的快照（`translate_with_diagnostics`），而不是重演的 `explain_rules()`。
 - ADR-009（Accepted，P1 已实现）：规则必须尊重受保护文本跨度。URL/邮箱/代码/模板变量对规则不可见；规则执行语义有版本号，旧语义（`pipeline_version: 1`）不可执行。
-- ADR-010（Accepted，P2.1 已实现）：`manifest_schema_version` 与 `payload_schema_version` 分离。资源协议与词典存储 schema 独立演进；v1 包只读兼容（已实现且用真实 CC-CEDICT 包验证）；v2 的打包工具与迁移脚本尚未实现。
-- ADR-011（Proposed，P2.4 落地）：按资源版本构造执行计划与缓存键。缓存键包含执行计划指纹，Mock 与真实引擎不共享命中空间。
-- ADR-012（Proposed，P2.2 已实现一半）：资源激活采用版本化目录 + 租约 + 原子切换。**已实现**：版本化目录、原子切换、失败自动清理、崩溃恢复（清理 staging）、激活版本拒删；**未实现**：租约（P2.3），因此"活跃请求持有旧版本继续完成"目前靠"安装不夺取激活位 + 旧版本只能显式删除"来保守保证。
-- ADR-013（Proposed，P2.3 落地）：内存预算以软限制 + 准入控制 + 回收为主。跨平台 native/GPU 分配无法靠用户态计数硬保证，不得宣传为硬上限。
+- ADR-010（Accepted，P2.1 + P2.5 已实现）：`manifest_schema_version` 与 `payload_schema_version` 分离。资源协议与词典存储 schema 独立演进；v1 包只读兼容（用真实 CC-CEDICT 包验证）；v2 写入路径已由 `pack-dictionary --payload-schema` 提供，`dictionary.sqlite.v2` 见 ADR-016。
+- ADR-011（Proposed，仍未落地）：按资源版本构造执行计划与缓存键。缓存键仍用 `id@version` 字符串指纹（现已含规则包与术语表版本），**不是** `ResolvedExecutionPlan` 的哈希；计划形状要等 P3 真实后端接入后才稳定，提前定死会立刻返工。
+- ADR-012（Accepted，P2.2 + P2.3 已实现）：资源激活采用版本化目录 + 租约 + 原子切换。已实现版本化目录、原子切换、失败清理、崩溃恢复、激活版本拒删，以及**协作式文件租约**（谁挂载谁登记，删除前检查；见 ADR-018）。
+- ADR-013（Accepted，P2.3 已实现）：内存预算以软限制 + 准入控制 + 回收为主。跨平台 native/GPU 分配无法靠用户态计数硬保证，不得宣传为硬上限；实现按此执行——预算在装配期判定（`OutOfBudget`），数值是各组件自报的**下界估计**，不是 RSS（§9.3、`docs/07` §2.3）。
 - ADR-014（Accepted）：正则 DSL 暂缓，保留 `PatternMatcher` 扩展点。理由见 §7.3 的更正说明。
+- ADR-015（Accepted，P2.4 已实现）：输出侧术语约束是独立契约（`TargetTermGuard`），不塞进输入侧规则；结构化结果走 `translate_with_diagnostics` 而不是新增 `TranslationWarning` 变体（延续 ADR-008）。理由：输入侧改不了"引擎写出来的词"，而给公开枚举加变体会破坏宿主的穷尽匹配。
+- ADR-016（Accepted，P2.5 已实现）：`dictionary.sqlite.v2` 把释义内联进 `entries.senses`（U+001F 分隔），以失去"逐条释义行"换取一次 B-tree 查找。真实 CC-CEDICT 实测 p50 17.4 → 9.0 µs（−48%）、库体积 18.2 → 13.6 MB（−25%）。v1 保持可读，读写两侧都校验 `PRAGMA user_version`，格式与清单不符即拒绝打开。
+- ADR-017（Accepted，P2.3 已实现）：`state.json` 的跨进程互斥用 `O_CREAT|O_EXCL` 锁文件，不引入 `libc`/`flock`。理由是零依赖、语义明确（创建成功即持锁）、失败可见；代价是崩溃残留锁需人工确认（程序只在"持锁 pid 确定已死"时自动回收）。
+- ADR-018（Accepted，P2.3 已实现）：租约是**协作式**的，不是内核强制锁。每个使用方一个文件（`leases/<id>/<version>/<pid>-<nonce>.json`），检查即列目录。诚实边界：绕过本 SDK 直接 `open()` 资源文件的程序检测不到；无法判定进程存活时按"占用"处理。
 
 > 状态含义：**Accepted** = 已决定并（如注明）已实现；**Proposed** = 已决定方向但尚未实现，写入 ADR 不等于已验证；
 > **Deferred** = 明确延后。上表未标注 Deferred 的项均须在对应阶段交付。
@@ -493,6 +521,7 @@ NotInstalled -> Installed/Unloaded -> Loading -> Ready -> InUse
 |---|---|---|
 | v1.0 | 2026-11-05 | 架构基线 |
 | v1.1 | 2026-11-05 | 新增 ADR-008～014；§6 流水线补「受保护跨度 → 规则（仅纯文本）」；§7.2 增补规则三硬约束与 `pipeline_version`；§7.3 更正正则相关表述 |
+| v1.2 | 2026-11-05 | 新增 ADR-015～018（术语约束、`dictionary.sqlite.v2`、跨进程锁、协作式租约）；ADR-010/012/013 从 Proposed 改为 Accepted 并注明实实现范围，ADR-011 明确仍未落地；§6 流水线补「术语约束（输出侧）」；§9.3 补齐预算的数值来源与"下界估计"限定 |
 
 ## 15. 主要风险与应对
 

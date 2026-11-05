@@ -47,6 +47,7 @@ use std::fmt;
 use std::path::Path;
 
 pub mod migrate;
+pub mod terms;
 
 use serde::Deserialize;
 use translator_core::rules::{RuleOutcome, TextRules};

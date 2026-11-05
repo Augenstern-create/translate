@@ -1,42 +1,51 @@
-//! 资源仓库：安装 → 校验 → 原子激活 → 回滚 → 安全清理（P2.2）。
+//! 资源仓库：安装 → 校验 → 原子激活 → 回滚 → 安全清理 → 租约（P2.2 + P2.3）。
 //!
 //! # 目录布局
 //!
 //! ```text
 //! <root>/
 //! ├── state.json                     # 唯一可变文件：每个 id 的激活版本与历史
+//! ├── state.lock                     # 跨进程排他锁（只在改 state.json 期间存在）
 //! ├── installed/<id>/<version>/…     # 已安装版本，落盘后视为不可变
-//! └── staging/<id>-<version>-<nonce>/# 安装中目录；进程崩溃后由 recover() 清理
+//! ├── staging/<id>-<version>-<pid>-<nonce>/# 安装中目录；进程崩溃后由 recover() 清理
+//! └── leases/<id>/<version>/<pid>-<nonce>.json # 每个使用方一个租约文件
 //! ```
 //!
-//! # 三条不变量
+//! # 四条不变量
 //!
 //! 1. **安装失败不影响已装版本**：所有校验都在 `staging/` 里做完，只有全部通过才
 //!    `rename` 到 `installed/`；`state.json` 最后写，且是"写临时文件 + 原子 rename"。
 //! 2. **激活版本不可删除**：`uninstall` 对当前激活版本返回 `ResourceInUse`。
-//! 3. **不做隐式热切换**：安装新版本默认不改变激活版本（首次安装除外），
-//!    切换必须显式调用 `activate`。P2.3 引入租约之前，这是避免"活跃请求读到半新半旧"
-//!    的唯一保守做法。
+//! 3. **有有效租约的版本不可删除**：`uninstall` / `cleanup` 返回 `ResourceLeased`，
+//!    并在错误里列出持有者 pid 与标识（P2.3）。
+//! 4. **不做隐式热切换**：安装新版本默认不改变激活版本（首次安装除外），
+//!    切换必须显式调用 `activate`。
 //!
-//! # 已知限制（P2.3 会改）
+//! # 锁的层次
 //!
-//! - 没有租约：无法知道"某个旧版本是否仍被打开的 SQLite/推理句柄使用"。
-//!   Unix 上 `unlink` 对 mmap 是安全的，Windows 上若文件仍被打开，删除会失败并返回 IO 错误；
-//!   因此清理旧版本属于**显式动作**，不自动发生。
-//! - 没有跨进程锁：同一仓库被两个进程同时写 `state.json` 不受保护（P2.3 加文件锁）。
-//! - 不做磁盘空间预检：`OutOfBudget`/空间不足会以 IO 错误形式返回。
+//! - **进程内**：`Mutex<()>`，避免两个线程同时改状态。
+//! - **跨进程**：`state.lock`（`O_EXCL` 排他创建），只在"落位 + 写 state.json"这段持有，
+//!   不覆盖数 MB 的复制校验——否则一次安装会让所有进程等几秒。
+//! - **租约**：每个使用方一个文件，登记/释放互不干扰，检查就是列目录。
+//!
+//! # 已知限制
+//!
+//! - 租约是**协作式**的：绕过本 SDK 直接打开资源文件的程序检测不到（见 `leases.rs`）。
+//! - 不做磁盘空间预检：空间不足会以 IO 错误形式返回（staging 未落位，安全）。
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
 use crate::compat::{check, ensure_compatible, HostSupport};
 use crate::error::{ResourceError, ResourceResult};
+use crate::leases::{self, LeaseInfo, ResourceLease};
+use crate::lockfile::{self, StateLock, DEFAULT_LOCK_TIMEOUT};
 use crate::manifest::{is_unsafe_relative, ResourceKind, ResourceManifest};
 
 const STATE_SCHEMA: u32 = 1;
@@ -104,12 +113,30 @@ pub struct InstallOutcome {
 #[derive(Clone, Debug, Default)]
 pub struct RecoverReport {
     pub removed_staging: usize,
+    /// 回收的失效租约数（持有进程已死）。
+    pub reclaimed_leases: usize,
+    /// 清理的 `state.json.tmp-*` 残留数（写状态时崩溃留下）。
+    pub removed_temp_files: usize,
+}
+
+/// `cleanup` 的结果。
+///
+/// 返回结构而不是"删掉的版本列表"：被跳过的版本必须**可见**——
+/// 静默保留和静默删除一样有害。
+#[derive(Clone, Debug, Default)]
+pub struct CleanupReport {
+    /// 实际删除的版本。
+    pub removed: Vec<String>,
+    /// 因为有有效租约而保留的版本（`(version, holders)`）。
+    pub kept_leased: Vec<(String, Vec<String>)>,
 }
 
 pub struct ResourceStore {
     root: PathBuf,
     /// 进程内串行化，避免两个线程同时改 `state.json`。
     lock: Mutex<()>,
+    /// 等跨进程锁的时长。
+    timeout: Duration,
 }
 
 impl std::fmt::Debug for ResourceStore {
@@ -121,14 +148,21 @@ impl std::fmt::Debug for ResourceStore {
 }
 
 impl ResourceStore {
-    /// 打开（必要时创建）仓库根目录。
+    /// 打开（必要时创建）仓库根目录，使用默认锁超时。
     pub fn open(root: impl AsRef<Path>) -> ResourceResult<Self> {
+        Self::open_with_timeout(root, DEFAULT_LOCK_TIMEOUT)
+    }
+
+    /// 打开仓库并指定等待跨进程锁的时长。
+    pub fn open_with_timeout(root: impl AsRef<Path>, timeout: Duration) -> ResourceResult<Self> {
         let root = root.as_ref().to_path_buf();
         fs::create_dir_all(root.join("installed"))?;
         fs::create_dir_all(root.join("staging"))?;
+        fs::create_dir_all(root.join("leases"))?;
         let store = Self {
             root,
             lock: Mutex::new(()),
+            timeout,
         };
         // 打开即解析一次状态文件：损坏要在启动时暴露，而不是等到安装到一半
         let _ = store.read_state()?;
@@ -146,10 +180,103 @@ impl ResourceStore {
         Ok(self.root.join("installed").join(id).join(version))
     }
 
+    /// 显式独占状态：给外部工具（备份、迁移、人工修复）用。
+    ///
+    /// 持有期间本进程内的安装/激活等操作会**等锁直到超时**（`Mutex` 与文件锁不是同一把），
+    /// 因此只应在"准备离线改仓库"时短暂持有。
+    pub fn lock_state(&self, holder: &str) -> ResourceResult<StateLock> {
+        lockfile::acquire(&self.root, self.timeout, holder)
+    }
+
+    // ---------------- 租约 ----------------
+
+    /// 登记租约：表示"我要用这个版本的目录"。
+    ///
+    /// 只做两件事：确认版本存在、写一个只属于本进程的租约文件。不上锁、不碰 `state.json`，
+    /// 因此可以高频调用，也不会与安装竞争。
+    pub fn acquire_lease(
+        &self,
+        id: &str,
+        version: &str,
+        holder: &str,
+    ) -> ResourceResult<ResourceLease> {
+        validate_component("id", id)?;
+        validate_component("version", version)?;
+        let state = self.read_state()?;
+        let installed = state
+            .resources
+            .get(id)
+            .map(|e| e.installed.contains_key(version))
+            .unwrap_or(false);
+        if !installed {
+            return Err(ResourceError::NotInstalled {
+                id: id.to_string(),
+                version: version.to_string(),
+            });
+        }
+        ResourceLease::acquire(&self.root, id, version, holder)
+    }
+
+    /// 某个版本的全部租约（含已失效的）。
+    pub fn leases(&self, id: &str, version: &str) -> ResourceResult<Vec<LeaseInfo>> {
+        validate_component("id", id)?;
+        validate_component("version", version)?;
+        leases::list_leases(&self.root, id, version)
+    }
+
+    /// 仓库里所有租约，按 id / version / pid 排序。
+    pub fn all_leases(&self) -> ResourceResult<Vec<LeaseInfo>> {
+        let leases_root = self.root.join("leases");
+        let mut out = Vec::new();
+        if !leases_root.exists() {
+            return Ok(out);
+        }
+        for id_entry in fs::read_dir(&leases_root)? {
+            let id_entry = id_entry?;
+            if !id_entry.file_type()?.is_dir() {
+                continue;
+            }
+            let Some(id) = id_entry.file_name().to_str().map(str::to_string) else {
+                continue;
+            };
+            for version_entry in fs::read_dir(id_entry.path())? {
+                let version_entry = version_entry?;
+                if !version_entry.file_type()?.is_dir() {
+                    continue;
+                }
+                let Some(version) = version_entry.file_name().to_str().map(str::to_string) else {
+                    continue;
+                };
+                out.extend(leases::list_leases(&self.root, &id, &version)?);
+            }
+        }
+        out.sort_by(|a, b| {
+            (&a.id, &a.version, a.pid, a.acquired_at_unix).cmp(&(
+                &b.id,
+                &b.version,
+                b.pid,
+                b.acquired_at_unix,
+            ))
+        });
+        Ok(out)
+    }
+
+    /// 回收失效租约（持有进程已死），返回数量。
+    pub fn reclaim_stale_leases(&self) -> ResourceResult<usize> {
+        let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
+        leases::reclaim_stale(&self.root)
+    }
+
+    // ---------------- 安装 / 激活 / 回滚 / 删除 ----------------
+
     /// 安装一个资源目录（必须含 `manifest.json`）。
     ///
-    /// 步骤：读清单 → 兼容性检查 → 复制到 staging → 逐文件 size+sha256 校验 →
-    /// 原子 rename 到 `installed/` → 写状态。任何一步失败都会清掉 staging。
+    /// 分两段，锁的粒度不同：
+    ///
+    /// 1. **无锁**：读清单 → 快速预检 → 复制到 staging → 逐文件 size+sha256 校验。
+    ///    这一段最慢（真实词典包 19 MB），且不碰任何共享状态。
+    /// 2. **持锁**（进程内 + 跨进程）：重新读状态并再检查一次 → 原子 rename 落位 →
+    ///    写状态。复制期间别的进程可能已经装好同一版本，所以检查必须做第二遍。
     pub fn install_from_dir(&self, src: impl AsRef<Path>) -> ResourceResult<InstallOutcome> {
         let src = src.as_ref();
         let manifest = read_manifest_from(src)?;
@@ -157,62 +284,79 @@ impl ResourceStore {
         validate_component("id", &manifest.id)?;
         validate_component("version", &manifest.version)?;
 
-        let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
-        let mut state = self.read_state()?;
-
-        // 已安装集合（含激活版本）用于依赖检查
-        let installed_versions = self.installed_versions(&state, &manifest.id);
-        if installed_versions.contains(&manifest.version) {
-            return Err(ResourceError::AlreadyInstalled {
-                id: manifest.id.clone(),
-                version: manifest.version.clone(),
-            });
+        {
+            let state = self.read_state()?;
+            self.precheck_install(&state, &manifest)?;
         }
 
-        let available: BTreeMap<String, String> = state
-            .resources
-            .iter()
-            .filter_map(|(id, entry)| entry.active.clone().map(|v| (id.clone(), v)))
-            .collect();
-        ensure_compatible(&check(&manifest, &HostSupport::current(), &available))?;
-
-        // 1) 复制到 staging
         let staging = self.staging_dir(&manifest.id, &manifest.version);
         if staging.exists() {
             fs::remove_dir_all(&staging)?;
         }
         fs::create_dir_all(&staging)?;
 
-        let result = (|| -> ResourceResult<()> {
+        let staged = (|| -> ResourceResult<()> {
             copy_tree(src, &staging)?;
-            // 2) 逐文件校验（在 staging 上做，避免污染源目录/已装目录）
             verify_files(&staging, &manifest)?;
             Ok(())
         })();
-
-        if let Err(err) = result {
+        if let Err(err) = staged {
             let _ = fs::remove_dir_all(&staging);
             return Err(err);
         }
 
-        // 3) 原子落位
-        let target = self.version_dir(&manifest.id, &manifest.version)?;
-        if target.exists() {
+        let outcome = self.commit_install(&manifest, &staging, &mut |_| {});
+        if outcome.is_err() {
             let _ = fs::remove_dir_all(&staging);
+        }
+        outcome
+    }
+
+    fn precheck_install(&self, state: &State, manifest: &ResourceManifest) -> ResourceResult<()> {
+        if self
+            .installed_versions(state, &manifest.id)
+            .contains(&manifest.version)
+        {
             return Err(ResourceError::AlreadyInstalled {
                 id: manifest.id.clone(),
                 version: manifest.version.clone(),
             });
         }
+        let available: BTreeMap<String, String> = state
+            .resources
+            .iter()
+            .filter_map(|(id, entry)| entry.active.clone().map(|v| (id.clone(), v)))
+            .collect();
+        ensure_compatible(&check(manifest, &HostSupport::current(), &available))
+    }
+
+    /// 持锁落位 + 记账。`on_staged` 仅用于测试钩子（当前实现不使用）。
+    fn commit_install(
+        &self,
+        manifest: &ResourceManifest,
+        staging: &Path,
+        on_staged: &mut dyn FnMut(&Path),
+    ) -> ResourceResult<InstallOutcome> {
+        let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
+        let _state_lock = self.acquire_state_lock()?;
+        let mut state = self.read_state()?;
+        // 复制期间可能已有别的进程装好了同一个版本
+        self.precheck_install(&state, manifest)?;
+
+        let target = self.version_dir(&manifest.id, &manifest.version)?;
+        if target.exists() {
+            return Err(ResourceError::AlreadyInstalled {
+                id: manifest.id.clone(),
+                version: manifest.version.clone(),
+            });
+        }
+        on_staged(staging);
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent)?;
         }
-        if let Err(err) = fs::rename(&staging, &target) {
-            let _ = fs::remove_dir_all(&staging);
-            return Err(err.into());
-        }
+        fs::rename(staging, &target)?;
 
-        // 4) 写状态：新版本默认不夺取激活位（首次安装除外）
+        let installed_at = now_string();
         let entry = state.resources.entry(manifest.id.clone()).or_default();
         let previous_active = entry.active.clone();
         let activated = previous_active.is_none();
@@ -221,7 +365,7 @@ impl ResourceStore {
             Meta {
                 kind: manifest.kind.as_str().to_string(),
                 payload_schema: manifest.payload_schema.as_str().to_string(),
-                installed_at: now_string(),
+                installed_at: installed_at.clone(),
             },
         );
         if activated {
@@ -235,13 +379,13 @@ impl ResourceStore {
 
         Ok(InstallOutcome {
             resource: InstalledResource {
-                id: manifest.id,
-                version: manifest.version,
-                kind: manifest.kind,
+                id: manifest.id.clone(),
+                version: manifest.version.clone(),
+                kind: manifest.kind.clone(),
                 payload_schema: manifest.payload_schema.as_str().to_string(),
                 path: target,
                 active: activated,
-                installed_at: now_string(),
+                installed_at,
             },
             activated,
             previous_active,
@@ -249,10 +393,13 @@ impl ResourceStore {
     }
 
     /// 激活某个已安装版本。**不删除任何东西**，旧版本进入 history。
+    ///
+    /// 不需要等租约：切换激活版本不影响已经持有旧版本租约的使用方（它们继续用自己的目录）。
     pub fn activate(&self, id: &str, version: &str) -> ResourceResult<()> {
         validate_component("id", id)?;
         validate_component("version", version)?;
         let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
+        let _state_lock = self.acquire_state_lock()?;
         let mut state = self.read_state()?;
 
         let entry = state
@@ -283,6 +430,7 @@ impl ResourceStore {
     pub fn rollback(&self, id: &str) -> ResourceResult<String> {
         validate_component("id", id)?;
         let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
+        let _state_lock = self.acquire_state_lock()?;
         let mut state = self.read_state()?;
 
         let entry = state
@@ -312,13 +460,12 @@ impl ResourceStore {
         Ok(previous)
     }
 
-    /// 删除一个非激活版本。
-    ///
-    /// 激活版本一律拒绝（`ResourceInUse`）；P2.3 引入租约后会进一步拒绝"仍被持有"的版本。
+    /// 删除一个版本。激活版本 → `ResourceInUse`；有有效租约 → `ResourceLeased`。
     pub fn uninstall(&self, id: &str, version: &str) -> ResourceResult<()> {
         validate_component("id", id)?;
         validate_component("version", version)?;
         let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
+        let _state_lock = self.acquire_state_lock()?;
         let mut state = self.read_state()?;
 
         let entry = state
@@ -337,6 +484,8 @@ impl ResourceStore {
                 version: version.to_string(),
             });
         }
+        // 激活检查之后再看租约：激活版本报 ResourceInUse 更具体
+        leases::ensure_not_leased(&self.root, id, version)?;
 
         let dir = self.version_dir(id, version)?;
         if dir.exists() {
@@ -353,13 +502,15 @@ impl ResourceStore {
 
     /// 保留激活版本 + 最近 `keep` 个历史版本，删除更旧的版本。
     ///
-    /// 返回被删除的版本号。这是"安全清理"：绝不会删激活版本，也不碰 `keep` 之内的版本。
+    /// 有有效租约的版本**一律保留**并记入 [`CleanupReport::kept_leased`]：
+    /// 清理是"腾空间"，不该把正在用的东西删掉，也不该因为别人在用就让整次清理失败。
     ///
     /// 注意：这里**不能**在持锁状态下调用 `uninstall`——`std::sync::Mutex` 不可重入，
     /// 那样会直接死锁（本项目在集成测试里踩到过一次，保留注释以免复现）。
-    pub fn cleanup(&self, id: &str, keep: usize) -> ResourceResult<Vec<String>> {
+    pub fn cleanup(&self, id: &str, keep: usize) -> ResourceResult<CleanupReport> {
         validate_component("id", id)?;
         let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
+        let _state_lock = self.acquire_state_lock()?;
         let mut state = self.read_state()?;
 
         let entry = state
@@ -371,37 +522,53 @@ impl ResourceStore {
         let keep_set: std::collections::BTreeSet<String> =
             entry.history.iter().take(keep).cloned().collect();
 
-        let victims: Vec<String> = entry
+        let candidates: Vec<String> = entry
             .installed
             .keys()
             .filter(|v| Some((*v).clone()) != active && !keep_set.contains(*v))
             .cloned()
             .collect();
 
-        if victims.is_empty() {
-            return Ok(Vec::new());
+        if candidates.is_empty() {
+            return Ok(CleanupReport::default());
         }
 
-        // 先删目录：删不掉就整体失败，状态保持不变（不会出现"记录没了但文件还在"）
-        for version in &victims {
+        let mut report = CleanupReport::default();
+        for version in &candidates {
+            let leased = leases::active_leases(&self.root, id, version)?;
+            if !leased.is_empty() {
+                report.kept_leased.push((
+                    version.clone(),
+                    leased.iter().map(LeaseInfo::describe).collect(),
+                ));
+                continue;
+            }
             let dir = self.version_dir(id, version)?;
             if dir.exists() {
+                // 先删目录：删不掉就整体失败，状态保持不变（不会出现"记录没了但文件还在"）
                 fs::remove_dir_all(&dir)?;
             }
+            report.removed.push(version.clone());
+        }
+
+        if report.removed.is_empty() {
+            return Ok(report);
         }
 
         let entry = state
             .resources
             .get_mut(id)
             .ok_or_else(|| ResourceError::NotFound(id.to_string()))?;
-        for version in &victims {
+        for version in &report.removed {
             entry.installed.remove(version);
             entry.history.retain(|v| v != version);
         }
 
         self.write_state(&state)?;
-        Ok(victims)
+        Ok(report)
     }
+
+    // ---------------- 查询 ----------------
 
     pub fn list(&self) -> ResourceResult<Vec<ResourceStatus>> {
         let state = self.read_state()?;
@@ -441,25 +608,46 @@ impl ResourceStore {
         read_manifest_from(&dir)
     }
 
-    /// 清理遗留的 staging 目录（上次安装被中断时留下）。
+    /// 清理上次中断留下的残骸：staging 目录、`state.json.tmp-*`、失效租约。
     pub fn recover(&self) -> ResourceResult<RecoverReport> {
         let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
-        let staging_root = self.root.join("staging");
         let mut report = RecoverReport::default();
-        if !staging_root.exists() {
-            return Ok(report);
-        }
-        for entry in fs::read_dir(&staging_root)? {
-            let entry = entry?;
-            if entry.file_type()?.is_dir() {
-                fs::remove_dir_all(entry.path())?;
-                report.removed_staging += 1;
+
+        let staging_root = self.root.join("staging");
+        if staging_root.exists() {
+            for entry in fs::read_dir(&staging_root)? {
+                let entry = entry?;
+                if entry.file_type()?.is_dir() {
+                    fs::remove_dir_all(entry.path())?;
+                    report.removed_staging += 1;
+                }
             }
         }
+
+        // state.json.tmp-<pid>-<nonce>：写状态时崩溃留下的临时文件
+        for entry in fs::read_dir(&self.root)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with("state.json.tmp-") && entry.file_type()?.is_file() {
+                fs::remove_file(entry.path())?;
+                report.removed_temp_files += 1;
+            }
+        }
+
+        report.reclaimed_leases = leases::reclaim_stale(&self.root)?;
         Ok(report)
     }
 
     // ---------------- 内部 ----------------
+
+    fn acquire_state_lock(&self) -> ResourceResult<StateLock> {
+        lockfile::acquire(
+            &self.root,
+            self.timeout,
+            &format!("ResourceStore(pid={})", std::process::id()),
+        )
+    }
 
     fn status_of(&self, id: &str, entry: &Entry) -> ResourceResult<ResourceStatus> {
         let mut versions = Vec::new();
@@ -531,6 +719,8 @@ impl ResourceStore {
     }
 
     /// 原子写：临时文件 + fsync + rename，避免断电留下半个 JSON。
+    ///
+    /// 调用方必须持 [`StateLock`]，否则两个进程会互相覆盖。
     fn write_state(&self, state: &State) -> ResourceResult<()> {
         let path = self.state_path();
         let tmp = self.root.join(format!(

@@ -10,10 +10,11 @@
 - `04_P1_字典与离线查词报告.md` — P1 词典包格式、基准与限制清单
 - `05_审查响应与P2实施计划.md` — 外部审查的逐条处置、ADR-008~014、P2 拆解与验收映射
 - `06_P2.1-P2.2_资源协议与仓库报告.md` — 资源协议（v1/v2 双版本号）、安装/激活/回滚、偏差清单
+- `07_P2.3-P2.5_租约预算与术语约束报告.md` — 资源租约、内存预算、术语约束与诊断、`dictionary.sqlite.v2` 实测
 
 ---
 
-## 当前状态：P0 + P1 完成；P2.1 + P2.2（资源协议与资源仓库）完成
+## 当前状态：P0 + P1 完成；**整个 P2 完成**（P2.1 – P2.5）
 
 - **P0**：workspace 结构、核心类型、插件契约、协调器与路由、缓存、门面 API、Mock 插件、CLI。
   **不接任何真实模型、不装任何 native 库**，整条链路即可运行 —— 这是设计文档规定的交付判据。
@@ -28,7 +29,14 @@
   v1 清单只读兼容、兼容性判定（协议/payload/平台/依赖/kind）、未知版本明确拒收。
 - **P2.2**：资源仓库 `translator-resource`——安装到 staging、逐文件 size+sha256 校验、
   原子落位、原子写状态、激活/回滚/安全清理、崩溃后清理遗留目录；安装新版本**不夺取激活位**，
-  激活版本拒删（租约留到 P2.3）。
+  激活版本拒删。
+- **P2.3**：资源**租约**（谁挂载谁登记；有有效租约的版本拒绝删除，跨进程可见）、
+  **内存预算**（装配期准入，超限即 `OutOfBudget`；数值是自报下界，不是 RSS）、
+  **跨进程状态锁**（`O_EXCL` 锁文件，超时给出持锁者与路径）。
+- **P2.4**：输出侧**术语约束**（`TargetTermGuard`，只改裸文本，URL/代码/模板变量一字不动）+
+  **结构化诊断** `translate_with_diagnostics()`（规则命中、受保护跨度、还原缺失、术语替换明细、是否缓存命中）。
+- **P2.5**：`dictionary.sqlite.v2`（释义内联进 `entries.senses`）与 v2 打包工具。
+  真实 CC-CEDICT 实测：查询 p50 **17.36 → 8.98 µs（−48%）**、库体积 **18.2 → 13.6 MB（−25%）**；v1 仍可读。
 
 词库与规则都是**可选 feature**：不开 `dictionary` 时 `translator-api` 依赖树里没有 `rusqlite`；
 不开 `rules` 时没有 JSON 解析依赖（但 `TextRules` 契约始终可用，宿主可自己实现）。
@@ -40,18 +48,18 @@ translator-sdk/
 ├── crates/
 │   ├── translator-types/       # 请求/结果/错误/语言标签/能力描述（零外部依赖）
 │   ├── translator-plugin-api/  # Engine / Provider / Backend trait + 注册表（含 mocks）
-│   ├── translator-core/        # 协调器、路由、缓存、文本预处理
+│   ├── translator-core/        # 协调器、路由、缓存、文本预处理、内存预算、术语契约、诊断
 │   ├── translator-analysis/    # 语言识别（当前为启发式，可换 fastText）
 │   ├── translator-rules/       # 声明式规则包：编译、金样本校验、执行
 │   ├── translator-dictionary/  # 词典包读取、FST+SQLite 查询、引擎实现
-│   ├── translator-resource/    # 资源协议（v1/v2）+ 安装/激活/回滚仓库
+│   ├── translator-resource/    # 资源协议（v1/v2）+ 安装/激活/回滚仓库 + 租约 + 跨进程锁
 │   └── translator-api/         # 唯一对外入口 + Builder
 ├── apps/
 │   └── translator-cli/         # 调试与演示命令行
 ├── tools/
-│   ├── pack-dictionary/        # CC-CEDICT → 资源包（v1 清单）
+│   ├── pack-dictionary/        # CC-CEDICT → 资源包（payload v1/v2）
 │   └── migrate-rules/          # 规则包离线迁移（pipeline_version 1 → 2）
-├── fixtures/                   # 金样本 + 示例规则包（rules/minimal.json）
+├── fixtures/                   # 金样本 + 示例规则包（rules/minimal.json）+ 示例术语表（terms/zh-en.json）
 ├── resources/                  # 打包产物（体积大，gitignore）
 └── Cargo.toml                  # workspace
 ```
@@ -63,7 +71,8 @@ translator-types  ←  translator-plugin-api  ←  translator-core  ←  transla
                                                    ↖ translator-analysis
                                                    ↖ translator-rules（实现 core 的 TextRules 契约）
 translator-dictionary  ←  translator-api（仅 `dictionary` feature）
-translator-rules       ←  translator-api（仅 `rules` feature）
+translator-rules       ←  translator-api（仅 `rules` feature；内含术语表编译）
+translator-resource    ←  translator-api（仅 `resource` feature）
 ```
 
 `translator-types` 与 `translator-plugin-api` **不依赖任何** native runtime、HTTP 客户端或 SQLite。
@@ -176,8 +185,74 @@ cargo run --release -p translator-cli -- --store .resources resource rollback di
 cargo run --release -p translator-cli -- --store .resources --dict-id dictionary.cc-cedict.zh-en lookup 计算机
 ```
 
-租约与内存预算未实现（P2.3），因此**安装新版本不会自动切换**激活版本，
-旧版本也不会被自动删除。
+**安装新版本不会自动切换**激活版本，旧版本也不会被自动删除（P2.3 的租约只保护"正在用的"，
+不负责自动回收）。
+
+### 租约：谁在用，谁登记
+
+```bash
+# 列出仓库里所有租约（"有效"= 持有进程还活着）
+cargo run --release -p translator-cli -- --store .resources resource lease
+# 回收已退出进程留下的租约
+cargo run --release -p translator-cli -- --store .resources resource lease reclaim
+# 有有效租约时删除会被拒绝，并在错误里列出持有者
+cargo run --release -p translator-cli -- --store .resources resource uninstall <id> <version>
+```
+
+宿主侧挂载即持租约，`Translator` 存活期间该版本跨进程也删不掉：
+
+```rust
+let store = translator_resource::ResourceStore::open(".resources")?;
+let translator = translator_api::Translator::builder()
+    .dictionary_from_store(&store, "dictionary.cc-cedict.zh-en")  // 需要 feature `resource`
+    .build()?;
+```
+
+诚实边界：租约是**协作式**的，绕过本 SDK 直接 `open()` 资源文件的程序检测不到；
+无法判定进程存活时按"占用"处理（宁可要求人工 `reclaim`，不删正在被 mmap 的文件）。
+
+### 内存预算
+
+```bash
+cargo run --release -p translator-cli -- --dict resources/zh-en --memory-budget 1 memory   # 直接被拒
+cargo run --release -p translator-cli -- --dict resources/zh-en --memory-budget 64 memory  # 显示占用
+```
+
+预算在 `build()` 装配期判定，超限返回 `OutOfBudget`。数字是各组件**自报的下界估计**
+（索引大小 + 配置的页缓存 + 一个写死的连接开销），**不是 RSS**：
+真实包实测 RSS 约 24 MB，而记账只有约 3 MB。所以它只能回答"肯定不够"，不能回答"够用"。
+
+### 术语约束与诊断
+
+```bash
+# 默认 enforce：按术语表改写译文（只改裸文本，URL/代码/{变量} 不动）
+cargo run --release -p translator-cli -- --terms fixtures/terms/zh-en.json     translate "planet earth has a computer" --diagnose
+# warn：只报告不改
+cargo run --release -p translator-cli -- --terms fixtures/terms/zh-en.json     --term-policy warn translate "planet earth has a computer" --diagnose
+```
+
+```rust
+let out = translator.translate_with_diagnostics(&req).await?;
+println!("{}", out.diagnostics.summary());
+for v in out.diagnostics.term.iter().flat_map(|t| t.violations.iter()) {
+    println!("{v}");   // 「LLM」应为「large language model」（偏移 12）
+}
+```
+
+术语表格式见 `fixtures/terms/zh-en.json`；契约是 `TargetTermGuard`，宿主可自己实现，
+不必开 `rules` feature。详见 `../docs/07_P2.3-P2.5_租约预算与术语约束报告.md` §2.4–§2.5。
+
+### 词典 payload：v1 还是 v2
+
+```bash
+# 新包默认 v2（释义内联，查询约快一倍、库小 25%）
+cargo run --release -p pack-dictionary -- /tmp/cedict /tmp/pkg --payload-schema dictionary.sqlite.v2
+# 复现历史包
+cargo run --release -p pack-dictionary -- /tmp/cedict /tmp/pkg --payload-schema dictionary.sqlite.v1
+```
+
+读取侧同时支持两种格式，打开时会校验清单声明与库文件 `PRAGMA user_version` 一致，
+不一致直接拒绝（防止"改参数忘了同步清单"导致释义为空）。
 
 ## 设计要点（来自设计文档，已在代码中体现）
 
@@ -189,21 +264,28 @@ cargo run --release -p translator-cli -- --store .resources --dict-id dictionary
 | 兼容性显式声明，不靠字符串猜 | `InferenceBackend::supports_model()` 返回 `CompatibilityReport` |
 | 占位符丢失必须告警 | `TranslationWarning::PlaceholderRestoreFailed`，有测试覆盖 |
 | 未安装资源要给出安装建议 | `TranslationError::suggested_packages`，测试覆盖 |
-| 缓存键包含全部影响维度 | `CacheKey`：文本哈希 / 语言对 / 引擎 / 术语表 / 规则版本 / 解码配置 / 隐私域 |
+| 缓存键包含全部影响维度 | `CacheKey`：文本哈希 / 语言对 / 引擎 / 术语表 / 规则版本 / 解码配置 / 隐私域 / 资源指纹 |
+| 结构化诊断不污染主结果（ADR-008/015） | `translate()` 返回类型不变；诊断走 `translate_with_diagnostics()` |
+| 术语约束不得破坏占位符（ADR-009/015） | `TargetTermTable` 复用 `text::protected_spans`，有 3 个集成测试 |
+| 预算不得宣传为硬上限（ADR-013） | 只做装配期准入 + 下界估计，文档与 CLI 输出都标注"不是 RSS" |
 
 ## 尚未实现
 
 - 除 CC-CEDICT 之外的词库（Kaikki / JMdict 各有解析器与许可审查）
 - en→zh 方向的词库（CC-CEDICT 是汉英单向）
 - 真正的语言识别（fastText `lid.176.ftz`），当前是零模型启发式
-- 规则包的输出侧能力：术语**约束**（校验译文包含指定词）、分句、词形；正则类匹配按 §7.3 的风险评估后决定不做
+- 术语表与 `glossary_id` 联动（多术语表选择属宿主策略）
+- 规则包的其余能力：分句、词形；正则类匹配按 §7.3 的风险评估后决定不做
 - 词形分析（Lindera 等）
-- 资源包管理（安装/卸载/回滚/租约/内存硬预算）
+- 内存**硬**上限与 RSS 监控；GPU/native 分配器记账（P3）
+- single-flight、引用计数、TTL/LRU 热卸载（P2 没有按需加载/卸载路径）
+- `ResolvedExecutionPlan` 与执行计划哈希（ADR-011，等 P3 后端形状稳定）
 - Bergamot / ncnn / ONNX Runtime 适配
 - C ABI / JNI 绑定
 - 远程 LLM Provider 与凭据注入
 
-各项的具体原因与去向见 `../docs/04_P1_字典与离线查词报告.md` §8、§9。
+各项的具体原因与去向见 `../docs/04_P1_字典与离线查词报告.md` §8、§9
+与 `../docs/07_P2.3-P2.5_租约预算与术语约束报告.md` §6。
 
 ## 许可证
 

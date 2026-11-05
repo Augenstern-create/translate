@@ -404,11 +404,14 @@ dependencies = [
 name = "translator-api"
 version = "0.1.0"
 dependencies = [
+ "pack-dictionary",
  "pollster",
+ "rusqlite",
  "tempfile",
  "translator-core",
  "translator-dictionary",
  "translator-plugin-api",
+ "translator-resource",
  "translator-rules",
  "translator-types",
 ]

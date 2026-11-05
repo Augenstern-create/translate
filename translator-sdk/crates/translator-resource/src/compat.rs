@@ -26,6 +26,7 @@ impl HostSupport {
             ],
             payload_schemas: vec![
                 PayloadSchema::DictionarySqliteV1,
+                PayloadSchema::DictionarySqliteV2,
                 PayloadSchema::RulesJsonV1,
             ],
             platforms: vec![current_platform()],

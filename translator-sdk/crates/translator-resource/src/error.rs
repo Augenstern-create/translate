@@ -46,6 +46,17 @@ pub enum ResourceError {
         id: String,
         version: String,
     },
+    /// 该版本还有**有效租约**（P2.3）：有进程正持有它，拒绝删除。
+    ResourceLeased {
+        id: String,
+        version: String,
+        holders: Vec<String>,
+    },
+    /// 等不到 `state.json` 的跨进程锁（P2.3）。
+    LockTimeout {
+        path: String,
+        holder: String,
+    },
     /// 版本号字符串非法（用于目录名，禁止分隔符与 `..`）。
     InvalidVersion(String),
     /// 状态文件损坏：宁可报错也不猜。
@@ -87,6 +98,21 @@ impl fmt::Display for ResourceError {
             Self::ResourceInUse { id, version } => {
                 write!(f, "资源 {id}@{version} 正在使用（当前激活版本），拒绝删除")
             }
+            Self::ResourceLeased {
+                id,
+                version,
+                holders,
+            } => write!(
+                f,
+                "资源 {id}@{version} 有 {} 个有效租约，拒绝删除：{}",
+                holders.len(),
+                holders.join("; ")
+            ),
+            Self::LockTimeout { path, holder } => write!(
+                f,
+                "等待状态锁超时（持有者：{holder}，锁文件：{path}）；\
+                 确认没有其它进程在使用该仓库后可手动删除该文件"
+            ),
             Self::InvalidVersion(v) => write!(f, "版本号非法：{v}"),
             Self::CorruptState(msg) => write!(f, "状态文件损坏：{msg}"),
         }

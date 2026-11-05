@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "id": "terms.demo.zh-en",
+  "version": 1,
+  "terms": [
+    { "target": "en", "preferred": "computer", "variants": ["calculator", "calc"] },
+    { "target": "en", "preferred": "artificial intelligence", "variants": ["AI"] },
+    { "target": "*", "preferred": "world", "variants": ["planet earth"] }
+  ]
+}

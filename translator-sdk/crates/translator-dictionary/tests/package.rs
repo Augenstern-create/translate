@@ -30,6 +30,7 @@ fn pack_options() -> PackOptions {
     PackOptions {
         id: "dictionary.test.zh-en".to_string(),
         version: "0.0.1".to_string(),
+        payload: translator_dictionary::PayloadKind::V2,
         language: "zh-Hans".to_string(),
         target_languages: vec!["en".to_string()],
         provenance: Provenance {
@@ -45,9 +46,15 @@ fn pack_options() -> PackOptions {
 }
 
 fn build() -> tempfile::TempDir {
+    build_with(translator_dictionary::PayloadKind::V2)
+}
+
+fn build_with(payload: translator_dictionary::PayloadKind) -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("创建临时目录");
     let parsed = parse_cedict(std::io::Cursor::new(SAMPLE), None).expect("解析样本");
-    pack(parsed.entries, dir.path(), &pack_options()).expect("打包");
+    let mut opts = pack_options();
+    opts.payload = payload;
+    pack(parsed.entries, dir.path(), &opts).expect("打包");
     dir
 }
 
@@ -217,4 +224,103 @@ fn 插件版本为当前版本() {
     let engine = DictionaryEngine::new(pkg);
 
     assert_eq!(engine.descriptor().plugin_api, PluginApiVersion::CURRENT);
+}
+
+// ============================================================
+// P2.5：payload v1 / v2
+// ============================================================
+
+/// 同一份词表分别打成 v1 与 v2，读出来的词条必须**逐字段相同**。
+///
+/// 这是 v2 的验收底线：省掉一次 B-tree 查找不能改变语义。
+#[test]
+fn v1与v2读出的词条完全一致() {
+    let v1_dir = build_with(translator_dictionary::PayloadKind::V1);
+    let v2_dir = build_with(translator_dictionary::PayloadKind::V2);
+
+    let v1 = DictionaryPackage::open(v1_dir.path(), false).unwrap();
+    let v2 = DictionaryPackage::open(v2_dir.path(), false).unwrap();
+    assert_eq!(v1.payload_kind(), translator_dictionary::PayloadKind::V1);
+    assert_eq!(v2.payload_kind(), translator_dictionary::PayloadKind::V2);
+
+    for term in ["计算机", "計算機", "猫", "貓", "世界", "世界观", "你好"] {
+        let a = v1.lookup_exact(term).unwrap().expect(term);
+        let b = v2.lookup_exact(term).unwrap().expect(term);
+        assert_eq!(a.headword, b.headword, "{term}");
+        assert_eq!(a.normalized, b.normalized, "{term}");
+        assert_eq!(a.language, b.language, "{term}");
+        assert_eq!(a.readings, b.readings, "{term}");
+        assert_eq!(a.parts_of_speech, b.parts_of_speech, "{term}");
+        assert_eq!(a.senses, b.senses, "{term}");
+        assert_eq!(a.source_id, b.source_id, "{term}");
+        assert_eq!(a.source_license, b.source_license, "{term}");
+        assert_eq!(a.confidence, b.confidence, "{term}");
+    }
+
+    // 前缀查询也一致
+    let a: Vec<String> = v1
+        .lookup("世界", 5)
+        .unwrap()
+        .into_iter()
+        .map(|e| e.headword)
+        .collect();
+    let b: Vec<String> = v2
+        .lookup("世界", 5)
+        .unwrap()
+        .into_iter()
+        .map(|e| e.headword)
+        .collect();
+    assert_eq!(a, b);
+}
+
+/// 清单声明的格式与库文件自报的 `user_version` 不一致时必须拒收。
+///
+/// 真实事故场景：改了打包参数但忘了同步清单，结果"读得到词条但释义为空"。
+#[test]
+fn 清单与库格式不一致时拒绝打开() {
+    let dir = build_with(translator_dictionary::PayloadKind::V2);
+    let manifest_path = dir.path().join("manifest.json");
+    let text = std::fs::read_to_string(&manifest_path).unwrap();
+    // 把 v2 清单改成 v1 声明（库文件仍是 v2）
+    let patched = text
+        .replace("\"manifest_schema_version\": 2", "\"schema_version\": 1")
+        .replace("\"payload_schema_version\": \"dictionary.sqlite.v2\",", "");
+    std::fs::write(&manifest_path, patched).unwrap();
+
+    let err = DictionaryPackage::open(dir.path(), false).unwrap_err();
+    let text = err.to_string();
+    assert!(
+        text.contains("user_version"),
+        "错误必须指出是格式不匹配：{text}"
+    );
+}
+
+#[test]
+fn v2清单声明未知payload被拒收() {
+    let dir = build_with(translator_dictionary::PayloadKind::V2);
+    let manifest_path = dir.path().join("manifest.json");
+    let text = std::fs::read_to_string(&manifest_path).unwrap();
+    std::fs::write(
+        &manifest_path,
+        text.replace("dictionary.sqlite.v2", "dictionary.sqlite.v9"),
+    )
+    .unwrap();
+    let err = DictionaryPackage::open(dir.path(), false).unwrap_err();
+    assert!(
+        err.to_string().contains("payload_schema_version"),
+        "实际：{err}"
+    );
+}
+
+#[test]
+fn 释义里出现分隔符时打包失败() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut opts = pack_options();
+    opts.payload = translator_dictionary::PayloadKind::V2;
+    let mut parsed = parse_cedict(std::io::Cursor::new(SAMPLE), None).expect("解析样本");
+    parsed.entries[0]
+        .definitions
+        .push("bad\u{1f}definition".to_string());
+    let err = pack(parsed.entries, dir.path(), &opts).unwrap_err();
+    assert!(err.to_string().contains("U+001F"), "实际：{err}");
 }

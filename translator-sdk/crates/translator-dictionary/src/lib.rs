@@ -33,8 +33,73 @@ pub use engine::{DictionaryEngine, DictionaryProviderImpl};
 
 mod engine;
 
-/// 包格式版本。不兼容变更必须递增。
+/// v1 清单协议版本（P1 词典包，字段名 `schema_version`）。
 pub const SCHEMA_VERSION: u32 = 1;
+/// v2 清单协议版本（字段名 `manifest_schema_version`，与 payload 版本分离）。
+pub const MANIFEST_SCHEMA_V2: u32 = 2;
+
+/// `entries.sqlite` 的存储格式。
+///
+/// | 值 | 结构 | 读取成本 |
+/// |---|---|---|
+/// | `dictionary.sqlite.v1` | `entries` + `senses` 两张表，读一个词条要 2 次 B-tree 查找 | 基准 |
+/// | `dictionary.sqlite.v2` | 释义内联进 `entries.senses`（U+001F 分隔），1 次查找 | 更快 |
+///
+/// v2 的代价是**失去逐条释义的行**：只读场景下没人按释义做查询，
+/// 因此这个交换是划算的（实测见 `docs/07` §3.3）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PayloadKind {
+    V1,
+    V2,
+}
+
+impl PayloadKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::V1 => "dictionary.sqlite.v1",
+            Self::V2 => "dictionary.sqlite.v2",
+        }
+    }
+
+    /// v2 库文件的 `PRAGMA user_version`。v1 保持 0（历史包没有写过这个值）。
+    pub const fn user_version(self) -> i64 {
+        match self {
+            Self::V1 => 0,
+            Self::V2 => 2,
+        }
+    }
+
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "dictionary.sqlite.v1" => Some(Self::V1),
+            "dictionary.sqlite.v2" => Some(Self::V2),
+            _ => None,
+        }
+    }
+}
+
+/// v2 内联释义的分隔符（ASCII Unit Separator）。
+///
+/// 选它而不是 `\n` 或 `|`：释义文本里可能出现任何可打印字符，
+/// 而 U+001F 是 C0 控制符，真实语料里不会自然出现。
+pub const SENSE_SEPARATOR: char = '\u{1f}';
+
+/// SQLite mmap 上限（字节）。与 `PRAGMA mmap_size` 一致。
+///
+/// 这是**虚拟映射上限**，不是 RSS：SQLite 只会把真正读到的页换入。
+const MMAP_SIZE_BYTES: u64 = 256 * 1024 * 1024;
+
+/// SQLite 页缓存配置（KiB）。负值表示 KiB，见 SQLite `PRAGMA cache_size`。
+///
+/// 抽成常量是为了让「打开时配置的值」与「内存估算里假设的值」不可能漂移——
+/// 之前这两处一旦不一致，估算就等于撒谎。
+const SQLITE_CACHE_KIB: i64 = 2000;
+
+/// 每个 SQLite 连接 + 语句缓存 + 分配的固定开销估计（字节）。
+///
+/// 这是一个**猜测值**，没有实测依据（实测只测到进程整体 RSS，见 `docs/04` §6.2）。
+/// 宁可写成一个显式的、有名字的常量，也不要把未知量悄悄摊到别处。
+const SQLITE_CONNECTION_OVERHEAD_BYTES: u64 = 256 * 1024;
 
 // ============================================================
 // 错误
@@ -136,10 +201,19 @@ pub struct PackageFile {
     pub bytes: u64,
 }
 
-/// 词典包清单。
+/// 词典包清单（v1 / v2 统一表示）。
+///
+/// 三个版本字段都是 `Option`：v1 包只有 `schema_version`，
+/// v2 包只有 `manifest_schema_version` + `payload_schema_version`。
+/// 序列化时 `None` 不写出，避免又造出"两种字段都写"的歧义包。
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DictionaryManifest {
-    pub schema_version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema_version: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manifest_schema_version: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload_schema_version: Option<String>,
     pub id: String,
     pub version: String,
     /// 固定为 `dictionary`。
@@ -154,13 +228,46 @@ pub struct DictionaryManifest {
 }
 
 impl DictionaryManifest {
+    /// 这份清单声明的 payload 存储格式。
+    ///
+    /// 判定顺序刻意写死，不做"都试一遍"：
+    ///
+    /// 1. 有 `payload_schema_version` → 按它解析，认不出就**报错**（不猜）；
+    /// 2. 否则看 `schema_version == 1` → v1（P1 历史包）；
+    /// 3. 其余情况报错。
+    ///
+    /// 这条规则与资源层的 `ResourceManifest` 一致：v1 是数据兼容，不是行为兼容。
+    pub fn payload_kind(&self) -> Result<PayloadKind, DictionaryError> {
+        if let Some(raw) = &self.payload_schema_version {
+            return PayloadKind::parse(raw).ok_or_else(|| {
+                DictionaryError::InvalidPackage(format!("不支持的 payload_schema_version={raw}"))
+            });
+        }
+        match (self.schema_version, self.manifest_schema_version) {
+            (Some(SCHEMA_VERSION), _) => Ok(PayloadKind::V1),
+            (None, Some(MANIFEST_SCHEMA_V2)) => Err(DictionaryError::InvalidPackage(
+                "manifest_schema_version=2 的包必须声明 payload_schema_version".to_string(),
+            )),
+            (None, Some(other)) => Err(DictionaryError::InvalidPackage(format!(
+                "不支持的 manifest_schema_version={other}"
+            ))),
+            (Some(other), _) => Err(DictionaryError::InvalidPackage(format!(
+                "不支持的 schema_version={other}（本 SDK 支持 {SCHEMA_VERSION}）"
+            ))),
+            (None, None) => Err(DictionaryError::InvalidPackage(
+                "清单里没有 schema_version / manifest_schema_version，无法判断格式".to_string(),
+            )),
+        }
+    }
+
     /// 校验清单自洽性。**拒绝任何 `REQUIRED` 占位符**（设计文档 §9）。
     pub fn validate(&self) -> Result<(), DictionaryError> {
-        if self.schema_version != SCHEMA_VERSION {
-            return Err(DictionaryError::InvalidPackage(format!(
-                "schema_version 应为 {SCHEMA_VERSION}，实际 {}",
-                self.schema_version
-            )));
+        // 版本字段本身是否自洽（也顺带挡住"两个版本字段都写"的歧义包）
+        self.payload_kind()?;
+        if self.schema_version.is_some() && self.manifest_schema_version.is_some() {
+            return Err(DictionaryError::InvalidPackage(
+                "同时出现 schema_version 与 manifest_schema_version，无法判断协议版本".to_string(),
+            ));
         }
         if self.kind != "dictionary" {
             return Err(DictionaryError::InvalidPackage(format!(
@@ -202,6 +309,10 @@ pub struct DictionaryPackage {
     language: LanguageTag,
     index: fst::Map<memmap2::Mmap>,
     db: Mutex<rusqlite::Connection>,
+    /// 释义库文件大小（打开时取一次 metadata，用于内存上限估算）。
+    db_bytes: u64,
+    /// 释义库的存储格式（决定读路径）。
+    payload: PayloadKind,
 }
 
 impl DictionaryPackage {
@@ -247,16 +358,36 @@ impl DictionaryPackage {
         let mmap = unsafe { memmap2::Mmap::map(&index_file)? };
         let index = fst::Map::new(mmap)?;
 
+        // 清单声明的 payload 格式决定读路径；打开前先确认，避免读到一半才发现不匹配
+        let payload = manifest.payload_kind()?;
+
         let conn = rusqlite::Connection::open_with_flags(
             root.join("entries.sqlite"),
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )?;
+
+        // 清单说的格式必须与文件自报的格式一致：
+        // 打包时把 v2 的库配上 v1 的清单（或反过来）是最容易犯的错，
+        // 这种包读起来会"看起来能用但释义为空"，必须当场拒绝。
+        let user_version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        if user_version != payload.user_version() {
+            return Err(DictionaryError::InvalidPackage(format!(
+                "清单声明 {}（期望 user_version={}），但 entries.sqlite 的 user_version={}",
+                payload.as_str(),
+                payload.user_version(),
+                user_version
+            )));
+        }
         // 让 SQLite 尽量用 mmap 读页，降低 RSS
-        let _ = conn.pragma_update(None, "mmap_size", 256 * 1024 * 1024_i64);
-        let _ = conn.pragma_update(None, "cache_size", -2000_i64);
+        let _ = conn.pragma_update(None, "mmap_size", MMAP_SIZE_BYTES as i64);
+        let _ = conn.pragma_update(None, "cache_size", -SQLITE_CACHE_KIB);
 
         let language = LanguageTag::new(&manifest.language)
             .map_err(|e| DictionaryError::InvalidPackage(format!("清单语言非法：{e}")))?;
+
+        let db_bytes = std::fs::metadata(root.join("entries.sqlite"))
+            .map(|m| m.len())
+            .unwrap_or(0);
 
         Ok(Self {
             root,
@@ -264,6 +395,8 @@ impl DictionaryPackage {
             language,
             index,
             db: Mutex::new(conn),
+            db_bytes,
+            payload,
         })
     }
 
@@ -279,6 +412,11 @@ impl DictionaryPackage {
         self.manifest.entry_count
     }
 
+    /// 释义库的存储格式。
+    pub fn payload_kind(&self) -> PayloadKind {
+        self.payload
+    }
+
     /// 词条语言，例如 `zh-Hans`。
     pub fn language(&self) -> &str {
         &self.manifest.language
@@ -292,6 +430,39 @@ impl DictionaryPackage {
     /// 索引占用的常驻字节数（FST mmap 的大小）。
     pub fn index_bytes(&self) -> u64 {
         self.index.as_fst().as_bytes().len() as u64
+    }
+
+    /// 释义库文件大小（不是常驻内存：SQLite 按需读页）。
+    pub fn db_file_bytes(&self) -> u64 {
+        self.db_bytes
+    }
+
+    /// 内存占用估算（P2.3，供 `MemoryBudget` 记账）。
+    ///
+    /// **这是下界，不是保证值**，理由见返回值里各字段的说明：
+    ///
+    /// | 字段 | 含义 | 准确性 |
+    /// |---|---|---|
+    /// | `index_bytes` | FST mmap 的文件大小 | 上界（mmap 只读，可能从未换入） |
+    /// | `page_cache_bytes` | `PRAGMA cache_size` 配置值 | 精确（就是配置的那个数） |
+    /// | `overhead_bytes` | 连接/语句/分配器 | **猜的**，无实测 |
+    ///
+    /// 实测结论（`docs/04` §6.2，本机、真实 CC-CEDICT 121,584 条）：
+    /// 包 1.7 MB 索引 + 19.1 MB 释义库，查词后进程 RSS **+9.8 MB**，
+    /// 总占用 24.3–24.9 MB。也就是说真实 RSS 与「文件总大小」同量级，
+    /// 远大于本函数给出的下界——因此预算判定只能说「肯定不够」，
+    /// 不能说「够用」。设计文档 §9.3 明确禁止把预算数字当保证值。
+    pub fn memory_footprint(&self) -> MemoryFootprint {
+        let index_bytes = self.index_bytes();
+        let page_cache_bytes = (SQLITE_CACHE_KIB as u64) * 1024;
+        MemoryFootprint {
+            index_bytes,
+            page_cache_bytes,
+            overhead_bytes: SQLITE_CONNECTION_OVERHEAD_BYTES,
+            // 最坏情况：索引全部换入 + 释义库被 mmap 全读进来
+            ceiling_bytes: index_bytes + self.db_bytes + page_cache_bytes,
+            db_file_bytes: self.db_bytes,
+        }
     }
 
     /// 精确匹配。
@@ -340,8 +511,69 @@ impl DictionaryPackage {
         Ok(out)
     }
 
-    /// 按 record id 读取完整词条。
+    /// 按 record id 读取完整词条。按 payload 格式分派。
     fn load_entry(&self, id: u64) -> Result<DictionaryEntry, DictionaryError> {
+        match self.payload {
+            PayloadKind::V1 => self.load_entry_v1(id),
+            PayloadKind::V2 => self.load_entry_v2(id),
+        }
+    }
+
+    /// v2：单次查询取回全部字段（释义内联，U+001F 分隔）。
+    fn load_entry_v2(&self, id: u64) -> Result<DictionaryEntry, DictionaryError> {
+        let conn = self
+            .db
+            .lock()
+            .map_err(|_| DictionaryError::InvalidPackage("数据库连接锁被污染".to_string()))?;
+
+        let (headword, normalized, traditional, pinyin, pos, source_id, source_license, confidence, senses) = conn
+            .prepare_cached(
+                "SELECT headword, normalized, traditional, pinyin, pos, source_id, source_license, confidence, senses \
+                 FROM entries WHERE id = ?1",
+            )?
+            .query_row([id as i64], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, String>(6)?,
+                    row.get::<_, f64>(7)?,
+                    row.get::<_, String>(8)?,
+                ))
+            })
+            .map_err(|e| {
+                DictionaryError::InvalidPackage(format!("record {id} 读取失败：{e}"))
+            })?;
+
+        let senses = senses
+            .split(SENSE_SEPARATOR)
+            .filter(|s| !s.is_empty())
+            .map(|definition| Sense {
+                definition: definition.to_string(),
+                source_id: source_id.clone(),
+            })
+            .collect();
+
+        Ok(DictionaryEntry {
+            headword,
+            normalized,
+            language: self.language.clone(),
+            readings: build_readings(pinyin, traditional),
+            parts_of_speech: pos
+                .map(|p| p.split('|').map(str::to_string).collect())
+                .unwrap_or_default(),
+            senses,
+            source_id,
+            source_license,
+            confidence: confidence as f32,
+        })
+    }
+
+    /// v1：两条查询（entries + senses）。
+    fn load_entry_v1(&self, id: u64) -> Result<DictionaryEntry, DictionaryError> {
         let conn = self
             .db
             .lock()
@@ -381,19 +613,11 @@ impl DictionaryPackage {
             })
             .collect();
 
-        let mut readings = Vec::new();
-        if let Some(p) = pinyin {
-            readings.push(p);
-        }
-        if let Some(t) = traditional {
-            readings.push(format!("繁体：{t}"));
-        }
-
         Ok(DictionaryEntry {
             headword,
             normalized,
             language: self.language.clone(),
-            readings,
+            readings: build_readings(pinyin, traditional),
             parts_of_speech: pos
                 .map(|p| p.split('|').map(str::to_string).collect())
                 .unwrap_or_default(),
@@ -413,6 +637,50 @@ impl std::fmt::Debug for DictionaryPackage {
             .field("language", &self.manifest.language)
             .field("entry_count", &self.manifest.entry_count)
             .finish()
+    }
+}
+
+/// 由 `pinyin` / `traditional` 组装 `readings`。v1 与 v2 共用，避免两条读路径分叉。
+fn build_readings(pinyin: Option<String>, traditional: Option<String>) -> Vec<String> {
+    let mut readings = Vec::new();
+    if let Some(p) = pinyin {
+        readings.push(p);
+    }
+    if let Some(t) = traditional {
+        readings.push(format!("繁体：{t}"));
+    }
+    readings
+}
+
+/// 单份词典包的内存估算。字段含义见 [`DictionaryPackage::memory_footprint`]。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MemoryFootprint {
+    pub index_bytes: u64,
+    pub page_cache_bytes: u64,
+    pub overhead_bytes: u64,
+    /// 最坏情况（索引 + 释义库 + 页缓存全部常驻）。
+    pub ceiling_bytes: u64,
+    pub db_file_bytes: u64,
+}
+
+impl MemoryFootprint {
+    /// 记账用的下界（`MemoryBudget` 只需要这一项）。
+    pub fn accounting_bytes(&self) -> u64 {
+        self.index_bytes + self.page_cache_bytes + self.overhead_bytes
+    }
+}
+
+impl std::fmt::Display for MemoryFootprint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "索引 {} KiB + 页缓存 {} KiB + 固定开销 {} KiB = {} KiB（最坏 {} KiB）",
+            self.index_bytes / 1024,
+            self.page_cache_bytes / 1024,
+            self.overhead_bytes / 1024,
+            self.accounting_bytes() / 1024,
+            self.ceiling_bytes / 1024
+        )
     }
 }
 

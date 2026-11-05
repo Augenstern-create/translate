@@ -40,6 +40,9 @@ translator-cli —— 轻量跨平台翻译 SDK 调试工具
   resource rollback <id>               回滚到上一个激活过的版本
   resource uninstall <id> <version>    删除非激活版本（激活版本拒绝删除）
   resource cleanup <id> [--keep <n>]   保留激活 + 最近 n 个历史版本
+  resource lease [<id> [<version>]]    列出租约（谁在用哪个版本）
+  resource lease reclaim               回收已死进程留下的租约
+  memory                               打印内存预算与实际挂载情况
   translate <文本> [--from <lang>] [--to <lang>] [--policy <p>] [--explain]
              --to 缺省时按源语言推断：中文→en，其它→zh-Hans
   lookup <词条> [--lang <lang>] [--limit <n>]
@@ -50,6 +53,9 @@ translator-cli —— 轻量跨平台翻译 SDK 调试工具
   --dict <包目录>    直接挂载一个词典包目录
   --dict-id <资源 id> 从资源仓库挂载该资源的**激活版本**
   --store <仓库目录>  资源仓库根目录（默认 .resources）
+  --memory-budget <MiB>  峰值内存上限；超限时 build() 直接 OutOfBudget
+  --terms <术语表>   输出侧术语表（JSON，P2.4）
+  --term-policy <p>  术语策略：off | warn | enforce（默认 enforce）
   --rules <规则文件>  挂载规则包（JSON 或已编译的二进制）
 
 策略 (--policy):
@@ -88,13 +94,7 @@ fn main() -> ExitCode {
         return cmd_resource(&options.store, &args[1..]);
     }
 
-    // --dict-id：从仓库解析激活版本目录，再走原有挂载路径
-    let dict = match resolve_dict(&options) {
-        Ok(dir) => dir,
-        Err(code) => return code,
-    };
-
-    let translator = match build_translator(dict.as_deref(), options.rules.as_deref()) {
+    let translator = match build_translator(&options) {
         Ok(t) => t,
         Err(err) => {
             eprintln!("插件注册失败：{err}");
@@ -107,6 +107,7 @@ fn main() -> ExitCode {
         "lookup" => cmd_lookup(&translator, &args[1..]),
         "detect" => cmd_detect(&translator, &args[1..]),
         "capabilities" => cmd_capabilities(&translator),
+        "memory" => cmd_memory(&translator),
         other => {
             eprintln!("未知子命令：{other}\n");
             print!("{USAGE}");
@@ -121,6 +122,11 @@ struct GlobalOptions {
     dict_id: Option<String>,
     store: String,
     rules: Option<String>,
+    /// 峰值内存上限（字节）。
+    memory_budget: Option<u64>,
+    /// 输出侧术语表文件。
+    terms: Option<String>,
+    term_policy: translator_api::TermPolicy,
 }
 
 const DEFAULT_STORE: &str = ".resources";
@@ -132,6 +138,9 @@ fn take_global_options(args: &mut Vec<String>) -> Result<GlobalOptions, ExitCode
         dict_id: None,
         store: DEFAULT_STORE.to_string(),
         rules: None,
+        memory_budget: None,
+        terms: None,
+        term_policy: translator_api::TermPolicy::default(),
     };
 
     let take = |args: &mut Vec<String>, flag: &str| -> Option<String> {
@@ -152,6 +161,27 @@ fn take_global_options(args: &mut Vec<String>) -> Result<GlobalOptions, ExitCode
     if let Some(store) = take(args, "--store") {
         options.store = store;
     }
+    options.terms = take(args, "--terms");
+    if let Some(raw) = take(args, "--term-policy") {
+        options.term_policy = match raw.as_str() {
+            "off" => translator_api::TermPolicy::Off,
+            "warn" => translator_api::TermPolicy::Warn,
+            "enforce" => translator_api::TermPolicy::Enforce,
+            other => {
+                eprintln!("--term-policy 只能是 off | warn | enforce：{other}");
+                return Err(ExitCode::from(2));
+            }
+        };
+    }
+    if let Some(raw) = take(args, "--memory-budget") {
+        match raw.parse::<u64>() {
+            Ok(mib) if mib > 0 => options.memory_budget = Some(mib * 1024 * 1024),
+            _ => {
+                eprintln!("--memory-budget 需要正整数（单位 MiB）：{raw}");
+                return Err(ExitCode::from(2));
+            }
+        }
+    }
 
     if options.dict.is_some() && options.dict_id.is_some() {
         eprintln!("--dict 与 --dict-id 只能用一个");
@@ -161,34 +191,12 @@ fn take_global_options(args: &mut Vec<String>) -> Result<GlobalOptions, ExitCode
     Ok(options)
 }
 
-/// 解析要挂载的词典目录：`--dict` 优先，其次 `--dict-id`（读仓库激活版本）。
-fn resolve_dict(options: &GlobalOptions) -> Result<Option<String>, ExitCode> {
-    if let Some(dir) = &options.dict {
-        return Ok(Some(dir.clone()));
-    }
-    let Some(id) = &options.dict_id else {
-        return Ok(None);
-    };
-
-    let store = match translator_resource::ResourceStore::open(&options.store) {
-        Ok(store) => store,
-        Err(err) => {
-            eprintln!("打开资源仓库失败（{}）：{err}", options.store);
-            return Err(ExitCode::FAILURE);
-        }
-    };
-    match store.active_dir(id) {
-        Ok(dir) => Ok(Some(dir.display().to_string())),
-        Err(err) => {
-            eprintln!("资源 {id} 没有可用版本：{err}");
-            Err(ExitCode::FAILURE)
-        }
-    }
-}
-
+/// 构造 `Translator`：把全局选项翻成 builder 调用。
+///
+/// `--dict-id` 走 `dictionary_from_store`：目录由仓库解析，并且整个进程存续期间
+/// 持有租约——另一个进程想 `uninstall` 这个版本会被 `ResourceLeased` 拒绝（P2.3）。
 fn build_translator(
-    dict: Option<&str>,
-    rules: Option<&str>,
+    options: &GlobalOptions,
 ) -> Result<translator_api::Translator, translator_api::TranslationError> {
     let mut builder = translator_api::Translator::builder()
         // 本地 NMT：模拟 Marian（真实模型在 P3 接入）
@@ -198,15 +206,33 @@ fn build_translator(
         .backend(MockBackend::new())
         .cache_capacity(64);
 
-    if let Some(path) = rules {
+    if let Some(path) = &options.rules {
         builder = builder.rules_file(path);
     }
+    if let Some(bytes) = options.memory_budget {
+        builder = builder.memory_budget(Some(bytes));
+    }
+    if let Some(path) = &options.terms {
+        builder = builder
+            .term_table_file(path)
+            .term_policy(options.term_policy);
+    }
 
-    match dict {
-        // 有真实词典包：用它替代 Mock 词表
-        Some(dir) => builder = builder.dictionary_package(dir),
-        // 无词典包：退回内置 Mock 词表，保证 CLI 随时可用
-        None => {
+    match (&options.dict, &options.dict_id) {
+        // 有真实词典包目录：直接挂载
+        (Some(dir), _) => builder = builder.dictionary_package(dir),
+        // 从资源仓库挂载激活版本（持租约）
+        (None, Some(id)) => {
+            let store = translator_resource::ResourceStore::open(&options.store).map_err(|e| {
+                translator_api::TranslationError::new(
+                    translator_api::TranslationErrorCode::RuntimeInitFailed,
+                    format!("打开资源仓库失败（{}）：{e}", options.store),
+                )
+            })?;
+            builder = builder.dictionary_from_store(&store, id);
+        }
+        // 都没有：退回内置 Mock 词表，保证 CLI 随时可用
+        (None, None) => {
             builder = builder
                 .engine(MockDictionaryEngine::new())
                 .provider(MockDictionaryProvider::new());
@@ -222,6 +248,7 @@ fn cmd_translate(translator: &translator_api::Translator, args: &[String]) -> Ex
     let mut to: Option<String> = None;
     let mut policy = TranslationPolicy::AutoLocalFirst;
     let mut explain = false;
+    let mut diagnose = false;
 
     let mut i = 0;
     while i < args.len() {
@@ -257,6 +284,7 @@ fn cmd_translate(translator: &translator_api::Translator, args: &[String]) -> Ex
                 }
             }
             "--explain" => explain = true,
+            "--diagnose" => diagnose = true,
             flag if flag.starts_with("--") => {
                 eprintln!("未知选项：{flag}");
                 return ExitCode::from(2);
@@ -349,7 +377,13 @@ fn cmd_translate(translator: &translator_api::Translator, args: &[String]) -> Ex
         }
     }
 
-    match pollster::block_on(translator.translate(&req)) {
+    let outcome = if diagnose {
+        pollster::block_on(translator.translate_with_diagnostics(&req)).map(|out| out.result)
+    } else {
+        pollster::block_on(translator.translate(&req))
+    };
+
+    match outcome {
         Ok(result) => {
             println!("译文    {}", result.text);
             println!("引擎    {}", result.engine_id);
@@ -360,6 +394,31 @@ fn cmd_translate(translator: &translator_api::Translator, args: &[String]) -> Ex
             println!("耗时    {} ms", result.elapsed_ms);
             if !result.warnings.is_empty() {
                 println!("警告    {:?}", result.warnings);
+            }
+            if diagnose {
+                // 再跑一次只是为了拿诊断；缓存命中所以没有额外计算成本
+                if let Ok(out) = pollster::block_on(translator.translate_with_diagnostics(&req)) {
+                    println!();
+                    println!("诊断    {}", out.diagnostics.summary());
+                    for span in &out.diagnostics.protected_spans {
+                        println!(
+                            "  受保护  [{}, {})  {}",
+                            span.start,
+                            span.end,
+                            match span.kind {
+                                translator_api::ProtectedKind::Url => "URL",
+                                translator_api::ProtectedKind::Email => "邮箱",
+                                translator_api::ProtectedKind::TemplateVar => "模板变量",
+                                translator_api::ProtectedKind::Code => "代码",
+                            }
+                        );
+                    }
+                    if let Some(term) = &out.diagnostics.term {
+                        for violation in &term.violations {
+                            println!("  术语    {violation}");
+                        }
+                    }
+                }
             }
             ExitCode::SUCCESS
         }
@@ -486,6 +545,12 @@ fn cmd_resource(store_dir: &str, args: &[String]) -> ExitCode {
                 if report.removed_staging > 0 {
                     println!("已清理 {} 个遗留安装目录", report.removed_staging);
                 }
+                if report.reclaimed_leases > 0 {
+                    println!("已回收 {} 个失效租约", report.reclaimed_leases);
+                }
+                if report.removed_temp_files > 0 {
+                    println!("已清理 {} 个状态临时文件", report.removed_temp_files);
+                }
             }
             match store.install_from_dir(path) {
                 Ok(outcome) => {
@@ -530,12 +595,21 @@ fn cmd_resource(store_dir: &str, args: &[String]) -> ExitCode {
                         status.history.join(", ")
                     );
                     for version in status.versions {
+                        let leases = store
+                            .leases(&status.id, &version.version)
+                            .map(|l| l.into_iter().filter(|x| x.is_active()).count())
+                            .unwrap_or(0);
                         println!(
-                            "  - {}{}  {}  {}",
+                            "  - {}{}  {}  {}{}",
                             version.version,
                             if version.active { "（激活）" } else { "" },
                             version.kind.as_str(),
-                            version.installed_at
+                            version.installed_at,
+                            if leases > 0 {
+                                format!("  租约={leases}")
+                            } else {
+                                String::new()
+                            }
                         );
                     }
                 }
@@ -568,6 +642,17 @@ fn cmd_resource(store_dir: &str, args: &[String]) -> ExitCode {
                             version.payload_schema,
                             version.path.display()
                         );
+                        for lease in store.leases(id, &version.version).unwrap_or_default() {
+                            println!(
+                                "        租约  {}  {}",
+                                lease.describe(),
+                                if lease.is_active() {
+                                    "（有效）"
+                                } else {
+                                    "（已失效，可 reclaim）"
+                                }
+                            );
+                        }
                     }
                     ExitCode::SUCCESS
                 }
@@ -638,16 +723,71 @@ fn cmd_resource(store_dir: &str, args: &[String]) -> ExitCode {
                 .and_then(|v| v.parse::<usize>().ok())
                 .unwrap_or(1);
             match store.cleanup(id, keep) {
-                Ok(removed) if removed.is_empty() => {
-                    println!("没有需要清理的版本");
-                    ExitCode::SUCCESS
-                }
-                Ok(removed) => {
-                    println!("已删除：{}", removed.join(", "));
+                Ok(report) => {
+                    if report.removed.is_empty() {
+                        println!("没有需要清理的版本");
+                    } else {
+                        println!("已删除：{}", report.removed.join(", "));
+                    }
+                    if !report.kept_leased.is_empty() {
+                        println!("因有效租约保留：");
+                        for (version, holders) in &report.kept_leased {
+                            println!("  - {version}（{}）", holders.join("; "));
+                        }
+                    }
                     ExitCode::SUCCESS
                 }
                 Err(err) => {
                     eprintln!("清理失败：{err}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        "lease" => {
+            // resource lease [<id> [<version>]] | resource lease reclaim
+            if args.get(1).map(String::as_str) == Some("reclaim") {
+                return match store.reclaim_stale_leases() {
+                    Ok(0) => {
+                        println!("没有失效租约");
+                        ExitCode::SUCCESS
+                    }
+                    Ok(n) => {
+                        println!("已回收 {n} 个失效租约");
+                        ExitCode::SUCCESS
+                    }
+                    Err(err) => {
+                        eprintln!("回收失败：{err}");
+                        ExitCode::FAILURE
+                    }
+                };
+            }
+            let leases = match (args.get(1), args.get(2)) {
+                (Some(id), Some(version)) => store.leases(id, version),
+                _ => store.all_leases(),
+            };
+            match leases {
+                Ok(list) if list.is_empty() => {
+                    println!("（没有租约）");
+                    ExitCode::SUCCESS
+                }
+                Ok(list) => {
+                    for lease in list {
+                        println!(
+                            "{}@{}  {}  {}",
+                            lease.id,
+                            lease.version,
+                            lease.describe(),
+                            match lease.alive {
+                                Some(true) => "有效",
+                                Some(false) => "已失效（可 reclaim）",
+                                None => "无法判定存活（按占用处理）",
+                            }
+                        );
+                    }
+                    ExitCode::SUCCESS
+                }
+                Err(err) => {
+                    eprintln!("读取租约失败：{err}");
                     ExitCode::FAILURE
                 }
             }
@@ -657,6 +797,23 @@ fn cmd_resource(store_dir: &str, args: &[String]) -> ExitCode {
             ExitCode::from(2)
         }
     }
+}
+
+/// 打印内存预算与逐项明细（P2.3）。
+fn cmd_memory(translator: &translator_api::Translator) -> ExitCode {
+    let report = translator.memory_report();
+    println!("{}", report.summary());
+    match report.limit_bytes {
+        Some(limit) => println!("上限    {} MiB", limit / (1024 * 1024)),
+        None => println!("上限    （未设置：只记账不拒绝）"),
+    }
+    println!("已用    {} MiB", report.used_bytes / (1024 * 1024));
+    for (label, bytes) in &report.entries {
+        println!("  - {label}  {} MiB", bytes / (1024 * 1024));
+    }
+    println!();
+    println!("注：以上是各组件自报的下界估计，不是 RSS；实测数据见 docs/04 §6.2。");
+    ExitCode::SUCCESS
 }
 
 fn cmd_capabilities(translator: &translator_api::Translator) -> ExitCode {

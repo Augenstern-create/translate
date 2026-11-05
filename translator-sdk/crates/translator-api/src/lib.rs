@@ -8,7 +8,9 @@
 
 use std::sync::Arc;
 
-use translator_core::{Coordinator, CoordinatorConfig};
+use translator_core::{
+    BudgetReservation, Coordinator, CoordinatorConfig, MemoryBudget, MemoryReport,
+};
 
 // 插件契约：`pub use` 同时满足内部使用与对外导出，避免重复导入。
 pub use translator_plugin_api::{
@@ -28,10 +30,27 @@ pub use translator_rules as rules;
 
 // 规则契约：即使不开 `rules` feature，宿主也可以自己实现 `TextRules` 注入。
 pub use translator_core::rules::{NoRules, RuleOutcome, RulePreview, TextRules};
+// 术语契约（P2.4）：同上，宿主可自己实现 `TargetTermGuard`。
+pub use translator_core::terms::{
+    NoTermGuard, TargetTermGuard, TermOutcome, TermPolicy, TermViolation,
+};
+// 受保护跨度（P2.4 起出现在诊断里，因此必须公开）
+pub use translator_core::text::{ProtectedKind, ProtectedSpan};
+// 诊断（P2.4）：`translate_with_diagnostics` 的返回类型。
+pub use translator_core::diagnostics::{
+    RuleTrace, TermTrace, TranslateOutput, TranslationDiagnostics,
+};
 
 /// 对外门面。构造后不可变，可跨线程共享（`Send + Sync`）。
 pub struct Translator {
     coordinator: Coordinator,
+    /// 内存预算池。记账凭据必须活到 `Translator` 结束，否则预留会被立刻归还。
+    budget: Arc<MemoryBudget>,
+    /// 已挂载资源的内存预留凭据（字段名带下划线：只用于保活，不直接读取）。
+    _reservations: Vec<BudgetReservation>,
+    /// 从资源仓库挂载时持有的租约：`Translator` 活着，磁盘目录就不会被删（P2.3）。
+    #[cfg(feature = "resource")]
+    _leases: Vec<translator_resource::ResourceLease>,
 }
 
 impl Translator {
@@ -45,6 +64,38 @@ impl Translator {
         req: &TranslateRequest,
     ) -> Result<TranslationResult, TranslationError> {
         self.coordinator.translate(req).await
+    }
+
+    /// 带结构化诊断的翻译入口（P2.4）。
+    ///
+    /// 与 [`Translator::translate`] 走**同一条**流水线，因此不会出现
+    /// "诊断里说改了两处、实际译文没改"这类不一致。多出来的信息是：
+    /// 路由理由、规则命中、受保护跨度、占位符还原缺失、术语替换明细、是否缓存命中。
+    ///
+    /// ⚠️ 诊断含用户原文片段（URL / 模板变量），只应回给发起请求的调用方，
+    /// 不要原样写入集中式日志（设计文档 §4.1）。
+    pub async fn translate_with_diagnostics(
+        &self,
+        req: &TranslateRequest,
+    ) -> Result<TranslateOutput, TranslationError> {
+        self.coordinator.translate_with_diagnostics(req).await
+    }
+
+    /// 预览术语约束会怎么改一段**译文**（不翻译、不写缓存）。
+    ///
+    /// 返回 `None` 表示没配置术语表；`Some` 且 `violations` 为空表示"没问题"。
+    pub fn explain_terms(
+        &self,
+        text: &str,
+        source: &LanguageTag,
+        target: &LanguageTag,
+    ) -> Option<TermOutcome> {
+        self.coordinator.explain_terms(text, source, target)
+    }
+
+    /// 当前术语策略。
+    pub fn term_policy(&self) -> TermPolicy {
+        self.coordinator.term_policy()
     }
 
     /// 查词入口。与整句翻译分开建模（ADR-003）。
@@ -126,6 +177,14 @@ impl Translator {
         self.coordinator.clear_cache();
     }
 
+    /// 内存预算快照：上限、已用、逐项明细（P2.3）。
+    ///
+    /// 数值来自各组件自报的**下界估计**，不是进程 RSS；
+    /// 判断"是否够用"请看 `docs/04` §6.2 的实测数据，不要把这里的数字当保证。
+    pub fn memory_report(&self) -> MemoryReport {
+        self.budget.report()
+    }
+
     /// 释放资源。P0 无可释放资源，保留稳定签名供后续实现。
     pub async fn shutdown(&self) -> Result<(), TranslationError> {
         self.coordinator.clear_cache();
@@ -140,6 +199,7 @@ impl std::fmt::Debug for Translator {
             .field("engines", &registry.engines().len())
             .field("providers", &registry.providers().len())
             .field("backends", &registry.backends().len())
+            .field("memory", &self.budget.report())
             .finish()
     }
 }
@@ -152,6 +212,13 @@ pub struct TranslatorBuilder {
     #[cfg(feature = "dictionary")]
     dictionary_roots: Vec<std::path::PathBuf>,
     rules: Option<Arc<dyn TextRules>>,
+    term_guard: Option<Arc<dyn TargetTermGuard>>,
+    term_policy: TermPolicy,
+    /// 峰值内存上限（字节）。`None` 表示不限制但仍记账。
+    memory_limit: Option<u64>,
+    /// 已登记的资源租约，`build()` 时移交给 `Translator`。
+    #[cfg(feature = "resource")]
+    leases: Vec<translator_resource::ResourceLease>,
 }
 
 impl Default for TranslatorBuilder {
@@ -169,6 +236,11 @@ impl TranslatorBuilder {
             #[cfg(feature = "dictionary")]
             dictionary_roots: Vec::new(),
             rules: None,
+            term_guard: None,
+            term_policy: TermPolicy::default(),
+            memory_limit: None,
+            #[cfg(feature = "resource")]
+            leases: Vec::new(),
         }
     }
 
@@ -228,6 +300,111 @@ impl TranslatorBuilder {
         self
     }
 
+    /// 从资源仓库挂载某个资源的**激活版本**，并持有租约（P2.3）。
+    ///
+    /// 与 `dictionary_package(dir)` 的区别：
+    ///
+    /// - 目录由仓库解析，宿主不用自己拼路径；
+    /// - 登记租约，因此在 `Translator` 存续期间该版本**不会被 `uninstall`/`cleanup` 删掉**
+    ///   （跨进程也成立，前提是对方式遵守同一套租约协议）；
+    /// - 仓库里换激活版本不影响已经挂载的这一份（快照语义）。
+    #[cfg(all(feature = "dictionary", feature = "resource"))]
+    pub fn dictionary_from_store(
+        mut self,
+        store: &translator_resource::ResourceStore,
+        id: &str,
+    ) -> Self {
+        let status = match store.inspect(id) {
+            Ok(status) => status,
+            Err(e) => {
+                self.errors.push(TranslationError::new(
+                    TranslationErrorCode::ResourceNotInstalled,
+                    e.to_string(),
+                ));
+                return self;
+            }
+        };
+        let Some(version) = status.active else {
+            self.errors.push(TranslationError::new(
+                TranslationErrorCode::ResourceNotInstalled,
+                format!("资源 {id} 没有激活版本"),
+            ));
+            return self;
+        };
+        // 先拿租约再取目录：中间任何一步失败，租约随作用域释放，
+        // 不会留下"锁住了但没挂载"的悬空租约。
+        let lease = match store.acquire_lease(id, &version, "translator-api") {
+            Ok(lease) => lease,
+            Err(e) => {
+                self.errors.push(TranslationError::new(
+                    TranslationErrorCode::RuntimeInitFailed,
+                    e.to_string(),
+                ));
+                return self;
+            }
+        };
+        match store.version_dir(id, &version) {
+            Ok(dir) => {
+                self.dictionary_roots.push(dir);
+                self.leases.push(lease);
+            }
+            Err(e) => {
+                self.errors.push(TranslationError::new(
+                    TranslationErrorCode::RuntimeInitFailed,
+                    e.to_string(),
+                ));
+            }
+        }
+        self
+    }
+
+    /// 峰值内存上限（字节）。`None` 之外还想表达"不限制"，用 `MemoryBudget::unlimited` 的语义，
+    /// 这里传 `None` 即可。
+    ///
+    /// 判定发生在 **`build()` 装配期**：超过上限直接返回 `OutOfBudget`，不会带着
+    /// "大概放不下"的状态跑起来。运行期不按请求限流（见 `translator_core::budget` 的说明）。
+    pub fn memory_budget(mut self, bytes: Option<u64>) -> Self {
+        self.memory_limit = bytes;
+        self
+    }
+
+    /// 用 `ResourceLimits` 配置预算（`max_peak_ram_bytes` 为上限）。
+    pub fn limits(mut self, limits: translator_types::ResourceLimits) -> Self {
+        self.memory_limit = limits.max_peak_ram_bytes;
+        self
+    }
+
+    /// 注入输出侧术语表（不需要 `rules` feature：`TargetTermGuard` 是公开契约）。
+    ///
+    /// 术语表版本会自动进入缓存键与诊断，**改术语表必须改 `version()`**，
+    /// 否则旧缓存会被错误复用。
+    pub fn term_guard(mut self, guard: Arc<dyn TargetTermGuard>) -> Self {
+        self.term_guard = Some(guard);
+        self
+    }
+
+    /// 从文件加载术语表（JSON，需启用 `rules` feature）。
+    ///
+    /// 加载失败计入构建错误：术语表写错了要立刻知道，静默退化成"没有术语约束"
+    /// 会让用户以为约束生效了。
+    #[cfg(feature = "rules")]
+    pub fn term_table_file(mut self, path: impl AsRef<std::path::Path>) -> Self {
+        match translator_rules::terms::TargetTermTable::from_file(path) {
+            Ok(table) => self.term_guard = Some(Arc::new(table)),
+            Err(e) => self.errors.push(TranslationError::new(
+                TranslationErrorCode::InvalidRequest,
+                format!("术语表加载失败：{e}"),
+            )),
+        }
+        self
+    }
+
+    /// 术语约束策略，默认 [`TermPolicy::Enforce`]。
+    pub fn term_policy(mut self, policy: TermPolicy) -> Self {
+        self.term_policy = policy;
+        self
+    }
+
     pub fn cache_capacity(mut self, capacity: usize) -> Self {
         self.config.cache_capacity = capacity;
         self
@@ -254,6 +431,10 @@ impl TranslatorBuilder {
     pub fn build(mut self) -> Result<Translator, TranslationError> {
         // 已挂载资源的 `id@version`，用于缓存隔离（ADR-011）
         let mut fingerprint: Vec<String> = Vec::new();
+        // 内存预算池与已预留凭据（凭据必须活到 Translator 结束）
+        let budget = Arc::new(MemoryBudget::new(self.memory_limit));
+        #[cfg_attr(not(feature = "dictionary"), allow(unused_mut))]
+        let mut reservations: Vec<BudgetReservation> = Vec::new();
 
         // 先挂载词典包：把包内引擎与查词提供者注册进同一个注册表
         #[cfg(feature = "dictionary")]
@@ -267,6 +448,13 @@ impl TranslatorBuilder {
                             Ok(manifest) => {
                                 fingerprint.push(format!("{}@{}", manifest.id, manifest.version));
                             }
+                            Err(e) => self.errors.push(TranslationError::from(e)),
+                        }
+                        // 内存预算：按"下界估计"记账，超限即在装配期失败（P2.3）
+                        let footprint = engine.package().memory_footprint();
+                        let label = format!("dictionary:{}", engine.package().manifest().id);
+                        match budget.try_reserve(label, footprint.accounting_bytes()) {
+                            Ok(reservation) => reservations.push(reservation),
                             Err(e) => self.errors.push(TranslationError::from(e)),
                         }
                         if let Err(e) = self.registry.register_engine(engine) {
@@ -288,17 +476,32 @@ impl TranslatorBuilder {
         if let Some(rules) = &self.rules {
             fingerprint.push(format!("{}@{}", rules.id(), rules.version()));
         }
+        if let Some(guard) = &self.term_guard {
+            // 术语表变化必须让旧译文失效：同一句话在不同术语表下结果不同
+            fingerprint.push(format!("{}@{}", guard.id(), guard.version()));
+        }
         self.config.rules = self.rules.take();
+        self.config.term_guard = self.term_guard.take();
+        self.config.term_policy = self.term_policy;
 
         let mut coordinator = Coordinator::new(Arc::new(self.registry), self.config);
         coordinator.bind_resource_fingerprint(fingerprint.join(";"));
-        Ok(Translator { coordinator })
+        Ok(Translator {
+            coordinator,
+            budget,
+            _reservations: reservations,
+            #[cfg(feature = "resource")]
+            _leases: self.leases,
+        })
     }
 }
 
 /// 常用类型的预导入。
 pub mod prelude {
-    pub use crate::Translator;
+    pub use crate::{
+        TargetTermGuard, TermPolicy, TermViolation, TranslateOutput, TranslationDiagnostics,
+        Translator,
+    };
     pub use translator_types::{
         Capability, LanguageTag, LookupRequest, TranslateRequest, TranslationError,
         TranslationErrorCode, TranslationPolicy, TranslationResult,
