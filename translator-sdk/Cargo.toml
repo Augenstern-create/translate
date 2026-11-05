@@ -5,6 +5,9 @@ members = [
     "crates/translator-plugin-api",
     "crates/translator-core",
     "crates/translator-api",
+    "crates/translator-dictionary",
+    "crates/translator-analysis",
+    "tools/pack-dictionary",
     "apps/translator-cli",
 ]
 
@@ -22,9 +25,20 @@ translator-types = { path = "crates/translator-types" }
 translator-plugin-api = { path = "crates/translator-plugin-api" }
 translator-core = { path = "crates/translator-core" }
 translator-api = { path = "crates/translator-api" }
+translator-dictionary = { path = "crates/translator-dictionary" }
+translator-analysis = { path = "crates/translator-analysis" }
+pack-dictionary = { path = "tools/pack-dictionary" }
 
-# 外部依赖：P0 阶段刻意保持极简
-pollster = "0.4"   # 仅 CLI 使用，用于在同步 main 里驱动 async 调用
+# 外部依赖（P1 新增，全部为轻量或按 feature 隔离）
+pollster = "0.4"                  # 仅 CLI / 测试：同步驱动 async
+fst = "0.4"                       # 词典索引（mmap 友好）
+rusqlite = { version = "0.32", features = ["bundled"] }  # 释义存储（自带 SQLite，免系统依赖）
+memmap2 = "0.9"                   # 只读 mmap
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+unicode-normalization = "0.1"
+sha2 = "0.10"                    # 资源包校验和（设计文档 §9 要求）
+tempfile = "3"
 
 [profile.release]
 lto = "thin"

@@ -20,6 +20,9 @@ pub use translator_types::*;
 #[cfg(feature = "mocks")]
 pub use translator_plugin_api::mocks;
 
+#[cfg(feature = "dictionary")]
+pub use translator_dictionary as dictionary;
+
 /// 对外门面。构造后不可变，可跨线程共享（`Send + Sync`）。
 pub struct Translator {
     coordinator: Coordinator,
@@ -127,6 +130,8 @@ pub struct TranslatorBuilder {
     registry: PluginRegistry,
     config: CoordinatorConfig,
     errors: Vec<TranslationError>,
+    #[cfg(feature = "dictionary")]
+    dictionary_roots: Vec<std::path::PathBuf>,
 }
 
 impl Default for TranslatorBuilder {
@@ -141,6 +146,8 @@ impl TranslatorBuilder {
             registry: PluginRegistry::new(),
             config: CoordinatorConfig::default(),
             errors: Vec::new(),
+            #[cfg(feature = "dictionary")]
+            dictionary_roots: Vec::new(),
         }
     }
 
@@ -165,6 +172,16 @@ impl TranslatorBuilder {
         self
     }
 
+    /// 挂载一个离线词典包目录（需启用 `dictionary` feature）。
+    ///
+    /// 包在 `build()` 时才真正打开并校验；打开失败会计入构建错误，
+    /// 不会静默退化。
+    #[cfg(feature = "dictionary")]
+    pub fn dictionary_package(mut self, root: impl Into<std::path::PathBuf>) -> Self {
+        self.dictionary_roots.push(root.into());
+        self
+    }
+
     pub fn cache_capacity(mut self, capacity: usize) -> Self {
         self.config.cache_capacity = capacity;
         self
@@ -177,7 +194,26 @@ impl TranslatorBuilder {
 
     /// 构造门面。注册阶段积累的错误在这里一次性暴露，
     /// 避免把错误分散到每个 builder 方法里。
-    pub fn build(self) -> Result<Translator, TranslationError> {
+    pub fn build(mut self) -> Result<Translator, TranslationError> {
+        // 先挂载词典包：把包内引擎与查词提供者注册进同一个注册表
+        #[cfg(feature = "dictionary")]
+        {
+            let roots = std::mem::take(&mut self.dictionary_roots);
+            for root in roots {
+                match translator_dictionary::open_as_plugins(&root) {
+                    Ok((engine, provider)) => {
+                        if let Err(e) = self.registry.register_engine(engine) {
+                            self.errors.push(e);
+                        }
+                        if let Err(e) = self.registry.register_provider(provider) {
+                            self.errors.push(e);
+                        }
+                    }
+                    Err(e) => self.errors.push(TranslationError::from(e)),
+                }
+            }
+        }
+
         if let Some(err) = self.errors.into_iter().next() {
             return Err(err);
         }

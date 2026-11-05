@@ -256,13 +256,13 @@ impl LookupRequest {
 
 /// 单条释义。每条释义都带 `source_id`，避免二次打包丢失许可来源
 /// （设计文档 §7.1）。
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Sense {
     pub definition: String,
     pub source_id: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct DictionaryEntry {
     pub headword: String,
     pub normalized: String,

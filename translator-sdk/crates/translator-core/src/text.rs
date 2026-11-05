@@ -31,15 +31,22 @@ pub fn normalize(input: &str) -> String {
 ///
 /// 用于 `AutoLocalFirst` 策略：只有单词/极短语才优先查词典，
 /// 完整句子一律交给 NMT（设计文档 §6 第 1、2 条）。
+///
+/// # 为什么按文字系统区分阈值
+///
+/// 空格分隔语言（英、法等）用空白就能切词，长度上限可以放宽。
+/// 但**中日韩不用空格**，`我喜欢计算机` 这种完整句子在字节层面
+/// 与单词无异。实测中它会被误判为单词、白跑一次词典查询。
+/// 因此 CJK 文本改用**字符数上限 4**（常见中文词为 1–4 字），
+/// 超过即视为句子。
 pub fn looks_like_single_word(text: &str) -> bool {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return false;
     }
 
-    // 含空白 → 更像短语或句子
+    // 含空白 → 更像短语或句子（空格分隔语言的主要判据）
     if trimmed.chars().any(char::is_whitespace) {
-        // 例外：两三个词组成的固定短语可能命中短语表，但 P0 不猜
         return false;
     }
 
@@ -53,33 +60,24 @@ pub fn looks_like_single_word(text: &str) -> bool {
         return false;
     }
 
-    // 过长的"词"多半不是词条
-    trimmed.chars().count() <= 32
+    let cjk = trimmed.chars().any(|c| {
+        ('\u{3040}'..='\u{30FF}').contains(&c)      // 假名
+            || ('\u{4E00}'..='\u{9FFF}').contains(&c) // 汉字
+            || ('\u{AC00}'..='\u{D7AF}').contains(&c) // 谚文
+    });
+
+    let max_chars = if cjk { 4 } else { 32 };
+    trimmed.chars().count() <= max_chars
 }
 
-/// 极简语言识别启发式：优先看文字系统，无法判断时按 ASCII 猜测。
+/// 语言识别：委托给 `translator-analysis` 的 [`LanguageIdentifier`] 实现。
 ///
-/// ⚠️ 这不是完整的 LID。真正的实现应接 fastText `lid.176.ftz`
-/// （资源文档 §4），且短文本必须返回多候选而非强行判定。
+/// 当前为启发式实现（零模型）。接入 fastText 后只需替换注入的识别器，
+/// 调用方无需改动。
+///
+/// [`LanguageIdentifier`]: translator_analysis::LanguageIdentifier
 pub fn guess_language(text: &str) -> Option<LanguageTag> {
-    let has_hiragana_or_katakana = text.chars().any(|c| ('\u{3040}'..='\u{30FF}').contains(&c));
-    let has_hangul = text.chars().any(|c| ('\u{AC00}'..='\u{D7AF}').contains(&c));
-    let has_han = text.chars().any(|c| ('\u{4E00}'..='\u{9FFF}').contains(&c));
-
-    let tag = if has_hiragana_or_katakana {
-        "ja"
-    } else if has_hangul {
-        "ko"
-    } else if has_han {
-        // 汉字无法区分中日，按简体中文处理（可被显式 source 覆盖）
-        "zh-Hans"
-    } else if text.chars().any(|c| c.is_ascii_alphabetic()) {
-        "en"
-    } else {
-        return None;
-    };
-
-    LanguageTag::new(tag).ok()
+    translator_analysis::guess(text)
 }
 
 /// 保护后的文本。
@@ -198,6 +196,20 @@ mod tests {
         assert!(!looks_like_single_word("hello world"));
         assert!(!looks_like_single_word("hello."));
         assert!(!looks_like_single_word(""));
+    }
+
+    #[test]
+    fn cjk句子不应被误判为单词() {
+        // 中文没有空格，必须靠字数区分
+        assert!(looks_like_single_word("计算机"), "3 字应当作词条");
+        assert!(looks_like_single_word("世界"), "2 字应当作词条");
+        assert!(!looks_like_single_word("我喜欢计算机"), "6 字应视为句子");
+        assert!(!looks_like_single_word("今天天气很好"), "6 字应视为句子");
+    }
+
+    #[test]
+    fn 长英文单词仍算单词() {
+        assert!(looks_like_single_word("internationalization"));
     }
 
     #[test]

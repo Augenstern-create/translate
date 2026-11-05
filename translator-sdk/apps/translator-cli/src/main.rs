@@ -3,11 +3,14 @@
 //! P0 阶段它只装 Mock 插件，用来证明：
 //! **不接任何真实模型、不装任何 native 库，整条 SDK 链路依然可运行。**
 //!
+//! P1 起支持通过 `--dict` 挂载真实离线词典包（`pack-dictionary` 的产物）。
+//!
 //! ```text
 //! translator-cli translate "hello" --to zh-Hans
 //! translator-cli translate "hello world" --to zh-Hans --explain
 //! translator-cli lookup cat --lang en
 //! translator-cli detect "你好"
+//! translator-cli --dict resources/zh-en translate 世界
 //! translator-cli capabilities
 //! ```
 
@@ -21,13 +24,20 @@ use translator_api::{
 };
 
 const USAGE: &str = "\
-translator-cli —— 轻量跨平台翻译 SDK 调试工具（P0 / Mock 模式）
+translator-cli —— 轻量跨平台翻译 SDK 调试工具
 
 用法:
-  translator-cli translate <文本> [--from <lang>] [--to <lang>] [--policy <p>] [--explain]
-  translator-cli lookup <词条> [--lang <lang>] [--limit <n>]
-  translator-cli detect <文本>
-  translator-cli capabilities
+  translator-cli [--dict <包目录>] <子命令> ...
+
+子命令:
+  translate <文本> [--from <lang>] [--to <lang>] [--policy <p>] [--explain]
+             --to 缺省时按源语言推断：中文→en，其它→zh-Hans
+  lookup <词条> [--lang <lang>] [--limit <n>]
+  detect <文本>
+  capabilities
+
+全局选项:
+  --dict <包目录>  挂载离线词典包（不指定则使用内置 Mock 词表）
 
 策略 (--policy):
   auto         AutoLocalFirst（默认）
@@ -37,20 +47,32 @@ translator-cli —— 轻量跨平台翻译 SDK 调试工具（P0 / Mock 模式�
   engine:<id>  指定引擎
 
 示例:
-  translator-cli translate hello --to zh-Hans
+  translator-cli translate hello
   translator-cli translate \"good morning\" --to zh-Hans --explain
-  translator-cli translate 你好 --to en
+  translator-cli --dict resources/zh-en translate 世界
+  translator-cli --dict resources/zh-en lookup 计算机
 ";
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
 
-    if args.is_empty() || args[0] == "-h" || args[0] == "--help" {
+    if args.is_empty() || args.iter().any(|a| a == "-h" || a == "--help") {
         print!("{USAGE}");
         return ExitCode::SUCCESS;
     }
 
-    let translator = match build_translator() {
+    // 抽取全局 --dict
+    let mut dict: Option<String> = None;
+    if let Some(pos) = args.iter().position(|a| a == "--dict") {
+        if pos + 1 >= args.len() {
+            eprintln!("--dict 缺少路径参数");
+            return ExitCode::from(2);
+        }
+        dict = Some(args[pos + 1].clone());
+        args.drain(pos..=pos + 1);
+    }
+
+    let translator = match build_translator(dict.as_deref()) {
         Ok(t) => t,
         Err(err) => {
             eprintln!("插件注册失败：{err}");
@@ -71,18 +93,29 @@ fn main() -> ExitCode {
     }
 }
 
-fn build_translator() -> Result<translator_api::Translator, translator_api::TranslationError> {
-    translator_api::Translator::builder()
-        // 词典：只做精确词条
-        .engine(MockDictionaryEngine::new())
-        // 本地 NMT：模拟 Marian
+fn build_translator(
+    dict: Option<&str>,
+) -> Result<translator_api::Translator, translator_api::TranslationError> {
+    let mut builder = translator_api::Translator::builder()
+        // 本地 NMT：模拟 Marian（真实模型在 P3 接入）
         .engine(MockNmtEngine::new())
         // 远程 LLM：默认【无】联网授权，用于验证 ADR-004
         .engine(MockRemoteEngine::new(false))
-        .provider(MockDictionaryProvider::new())
         .backend(MockBackend::new())
-        .cache_capacity(64)
-        .build()
+        .cache_capacity(64);
+
+    match dict {
+        // 有真实词典包：用它替代 Mock 词表
+        Some(dir) => builder = builder.dictionary_package(dir),
+        // 无词典包：退回内置 Mock 词表，保证 CLI 随时可用
+        None => {
+            builder = builder
+                .engine(MockDictionaryEngine::new())
+                .provider(MockDictionaryProvider::new());
+        }
+    }
+
+    builder.build()
 }
 
 fn cmd_translate(translator: &translator_api::Translator, args: &[String]) -> ExitCode {
@@ -146,7 +179,28 @@ fn cmd_translate(translator: &translator_api::Translator, args: &[String]) -> Ex
         return ExitCode::from(2);
     };
 
-    let target = match LanguageTag::new(to.as_deref().unwrap_or("zh-Hans")) {
+    // 源语言：显式 --from 优先，否则交给 SDK 的语言识别
+    let source_tag = match from {
+        Some(from) => match LanguageTag::new(&from) {
+            Ok(tag) => Some(tag),
+            Err(err) => {
+                eprintln!("源语言非法：{err}");
+                return ExitCode::from(2);
+            }
+        },
+        None => pollster::block_on(translator.detect_language(&text))
+            .ok()
+            .and_then(|guesses| guesses.into_iter().next())
+            .map(|guess| guess.language),
+    };
+
+    // 目标语言：--to 优先；否则中文译英文、其它译中文。
+    // 这只是调试工具的便利默认值，SDK 本身不做语言对推断。
+    let default_target = match &source_tag {
+        Some(tag) if tag.as_str().starts_with("zh") => "en",
+        _ => "zh-Hans",
+    };
+    let target = match LanguageTag::new(to.as_deref().unwrap_or(default_target)) {
         Ok(t) => t,
         Err(err) => {
             eprintln!("目标语言非法：{err}");
@@ -155,14 +209,8 @@ fn cmd_translate(translator: &translator_api::Translator, args: &[String]) -> Ex
     };
 
     let mut req = TranslateRequest::new(text, target).with_policy(policy);
-    if let Some(from) = from {
-        match LanguageTag::new(&from) {
-            Ok(tag) => req = req.with_source(tag),
-            Err(err) => {
-                eprintln!("源语言非法：{err}");
-                return ExitCode::from(2);
-            }
-        }
+    if let Some(tag) = source_tag {
+        req = req.with_source(tag);
     }
 
     if explain {

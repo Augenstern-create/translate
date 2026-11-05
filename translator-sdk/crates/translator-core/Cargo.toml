@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 translator-types.workspace = true
 translator-plugin-api.workspace = true
+translator-analysis.workspace = true
 
 [dev-dependencies]
 # 路由测试需要 Mock 引擎

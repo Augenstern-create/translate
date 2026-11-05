@@ -9,11 +9,14 @@ license.workspace = true
 default = []
 # 把 Mock 插件透传给下游（CLI / 测试用）
 mocks = ["translator-plugin-api/mocks"]
+# 离线词典包（P1）。默认关闭，保持 API 的默认依赖树极简。
+dictionary = ["dep:translator-dictionary"]
 
 [dependencies]
 translator-types.workspace = true
 translator-plugin-api.workspace = true
 translator-core.workspace = true
+translator-dictionary = { workspace = true, optional = true }
 
 [dev-dependencies]
 # 测试通过 `--all-features` 启用 mocks，解析出的特性对本 crate 同样生效
