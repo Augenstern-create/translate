@@ -33,3 +33,7 @@ required-features = ["ort-runtime"]
 [[example]]
 name = "dump_io"
 required-features = ["ort-runtime"]
+
+[[example]]
+name = "p4_soak"
+required-features = ["ort-runtime"]

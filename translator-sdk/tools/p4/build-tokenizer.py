@@ -99,7 +99,11 @@ def build(source_spm: str, vocab_json: str) -> dict:
         },
         "model": {
             "type": "Unigram",
-            "unk_id": None,
+            # unk_id 必须是 1（`<unk>`），不能是 None：
+            # None 会让分词器**静默丢掉**词表外的字符（emoji、生僻字），
+            # 让"只剩 emoji 的片段"变成空 token 序列 → 上层报 InvalidRequest，
+            # 更糟的是含 emoji 的正常句子会悄悄少字符。P4-05 的 sp10 就是这么被打回的。
+            "unk_id": 1,
             "byte_fallback": False,
             "vocab": pieces,
         },

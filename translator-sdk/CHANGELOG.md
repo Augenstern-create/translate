@@ -1,10 +1,41 @@
 # 变更记录
 
 版本号策略：P3 期间一律 `0.1.0`（**不发布**，`publish = false`）；每次阶段结束打 tag，
-tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1`）。
+tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2`）。
 真正的语义化版本从 P7（SDK 发行）开始。
 
 每条都标注证据所在：能复现的测试或 `docs/NN` 报告。
+
+## P4-05 / P4-06 / P4-07 — 结构回归、对比基准、结论与回退（tag `p4.2`，报告 `docs/26`）
+
+### 新增
+
+- `crates/translator-nmt-ort/tests/p4_contract.rs`：SP-01～12 与 LC-01～10 的真实模型回归（13 条，`#[ignore]`）。
+  判定口径与 Bergamot 那套一致（字节级结构比较）；**不适用项写成可执行事实**，不假装通过
+  （`lc04_超时字段当前被忽略` 会在超时真实现时故意失败）。
+- `examples/p4_soak.rs` + `fixtures/nmt/baseline-p4-ort-soak-linux-x86_64.json`：加载/卸载循环与持续翻译的
+  RSS/PSS 漂移（进度打 stderr，不污染 JSON 基线）。
+- `fixtures/p4/derived-tokenizer.json`：派生资产（`tokenizer.json`）的"生成脚本 + 产物"双 sha256。
+
+### 修复
+
+- **分词器静默丢字符**：`tokenizer.json` 的 `unk_id` 由 `None` 改为 `1`（`<unk>`）。
+  原行为会让词表外字符（emoji/生僻字）被直接丢弃——只剩 emoji 的片段变空 token 序列报 `InvalidRequest`，
+  含 emoji 的正常句子则悄悄少字符。`tools/p4/build-tokenizer.py` 已同步并写进注释。
+
+### 变更
+
+- `fixtures/nmt/baseline-p4-ort-linux-x86_64.json` 用新分词器重测（118 / 657 / 2763 ms；PSS 575.0 MiB）。
+
+### 结论
+
+- P4-05：SP/LC 适用项 **13/13 通过**；SP-08/09（标记模式）与 LC-04/05/07/08 **按设计不适用**，逐条记原因。
+- P4-06：热路径 118 / 657 / 2763 ms；100 次持续翻译后 RSS **持平**在 598 MiB（不涨），卸载回落到 249 MiB；
+  与 Bergamot 的差距 15.7～26.1×、PSS 1.7×——**B 类比较，不得归因于 runtime**。
+- P4-07：整体 **`conditional-go`**。插件替换可行性 = `go`；"用它替换 P3 后端" = **`no-go`**
+  （长句译文不可用：`model weights`→`模型重量`、单个 `!` 片段幻觉成脏话）。默认状态即回退（两个 feature 默认关闭）。
+
+---
 
 ## P4-03 / P4-04 — 第二个真实 NMT 后端与插件替换验证（tag `p4.1`，报告 `docs/25`）
 
