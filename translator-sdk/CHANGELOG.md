@@ -6,6 +6,28 @@ tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `
 
 每条都标注证据所在：能复现的测试或 `docs/NN` 报告。
 
+## P4-01 / P4-02 — P3 冻结与候选门禁（tag `p4.0`，报告 `docs/24`）
+
+### 新增
+
+- `tools/freeze-manifest.py` + `fixtures/p3-freeze/manifest.json`：冻结清单与 `--check` 自校验
+  （tag 移动、`Cargo.lock`/基线 JSON 变化、模型哈希不符、台账条目被删都会失败）。
+- `fixtures/release-blockers.json`：G12 / G11 / G06 / G08 / D-46 五项开放台账（含关闭条件与现有证据）。
+- `fixtures/p4/candidate.lock.json`：第二后端候选（`ort + opus-mt-en-zh`）的坐标、sha256、ONNX 签名、
+  分词桥接规则、已验证译文、实测延迟/内存与门禁结论。
+
+### 变更
+
+- `licenses/model-assets.json`：许可状态改为显式状态机 `pending → reviewed_allowed / reviewed_denied`，
+  解除禁发必须同时填审核人/时间/适用范围/证据。
+- `tools/check-release.py`：C3 增加状态机一致性校验；新增 **C8 发行阻断台账** 与 **`--release-mode`**
+  （开发模式不阻断 CI，发行模式遇 open 阻断项直接 FAIL）。
+
+### 结论
+
+- P3 冻结完成；P4-02 门禁 = **go-with-caveats**（真实译文、许可明确、资产锁定；但性能与内存明显差于基线，
+  且本轮是 Python PoC，Rust 插件未实现 → P4-G01/G02 未满足）。
+
 ---
 
 ## P3.4 — Linux SDK 发布候选（tag `p3.4`，报告 `docs/21`）

@@ -66,14 +66,26 @@
         "note": "四文件来自 registry 记录，第五个（nonbreaking_prefix.en）来自上游 ssplit 数据；总字节 51,936,351 与 fixtures/nmt/baseline-p33-load.json 的 model_bytes 一致。support_files 的 sha256 以 lock 文件为准（除 nonbreaking_prefix.en），若不一致由 tools/check-release.py 报错。"
       },
       "license": {
-        "status": "unconfirmed",
+        "status": "pending",
         "status_detail": "Firefox Translations 模型权重的许可条款未在发行语境下确认（上游为 Mozilla 训练/转换产物，未见明确的再分发授权声明）。",
         "redistribution": "prohibited-until-confirmed",
         "vendored_in_repo": false,
         "shipped_in_artifacts": false,
         "user_action_required": "使用者在自己的环境按 lock 文件坐标自行获取，并自行承担权利责任；SDK 不代其分发。",
         "reviewed_by": null,
-        "reviewed_at": null
+        "reviewed_at": null,
+        "status_machine": [
+          "pending",
+          "reviewed_allowed",
+          "reviewed_denied"
+        ],
+        "review": {
+          "reviewed_by": null,
+          "reviewed_at": null,
+          "scope": null,
+          "evidence": null,
+          "note": "只有 review 字段齐全且 status=reviewed_allowed 才能改 redistribution；改这一处等于解除发行红线"
+        }
       }
     },
     {

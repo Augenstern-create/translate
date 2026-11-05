@@ -1,0 +1,264 @@
+{
+  "schema": "p4-candidate-lock/v1",
+  "generated_at": "2026-11-05",
+  "decided_in": "docs/24_P3冻结与P4-02可行性门禁报告.md",
+  "candidate": "ort + opus-mt-en-zh",
+  "status": "gate-passed-with-caveats",
+  "runtime": {
+    "id": "onnxruntime",
+    "version_tested": "onnxruntime 1.31.1 (Python，CPUExecutionProvider)",
+    "threads_tested": [
+      1,
+      4
+    ],
+    "rust_binding_planned": "ort crate 2.x（P4-03 评估；未在本轮落地，不作为已验证结论）",
+    "note": "本轮只证明模型与解码逻辑在 ORT 上可产出真实译文；Rust 绑定与进程隔离尚未实现"
+  },
+  "model": {
+    "id": "opus-mt-en-zh",
+    "architecture": "MarianMT (encoder 6 层 / decoder 6 层 / d_model 512 / 8 heads)",
+    "upstream": "Helsinki-NLP/opus-mt-en-zh",
+    "upstream_revision": "408d9bc410a388e1d9aef112a2daba955b945255",
+    "onnx_export": "Xenova/opus-mt-en-zh",
+    "onnx_revision": "046f55aec303cdee3e0318604406d4df20f1e8ea",
+    "quantization": "int8 dynamic（transformers.js 的 'quantized' 变体）",
+    "language_pair": {
+      "source": "en",
+      "target": "zh-Hans"
+    },
+    "vocab_size": 65001,
+    "special_tokens": {
+      "pad": 65000,
+      "eos": 0,
+      "decoder_start": 65000,
+      "unk_in_vocab_json": 1
+    },
+    "license": {
+      "spdx": "Apache-2.0",
+      "evidence": "Helsinki-NLP/opus-mt-en-zh 的模型卡 cardData.license=apache-2.0 与 README front-matter",
+      "redistributable": true,
+      "attribution_required": false,
+      "contrast": "与 Bergamot/Mozilla 权重（许可未确认）不同：这一版权重许可明确，属于 apache-2.0",
+      "caveat": "ONNX 导出仓（Xenova）与基座模型同族但非官方发布物；再分发时应同时注明导出来源与 commit"
+    }
+  },
+  "files": [
+    {
+      "path": "onnx/encoder_model_quantized.onnx",
+      "role": "encoder",
+      "bytes": 52899742,
+      "sha256": "d3b7912bf6a9bd27e4c074c2df91d4ff3d5b4bc5f7f6c8d7cc9c805c98fbafee",
+      "note": "Marian encoder, int8 dynamic quantization"
+    },
+    {
+      "path": "onnx/decoder_model_merged_quantized.onnx",
+      "role": "decoder",
+      "bytes": 60212804,
+      "sha256": "023be4f841f4c47cd65fffcbaa81c0d99d7f7e0138f7ba0e03fa220a4e688aff",
+      "note": "Marian decoder（merged：首步与带缓存步在同一张图里，由 use_cache_branch 选择分支）"
+    },
+    {
+      "path": "onnx/source.spm",
+      "role": "source-spm",
+      "bytes": 806435,
+      "sha256": "5775ddc9e3ff2fae91554da56468ad35ff56edaba870fea74447bc7234bfdaa8",
+      "note": "SentencePiece 源侧模型（32k pieces，用于分词，不直接给 id 用）"
+    },
+    {
+      "path": "onnx/target.spm",
+      "role": "target-spm",
+      "bytes": 804600,
+      "sha256": "81dc94efa84e4025ef38d25d5d07429fe41e3eb29d44003f1db6fe98487b0052",
+      "note": "SentencePiece 目标侧模型（用于把 piece 还原成文本）"
+    },
+    {
+      "path": "base-tok/vocab.json",
+      "role": "joint-vocab",
+      "bytes": 1617791,
+      "sha256": "f1832ca38f7aa158b9a944ff583e4901e6b37d9d4ad9241f03838e636e9cfb03",
+      "note": "piece→id 联合词表（65001 项）；**模型的 id 空间是这张表，不是 spm 的 id**"
+    },
+    {
+      "path": "onnx/config.json",
+      "role": "config",
+      "bytes": 1503,
+      "sha256": "4727d1229a04f95bf6f39abf949d8080615433d99d6ebd85f81c09edd247d5fa",
+      "note": "Marian 配置（pad 65000 / eos 0 / decoder_start 65000 / 6+6 层 / d_model 512）"
+    },
+    {
+      "path": "onnx/generation_config.json",
+      "role": "generation-config",
+      "bytes": 293,
+      "sha256": "b743baabb7da4c1a2f19fe558bd6b4c0c7c3b0762fcb5ca7a48fe5a2c2219803",
+      "note": "生成配置（beam 4 / max_length 512）"
+    },
+    {
+      "path": "onnx/tokenizer_config.json",
+      "role": "tokenizer-config",
+      "bytes": 282,
+      "sha256": "a914596e6bff113a8428d4793b586da87cd0b95697a0e72aba90cc1d95858481",
+      "note": "分词器配置（eng→zho）"
+    },
+    {
+      "path": "onnx/special_tokens_map.json",
+      "role": "special-tokens",
+      "bytes": 74,
+      "sha256": "5e4d1f5e759d74cb1c2fe1d165cfc62b5237aa904de759380cd6f43042eec723",
+      "note": "特殊 token 映射"
+    }
+  ],
+  "total_bytes": 116343524,
+  "total_mib": 111.0,
+  "onnx_signature": {
+    "encoder": {
+      "inputs": [
+        [
+          "input_ids",
+          "int64",
+          [
+            "batch",
+            "src_len"
+          ]
+        ],
+        [
+          "attention_mask",
+          "int64",
+          [
+            "batch",
+            "src_len"
+          ]
+        ]
+      ],
+      "outputs": [
+        [
+          "last_hidden_state",
+          "float32",
+          [
+            "batch",
+            "src_len",
+            512
+          ]
+        ]
+      ]
+    },
+    "decoder_merged": {
+      "inputs": [
+        "input_ids [1,1]",
+        "encoder_attention_mask [1,src_len]",
+        "encoder_hidden_states [1,src_len,512]",
+        "past_key_values.{0..5}.decoder.{key,value} [1,8,past_len,64]",
+        "past_key_values.{0..5}.encoder.{key,value} [1,8,src_len,64]",
+        "use_cache_branch [1] bool"
+      ],
+      "outputs": [
+        "logits [1,1,65001]",
+        "present.{0..5}.decoder.*",
+        "present.{0..5}.encoder.*"
+      ],
+      "gotcha": [
+        "首步（use_cache_branch=false）encoder 侧 K/V 必须给**真实 src_len** 的零张量，否则 ORT 在 cross-attention 的 Reshape 上报 'dimension with value zero exceeds'",
+        "带缓存步（use_cache_branch=true）输出的 present.encoder.* 是 0 长度占位，**不能**回喂；encoder 缓存只在首步后固定一次"
+      ]
+    }
+  },
+  "tokenizer_bridge": {
+    "finding": "模型的 id 空间是 vocab.json（65001 项联合词表），不是 source.spm 的 piece id（32000 项）。直接用 spm id 会让模型输出通顺但完全无关的中文（'Hello world!' → '和 大说'），且**不会报错**。",
+    "correct_path": "source.spm 分词得到 piece → 用 vocab.json 查 id → 送模型；输出 id 用 vocab.json 反查 piece → target.spm 还原文本",
+    "verified_ids": {
+      "text": "Hello world!",
+      "spm_ids": [
+        1506,
+        280,
+        46
+      ],
+      "joint_ids": [
+        3828,
+        431,
+        50
+      ],
+      "eos_appended": 0
+    },
+    "rust_plan": "用 tokenizers 的 Unigram 模型按 vocab.json 顺序构建词表（id 与 joint 对齐）+ Metaspace 预分词/解码；已用 Python 侧构造并验证 ids 与参考分词器一致（3828/431/50）"
+  },
+  "verified_translations": [
+    {
+      "source": "The cat is on the table.",
+      "output": "猫在桌子上"
+    },
+    {
+      "source": "Good morning, how are you today?",
+      "output": "早上好,你今天好吗?"
+    },
+    {
+      "source": "Translation quality depends on training data, tokenizer and decoding parameters.",
+      "output": "翻译质量取决于培训数据、代谢器和解码参数。"
+    },
+    {
+      "source": "Hello world!",
+      "output": "世间好!"
+    }
+  ],
+  "known_quality_issues": [
+    "'tokenizer' 被译成「代谢器」；'training data' 被译成「培训数据」；'golden set' 被译成「金币」——B 类（不同模型）比较必须如实记录这些错误",
+    "句末标点常被模型输出成半角逗号，而非中文顿号/句号"
+  ],
+  "measurements": {
+    "caliber": "Python 宿主 + onnxruntime 1.31.1，greedy，cache 关闭，热模型；进程内存含解释器与 ORT 运行库，**不能**直接与 Rust 插件的数字对比",
+    "latency_ms_1thread": {
+      "17字": {
+        "p50": 118.64,
+        "p95": 119.45
+      },
+      "94字": {
+        "p50": 647.59,
+        "p95": 654.81
+      },
+      "499字": {
+        "p50": 830.75,
+        "p95": 840.07
+      }
+    },
+    "latency_ms_4threads": {
+      "17字": {
+        "p50": 125.1
+      },
+      "94字": {
+        "p50": 612.6
+      }
+    },
+    "memory_mib_python_process": {
+      "VmHWM": 909,
+      "VmRSS": 909,
+      "Pss": 885
+    },
+    "merged_vs_split_decoder_ms_94字": {
+      "merged": 651,
+      "split": 651
+    },
+    "bergamot_reference_ms_1thread": {
+      "17字": 6.78,
+      "94字": 25.05,
+      "499字": 175.67
+    },
+    "comparison_class": "B 类（不同模型、不同量化、不同运行时）——不得把差异归因于 runtime"
+  },
+  "gate": {
+    "decision": "go-with-caveats",
+    "passed": [
+      "G1 真实译文：非 Mock，可重复（同一输入同一输出，greedy）",
+      "G2 许可可再分发：apache-2.0，明确不同于 Bergamot 权重的未确认状态",
+      "G3 模型与分词资产的坐标、字节数、sha256 全部锁定（本文件）",
+      "G4 解码逻辑可在 1 线程下跑通并量化（含 merged/split 两种图）"
+    ],
+    "caveats": [
+      "本轮是 Python 侧 PoC：Rust 绑定（ort）、进程隔离、插件注册都还没做——P4-G01/G02/G07 尚未满足",
+      "性能与内存都**明显差于** Bergamot（B 类比较：651 ms vs 25 ms，909 MiB vs 341 MiB），P4 不能据此宣称 ORT 更优",
+      "int8 动态量化的逐 token 开销明显（4 线程几乎无改善），需要后续评估静态量化或 fp32"
+    ],
+    "rejected_claims": [
+      "不宣称「ORT 比 Bergamot 快」或「更省内存」——本机实测相反",
+      "不宣称「同模型运行时对比」（A 类）——模型不同",
+      "不因 apache-2.0 就宣布 G12 关闭——G12 针对的是 Mozilla/Bergamot 权重，换成这个模型属于另一条产品路线"
+    ]
+  }
+}

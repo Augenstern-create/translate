@@ -1,7 +1,7 @@
 # 轻量跨平台混合翻译 SDK — 完整软件开发设计文档
 
-> 文档版本：v1.10（架构基线；ADR 增补见 §14 与文末修订记录）  
-> 编写日期：2026-11-05（v1.10 修订 2026-11-05）  
+> 文档版本：v1.11（架构基线；ADR 增补见 §14 与文末修订记录）  
+> 编写日期：2026-11-05（v1.11 修订 2026-11-05）  
 > 交付形式：Rust Library SDK；**不实现 UI**，但预留桌面、Android、命令行及服务端适配接口  
 > 目标平台：Windows x86_64、Ubuntu Linux x86_64/aarch64、macOS aarch64/x86_64、Android arm64-v8a
 
@@ -593,6 +593,24 @@ P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运
   要么有人加 `|| true` 把它变成绿色装饰。而「缺前置就跳过」更坏：它会让「真实模型已验证」变成一句没有证据的话。
   现状：两个 workflow 都**没有在 GitHub 上真跑过**（无远端 runner，`docs/21` D-47），G11 因此判 Conditional。
 
+- ADR-044（Accepted，P4-01 已实现）：**P3 功能基线冻结，未闭合的验收项进独立台账，不再往 P3 加功能**。
+  冻结的是**对外语义**（`translate/lookup/detect_language` 与 `TranslationPolicy`、`protect-seg-v1` 的字节级保真、
+  `plan-v1` 的编码与摘要、资源 manifest/payload 版本、Linux 单 worker/单 in-flight 的**基线配置**），
+  不冻结内部实现与 P4 需要的独立插件 crate。落地：分支 `p3-frozen` + `fixtures/p3-freeze/manifest.json`
+  （`tools/freeze-manifest.py --check` 会因 tag 移动、`Cargo.lock`/基线 JSON 改变、台账条目被删而失败）+
+  `fixtures/release-blockers.json` + `check-release.py` 的 C8 与 `--release-mode`。
+  理由：没有自校验的"冻结"只是一句口号；而把 open 的验收项写进文档表格，下一个人照样会忘。
+  代价：任何对基线 JSON 的"小修"都会让冻结校验失败，这是刻意的摩擦。
+- ADR-045（Accepted，P4-02 已实现门禁，插件未实现）：**第二后端先过可行性门禁，再写插件；不同模型只能做 B 类比较**。
+  门禁四条：能在 Linux CPU 上产出**真实译文**（非 Mock）、许可明确、资产坐标与 sha256 全部锁定、
+  解码链路可复现。候选必须显式写明**它和基线是不是同一个模型**：不是同一模型时，
+  性能/内存差异**不得**归因于 runtime（`docs/24` §2.4）。已探明并写进锁定文件的三个坑：
+  `source.spm` 的 piece id ≠ 模型的 id 空间（模型的 id 来自 `vocab.json` 的 65,001 项联合词表，
+  用错不会报错、只会输出通顺但错误的中文）；merged decoder 首步 encoder 侧 K/V 必须给真实 `src_len`；
+  带缓存步输出的 `present.encoder.*` 是 0 长度占位，不能回喂。
+  理由：`docs/23` §4 明确不允许"转换成功即等价"的假设，而本轮实测正是"能跑、不报错、但全错"的典型；
+  代价：门禁阶段用 Python PoC，Rust 插件前不能宣称 P4-G01/G02 通过。
+
 > 状态含义：**Accepted** = 已决定并（如注明）已实现；**Proposed** = 已决定方向但尚未实现，写入 ADR 不等于已验证；
 > **Deferred** = 明确延后。上表未标注 Deferred 的项均须在对应阶段交付。
 
@@ -608,6 +626,7 @@ P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运
 | v1.5 | 2026-11-05 | P3.1-A 落地（`docs/13`）：ADR-027 从 Proposed 改为 Accepted，并把措辞从「worker 独占」收紧为「**进程级**故障隔离」（明确线程与 `catch_unwind` 不可用、IPC 硬约束、非 Linux 显式不可用）；ADR-026 把模型身份从「权重 + tokenizer 摘要」扩展为**权重 / Tokenizer / 短名单 / 解码参数 / runtime build** 五项，并注明当前 `content_digest` 只能诊断、不得作缓存键；新增 ADR-029（严格占位符完整性，Proposed，P3.1-C）。编号处理：`docs/12` §6 的候选 ADR 建议按内容并入 026/027/029，**未覆盖任何旧编号**；ADR-029 是当前最大号 028 之后的第一个空号 |
 | v1.6 | 2026-11-05 | P3.1-B 落地（`docs/15`）：新增 ADR-030～033（隔离快照 / 真实 Bergamot 默认单 worker / IPC 与原生版本分离 / 分阶段截止时间）；ADR-026 的现状一栏改为引用 P3.1-B 实测并再次声明「不得作缓存键」。编号处理：`docs/14` §8 的四条建议按内容顺延为 030～033（029 已被占位），**未覆盖任何旧编号** |
 | v1.8 | 2026-11-05 | P3.2 落地（`docs/19`）：新增 ADR-038（计划摘要作缓存键 + 四条纪律）；ADR-023 从 Proposed 改为 Accepted（真实 NMT 的缓存键已换成计划摘要）；ADR-026 增补"换 prefix 表时 `content_digest` 不变"的实测；ADR-017 增补 `recover()` 语义扩大与目录 fsync（仅 Unix）；ADR-037 增补"摘要跨卸载保留 + 空闲回收不内置线程"。编号处理：`docs/17` 未给候选编号，按当前最大号 037 之后顺延 038，**未覆盖任何旧编号** |
+| v1.11 | 2026-11-05 | P4-01/P4-02 落地（`docs/24`）：新增 ADR-044（P3 功能冻结 + 自校验冻结清单 + release-blockers 台账 + `check-release.py --release-mode`）与 ADR-045（第二后端先可行性门禁、不同模型只能 B 类比较、三个 ONNX 陷阱）；ADR-028/040 的许可状态改为显式状态机 `pending → reviewed_allowed/reviewed_denied`（解除禁发必须填审核人/时间/范围/证据）。编号处理：`docs/23` 未给候选编号，按当前最大号 043 之后顺延 044～045，**未覆盖任何旧编号** |
 | v1.10 | 2026-11-05 | P3.4 落地（`docs/21`）：新增 ADR-040～043（红线机器化 / 不以 crates.io 分发 / 平台支持是证据表且可单测 / CI 分流与快速失败）；ADR-028 增补「已由 check-release 与 CI 机器验证」；§14 记录 P3 最终裁定为 Conditional（G12 权重许可阻断，G06/G08/G11 为条件项）。编号处理：`docs/17` 未给候选编号，按当前最大号 039 之后顺延 040～043，**未覆盖任何旧编号** |
 | v1.9 | 2026-11-05 | P3.3 落地（`docs/20`）：新增 ADR-039（性能数字的口径纪律与基线文件）；ADR-021 从「未实现」改为「已实现观测部分」（`p33-bench` 读 RSS/VmHWM/PSS 并按进程树汇总，库里仍无 `ProcessMetricsProvider`）；ADR-031 增补 BLAS/OpenMP 线程必须与 native 线程数对齐的实测依据。编号处理：`docs/17` 未给候选编号，按当前最大号 038 之后顺延 039，**未覆盖任何旧编号** |
 | v1.7 | 2026-11-05 | P3.1-C/D/E 合并批次落地（`docs/18`）：新增 ADR-034～037（默认安全分段 / 执行计划摘要即未来缓存身份 / 真实 NMT 以可选 feature 接入 / 卸载等待在飞请求）；ADR-029 从 Proposed 改为 Accepted 并改为引用 SP-01～12 与分段默认策略；ADR-023/026/033 的现状一栏补齐 P3.1-D 已实现与仍未实现的分界（缓存仍未上线、并发仍为 1）。编号处理：`docs/17` 未给候选编号，按当前最大号 033 之后顺延 034～037，**未覆盖任何旧编号**；`docs/17` §12 引用的 `docs/16` 从未到达本仓库，SP 编号沿用 `docs/17` §3.2 |

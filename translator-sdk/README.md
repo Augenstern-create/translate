@@ -25,7 +25,7 @@
 
 ---
 
-## 当前状态：P0 + P1 + P2 + P2-S + P3.0 + P3.1-A/B/C/D/E + P3.2 + P3.3 + P3.4 完成，**P3 = Conditional（有条件通过）**：功能可验收，含权重的发行被 G12（权重许可未确认）阻断
+## 当前状态：P0～P3 完成并**已冻结**（`p3.4` / 分支 `p3-frozen`），**P3 = Conditional**：功能可验收，含权重的发行被 release-blockers（G12 等五项）阻断。P4 已启动：候选后端可行性门禁通过（`p4.0`），Rust 插件待实现
 
 - **P0**：workspace 结构、核心类型、插件契约、协调器与路由、缓存、门面 API、Mock 插件、CLI。
   **不接任何真实模型、不装任何 native 库**，整条链路即可运行 —— 这是设计文档规定的交付判据。
@@ -178,6 +178,20 @@
 
 词库与规则都是**可选 feature**：不开 `dictionary` 时 `translator-api` 依赖树里没有 `rusqlite`；
 不开 `rules` 时没有 JSON 解析依赖（但 `TextRules` 契约始终可用，宿主可自己实现）。
+
+- **P4（进行中）**：
+  - **P4-01 冻结**（`docs/24`）：`p3-frozen` 分支 + `fixtures/p3-freeze/manifest.json`（`tools/freeze-manifest.py --check`
+    会因 tag 移动、`Cargo.lock`/基线 JSON 变化、台账条目被删而失败）+ `fixtures/release-blockers.json`
+    （G12/G11/G06/G08/D-46 五项 open，`check-release.py --release-mode` 直接 FAIL）。
+  - **P4-02 候选门禁**：`ort + opus-mt-en-zh`（Marian int8 ONNX，**许可 apache-2.0**），
+    资产 111.0 MiB / 9 个文件全部锁定在 `fixtures/p4/candidate.lock.json`；能产出真实译文
+    （`The cat is on the table.` → `猫在桌子上`）。
+  - **三个坑**（写进锁定文件，避免 P4-03 重踩）：`source.spm` 的 piece id **不是**模型 id（模型 id 来自
+    `vocab.json` 的 65,001 项联合词表，用错不报错、只输出通顺但错误的中文）；merged decoder 首步 encoder
+    侧 K/V 必须给真实长度；带缓存步的 `present.encoder.*` 是 0 长度占位、不能回喂。
+  - **诚实结论**：这是 **B 类比较**（不同模型）。本机 1 线程实测 17 字 118.6 ms / 94 字 647.6 ms、
+    进程 909 MiB，**明显差于** Bergamot（6.78 / 25.05 ms、341 MiB）——不得归因于 runtime。
+    本轮**没有** Rust 插件，P4-G01/G02 未满足。
 
 ## 目录结构
 

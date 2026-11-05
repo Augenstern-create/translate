@@ -1,0 +1,115 @@
+{
+  "schema": "sdk-p3-freeze/v1",
+  "generated_at": "2026-11-05",
+  "purpose": "P3 功能冻结的版本证据（docs/23 §2.2）。不是模型再分发授权。",
+  "git": {
+    "frozen_commit": "318aed727d2cb838b5008f88cdd1ba9593df8d9f",
+    "frozen_tag": "p3.4",
+    "frozen_branch": "p3-frozen",
+    "branch_points_at": "318aed727d2cb838b5008f88cdd1ba9593df8d9f",
+    "head_at_generation": "318aed727d2cb838b5008f88cdd1ba9593df8d9f",
+    "subject": "P3.4：Linux SDK 发行候选（许可清单 + 发行红线 + CI 分流 + 打包与平台门禁文档）"
+  },
+  "toolchain": {
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+    "python": "Python 3.12.3",
+    "os": "Linux 7.0.0-42-generic"
+  },
+  "cargo_lock_sha256": "4da7d9e5c952b5aefd386481d009c9299f4cb29f1582aaef0b447df2ace9b8db",
+  "native_runtime": {
+    "bergamot_commit": "9271618ebbdc5d21ac4dc4df9e72beb7ce644774",
+    "binary": "/tmp/p3/bergamot-translator/build/app/bergamot",
+    "binary_sha256": "fc8190363f737fffbb6532847cd0561fec999ba2f53e4b5dbc35c6492320e9cf"
+  },
+  "models": {
+    "model.enzh.intgemm.alphas.bin": {
+      "expected_sha256": "4e5accc141373565ddc8fa1565bceaa8d0c3482a82cab8131c719ebcc6c2157c",
+      "present": true,
+      "actual_sha256": "4e5accc141373565ddc8fa1565bceaa8d0c3482a82cab8131c719ebcc6c2157c"
+    },
+    "srcvocab.enzh.spm": {
+      "expected_sha256": "bd9b65504acc6d9726dd281f7defc2adb7c2c22d0688fe2f84697de25197c8c5",
+      "present": true,
+      "actual_sha256": "bd9b65504acc6d9726dd281f7defc2adb7c2c22d0688fe2f84697de25197c8c5"
+    },
+    "trgvocab.enzh.spm": {
+      "expected_sha256": "aded6993c36e440284d11cec3f6b8aef9c0e43188a772d80be342a713adf223d",
+      "present": true,
+      "actual_sha256": "aded6993c36e440284d11cec3f6b8aef9c0e43188a772d80be342a713adf223d"
+    },
+    "lex.50.50.enzh.s2t.bin": {
+      "expected_sha256": "4a5e5827788060f1d718a8132b69440929387514a045796e9b77f935db68c055",
+      "present": true,
+      "actual_sha256": "4a5e5827788060f1d718a8132b69440929387514a045796e9b77f935db68c055"
+    },
+    "nonbreaking_prefix.en": {
+      "expected_sha256": "af526c47425bb31b4e7b79ec975c1bb752a34ba21951237d51b965e879d9d51a",
+      "present": true,
+      "actual_sha256": "af526c47425bb31b4e7b79ec975c1bb752a34ba21951237d51b965e879d9d51a"
+    }
+  },
+  "baselines": {
+    "fixtures/nmt/baseline-linux-x86_64-1thread.json": "046ed656fa234d857b75f2640916a4ad841fa92acb2477d09c115201de130af9",
+    "fixtures/nmt/baseline-linux-x86_64-2threads.json": "4bc05287a948cf55cca683054ab6ae7684d5a3ff9b36e855287006731cb34262",
+    "fixtures/nmt/baseline-p3.1b-linux-x86_64-1thread.json": "882c67faa7dde9fa351fda4a184d50d1b4ae82145ec54ad5afebcc37ba43060c",
+    "fixtures/nmt/baseline-p33-concurrency.json": "e928b2d6eb32e9dd895a0a1de210aa72e1b4a19d9fd900defb64ded8deaf733a",
+    "fixtures/nmt/baseline-p33-dictionary.json": "5e98590893a4c1b4b83a70777938bbe2084f0cf51fcb0dc5793a1c87902d77a2",
+    "fixtures/nmt/baseline-p33-empty.json": "da872ec4fdfb5c304cf76c32d2f8b609e7d7ef35f09be6648ae1362d82002bcb",
+    "fixtures/nmt/baseline-p33-load.json": "515cfad5918e2cd09d64e21216a7f960df3b9621d2c0c1597f19d8877f6935fc",
+    "fixtures/nmt/baseline-p33-nmt.json": "e0cade069c6a2f8db8308c76bcb43a18a3cee8d4f38d872149cbad73c9d3d4e6",
+    "fixtures/nmt/baseline-p33-quality-linux-x86_64.json": "e6871e95ffafef04954a6c35b71c2b70148474c3c4474eb64af95e1063dc21c4",
+    "fixtures/nmt/baseline-p33-sustain.json": "828964d889488a109808ffeee2c16ed923c6cc50542e00b27b80ad9f4af6929f",
+    "fixtures/nmt/baseline-p33-unload.json": "21a825b6648406b8c45e25960685f98fddcedafad13910064dbfc1006739c2f4",
+    "fixtures/nmt/baseline-p33-worker.json": "172dba604ff36b8d9936ed1812a3ac4b9e81e1ade7a3cc84438e5a5fcd1d6524",
+    "fixtures/nmt/gate-ci.json": "19e9464b38c92c3dcd6c260cb66de6ed7d82375913ced254bb221fe477b467eb"
+  },
+  "gate_commands": [
+    "cargo fmt --all --check",
+    "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+    "cargo test --workspace --locked",
+    "cargo test --workspace --all-features --locked",
+    "python3 tools/license-audit.py --check",
+    "python3 tools/check-release.py",
+    "cargo test --workspace --all-features -- --ignored --test-threads=1   # 需本机权重与 native"
+  ],
+  "gate_results": {
+    "date": "2026-11-05",
+    "fmt": "pass",
+    "clippy": "pass（-D warnings）",
+    "test_default": "365 passed / 0 failed / 41 ignored",
+    "test_all_features": "365 passed / 0 failed / 41 ignored",
+    "license_audit": "pass（53 个第三方包）",
+    "check_release": "pass（7 项，C7 需设置 NMT_MODEL_DIR）",
+    "real_model_ignored": "41 passed / 0 failed（同机、有权重）",
+    "note": "以上为本机实测；详见 docs/21 §2 与 docs/24 §2"
+  },
+  "blockers": [
+    {
+      "id": "G12",
+      "status": "open",
+      "blocks_release": true
+    },
+    {
+      "id": "G11",
+      "status": "open",
+      "blocks_release": true
+    },
+    {
+      "id": "G06",
+      "status": "open",
+      "blocks_release": true
+    },
+    {
+      "id": "G08",
+      "status": "open",
+      "blocks_release": true
+    },
+    {
+      "id": "D-46",
+      "status": "open",
+      "blocks_release": true
+    }
+  ],
+  "verdict": "Conditional：功能可验收，发行受 release-blockers 中的 open 项阻断"
+}

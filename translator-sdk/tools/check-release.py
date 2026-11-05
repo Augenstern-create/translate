@@ -128,9 +128,22 @@ def check_c3() -> None:
     if prefix not in revision:
         problems.append(f"基线 model_revision（{revision}）未包含模型摘要前缀 {prefix}")
 
-    if asset["license"]["redistribution"] != "prohibited-until-confirmed":
-        problems.append("权重再分发状态不是 prohibited-until-confirmed（红线被改动？）")
-    if asset["license"]["vendored_in_repo"] or asset["license"]["shipped_in_artifacts"]:
+    lic = asset["license"]
+    status, redist = lic.get("status"), lic.get("redistribution")
+    review = lic.get("review") or {}
+    if status not in ("pending", "reviewed_allowed", "reviewed_denied"):
+        problems.append(f"许可状态不在状态机里：{status!r}")
+    if status == "pending" and redist != "prohibited-until-confirmed":
+        problems.append("status=pending 时 redistribution 必须是 prohibited-until-confirmed（红线被改动？）")
+    if status == "reviewed_denied" and redist != "prohibited":
+        problems.append("status=reviewed_denied 时 redistribution 必须是 prohibited")
+    if status == "reviewed_allowed":
+        missing = [k for k in ("reviewed_by", "reviewed_at", "scope", "evidence") if not review.get(k)]
+        if missing:
+            problems.append(f"status=reviewed_allowed 但审核记录缺字段：{missing}")
+        if redist not in ("allowed", "allowed-with-attribution"):
+            problems.append(f"status=reviewed_allowed 但 redistribution={redist!r}")
+    if lic.get("vendored_in_repo") or lic.get("shipped_in_artifacts"):
         problems.append("清单声称权重已入库或已随包分发，与红线冲突")
 
     if problems:
@@ -276,9 +289,55 @@ def check_c7(verbose: bool) -> None:
         record("C7 权重哈希", "PASS", f"{root} 下 {checked} 个文件哈希全部匹配")
 
 
+def check_c8(release_mode: bool) -> None:
+    """release-blockers 台账（docs/23 §8）。
+
+    开发模式只校验台账本身是否合规；`--release-mode` 下**任何 open 且 blocks_release 的条目都算 FAIL**，
+    这样"发行前一天忘了 G12"不会靠人记性挡住。
+    """
+
+    ledger = SDK / "fixtures" / "release-blockers.json"
+    if not ledger.exists():
+        record("C8 发行阻断台账", "FAIL", "缺少 fixtures/release-blockers.json")
+        return
+    data = json.loads(ledger.read_text(encoding="utf-8"))
+    problems: list[str] = []
+    if data.get("schema") != "sdk-release-blockers/v1":
+        problems.append("schema 不是 sdk-release-blockers/v1")
+    ids = [b.get("id") for b in data.get("blockers", [])]
+    if len(ids) != len(set(ids)):
+        problems.append(f"条目 id 重复：{ids}")
+    for b in data.get("blockers", []):
+        if b.get("status") not in ("open", "closed"):
+            problems.append(f"{b.get('id')} 的 status 非法：{b.get('status')!r}")
+        if b.get("status") == "closed" and not (b.get("closed_at") and b.get("closed_evidence")):
+            problems.append(f"{b.get('id')} 标为 closed 却没有 closed_at/closed_evidence")
+        if b.get("status") == "open" and not b.get("evidence_required"):
+            problems.append(f"{b.get('id')} 缺 evidence_required（关闭条件必须写清）")
+
+    open_release = [b["id"] for b in data.get("blockers", []) if b.get("status") == "open" and b.get("blocks_release")]
+    if problems:
+        record("C8 发行阻断台账", "FAIL", "；".join(problems))
+        return
+    if release_mode and open_release:
+        record("C8 发行阻断台账", "FAIL", f"--release-mode 下仍有 open 且阻断发行的项：{open_release}")
+    else:
+        record(
+            "C8 发行阻断台账",
+            "PASS",
+            f"{len(data['blockers'])} 项，open 且阻断发行：{open_release or '无'}"
+            + ("（开发模式，不阻断 CI）" if open_release else ""),
+        )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="发行红线检查")
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument(
+        "--release-mode",
+        action="store_true",
+        help="发行模式：release-blockers 里 open 且阻断发行的条目会让检查 FAIL",
+    )
     args = ap.parse_args()
 
     print(f"仓库根：{REPO}")
@@ -289,6 +348,7 @@ def main() -> int:
     check_c5()
     check_c6()
     check_c7(args.verbose)
+    check_c8(args.release_mode)
 
     width = max(len(name) for name, _, _ in results)
     print()
