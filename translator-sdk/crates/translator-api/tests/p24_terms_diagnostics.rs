@@ -60,7 +60,11 @@ fn builder() -> translator_api::TranslatorBuilder {
 fn 术语约束会改写译文并报出位置() {
     let dir = tempfile::tempdir().unwrap();
     let table = write_table(dir.path());
-    let translator = builder().term_table_file(&table).build().unwrap();
+    let translator = builder()
+        .term_table_file(&table)
+        .term_policy(TermPolicy::Enforce) // 改写必须显式开启（默认是 Warn）
+        .build()
+        .unwrap();
 
     let req = TranslateRequest::new("hello AI world", zh()).with_source(en());
     let out = pollster::block_on(translator.translate_with_diagnostics(&req)).unwrap();
@@ -91,6 +95,27 @@ fn 术语约束会改写译文并报出位置() {
         .warnings
         .iter()
         .any(|w| matches!(w, TranslationWarning::TermMismatch(_))));
+}
+
+#[test]
+fn 默认策略只报告不改写() {
+    // P2-S / S-03：默认必须是 Warn——不能悄悄改写用户译文
+    let dir = tempfile::tempdir().unwrap();
+    let table = write_table(dir.path());
+    let translator = builder().term_table_file(&table).build().unwrap();
+    assert_eq!(translator.term_policy(), TermPolicy::Warn);
+
+    let req = TranslateRequest::new("hello AI", zh()).with_source(en());
+    let out = pollster::block_on(translator.translate_with_diagnostics(&req)).unwrap();
+    assert!(
+        out.result.text.contains("AI"),
+        "默认不得改写：{}",
+        out.result.text
+    );
+    let term = out.diagnostics.term.unwrap();
+    assert_eq!(term.policy, TermPolicy::Warn);
+    assert_eq!(term.violations.len(), 1, "仍然要报告违规");
+    assert_eq!(term.replaced, 0);
 }
 
 #[test]
@@ -137,7 +162,11 @@ fn off策略不跑守卫() {
 fn 受保护跨度里的内容不被术语改写() {
     let dir = tempfile::tempdir().unwrap();
     let table = write_table(dir.path());
-    let translator = builder().term_table_file(&table).build().unwrap();
+    let translator = builder()
+        .term_table_file(&table)
+        .term_policy(TermPolicy::Enforce)
+        .build()
+        .unwrap();
 
     let req = TranslateRequest::new(
         "see https://example.invalid/AI and `let AI = 1` and {AI} but AI free",

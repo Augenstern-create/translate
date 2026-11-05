@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::error::{ResourceError, ResourceResult};
-use crate::leases::process_alive;
+use crate::leases::{process_start_id, record_is_live};
 
 /// 默认等待时长。安装是低频操作，5 秒足以覆盖正常竞争；再长就成了卡死。
 pub const DEFAULT_LOCK_TIMEOUT: Duration = Duration::from_secs(5);
@@ -79,9 +79,14 @@ pub(crate) fn acquire(root: &Path, timeout: Duration, holder: &str) -> ResourceR
             .open(&path)
         {
             Ok(mut file) => {
+                // pid + 启动标识一起写：只有 pid 的话，持有者崩溃后 pid 被复用，
+                // 这个锁会被误判成"还有人在用"（永远等不到），或被误判成"死锁"（误删活锁）。
+                let pid = std::process::id();
                 let body = format!(
-                    "pid={}\nunix={}\nholder={holder}\n",
-                    std::process::id(),
+                    "pid={pid}\nstart={}\nunix={}\nholder={holder}\n",
+                    process_start_id(pid)
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| "-".to_string()),
                     SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .map(|d| d.as_secs())
@@ -115,8 +120,9 @@ pub(crate) fn acquire(root: &Path, timeout: Duration, holder: &str) -> ResourceR
 /// 锁文件是否属于一个已经死掉的进程。
 ///
 /// 判定必须保守：读不出 pid、或平台无法判定存活，都返回 `false`（当作还活着）。
+/// 能读到 `start=` 时优先比较启动标识——这样 pid 被复用的死锁文件仍能被回收。
 fn lock_is_stale(path: &Path) -> bool {
-    let Some(pid) = read_lock_pid(path) else {
+    let Some((pid, start)) = read_lock_identity(path) else {
         return false;
     };
     if pid == std::process::id() {
@@ -124,17 +130,22 @@ fn lock_is_stale(path: &Path) -> bool {
         // 但本 SDK 不会嵌套取锁，出现这种情况说明有别的 bug，不在这里静默回收。
         return false;
     }
-    matches!(process_alive(pid), Some(false))
+    !record_is_live(pid, start)
 }
 
-fn read_lock_pid(path: &Path) -> Option<u32> {
+/// 从锁文件里读 `(pid, start_id)`。`start` 缺失或写成 `-` 时为 `None`。
+fn read_lock_identity(path: &Path) -> Option<(u32, Option<u64>)> {
     let text = fs::read_to_string(path).ok()?;
+    let mut pid = None;
+    let mut start = None;
     for line in text.lines() {
         if let Some(rest) = line.strip_prefix("pid=") {
-            return rest.trim().parse().ok();
+            pid = rest.trim().parse().ok();
+        } else if let Some(rest) = line.strip_prefix("start=") {
+            start = rest.trim().parse().ok();
         }
     }
-    None
+    pid.map(|pid| (pid, start))
 }
 
 fn read_holder(path: &Path) -> String {
@@ -200,6 +211,54 @@ mod tests {
             // 非 Linux 无法判定存活 → 必须超时而不是猜
             assert!(acquire(tmp.path(), Duration::from_millis(60), "me").is_err());
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn pid被复用的锁文件会被回收() {
+        // 需要一个"活着但不是自己"的 pid：起一个 sleep 子进程
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .expect("启动 sleep");
+        let pid = child.id();
+        let real = crate::leases::process_start_id(pid).expect("应能读到子进程 starttime");
+
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("state.lock");
+
+        // 情形 1：pid 活着但启动标识对不上 → pid 被复用，旧锁必须被回收
+        fs::write(
+            &path,
+            format!("pid={pid}\nstart={}\nunix=0\nholder=ghost\n", real + 1),
+        )
+        .unwrap();
+        let lock = acquire(tmp.path(), Duration::from_millis(500), "me").expect("应回收后取锁");
+        drop(lock);
+
+        // 情形 2：pid 活着且启动标识一致 → 锁确实被活进程持有，不得回收
+        fs::write(
+            &path,
+            format!("pid={pid}\nstart={real}\nunix=0\nholder=live\n"),
+        )
+        .unwrap();
+        let err = acquire(tmp.path(), Duration::from_millis(60), "me").unwrap_err();
+        assert!(
+            matches!(err, ResourceError::LockTimeout { .. }),
+            "活锁不得被回收，实际：{err}"
+        );
+
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
+    #[test]
+    fn 启动标识一致时不回收活锁() {
+        let tmp = tempfile::tempdir().unwrap();
+        let held = acquire(tmp.path(), DEFAULT_LOCK_TIMEOUT, "first").unwrap();
+        // 再取一次必然超时（同一进程 → 视为活锁）
+        assert!(acquire(tmp.path(), Duration::from_millis(60), "second").is_err());
+        drop(held);
     }
 
     #[test]

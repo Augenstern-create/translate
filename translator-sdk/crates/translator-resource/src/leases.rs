@@ -1,4 +1,4 @@
-//! 资源租约（P2.3）。
+//! 资源租约（P2.3，P2-S 增补进程身份）。
 //!
 //! # 为什么需要租约
 //!
@@ -20,9 +20,18 @@
 //!
 //! 每个租约独立成文件（`leases/<id>/<version>/<pid>-<nonce>.json`）后：
 //!
-//! - 登记/释放只碰自己的文件，天然无竞争；
-//! - 崩溃残留可被逐个识别与回收（见 [`process_alive`]）；
+//! - 登记/释放只碰自己的文件；
+//! - 崩溃残留可被逐个识别与回收（见 [`probe`]）；
 //! - 检查"有没有人在用"就是列一次目录，不需要任何共享锁。
+//!
+//! # 与 `uninstall` 的原子性（P2-S / S-01）
+//!
+//! 租约文件本身是独立的，但**"版本是否已安装"这个判断必须与删除互斥**，
+//! 否则会出现：A 读到"已安装" → B 卸载删除 → A 写入租约 → 版本已不存在却有租约。
+//!
+//! 因此 [`crate::store::ResourceStore::acquire_lease`] 会在**进程内 Mutex +
+//! 跨进程 `state.lock`** 的临界区内重新检查安装状态，与 `uninstall` / `cleanup`
+//! 使用同一把锁、同样的加锁顺序（先 Mutex 后文件锁），不存在"检查完就放开"的窗口。
 //!
 //! # 诚实说明：这不是内核文件锁
 //!
@@ -45,10 +54,106 @@ use crate::error::{ResourceError, ResourceResult};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LeaseRecord {
     pub pid: u32,
-    /// 人类可读的持有者标识（`translator-api` 会填 `Translator`，CLI 填命令名）。
+    /// 进程启动标识（Linux：`/proc/<pid>/stat` 的 starttime）。
+    ///
+    /// 有了它才能区分"同一个进程"与"pid 被回收后复用的新进程"。
+    /// 旧记录没有这个字段时按 `None` 处理（退回"只看 pid 是否存在"）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_id: Option<u64>,
+    /// 人类可读的持有者标识（`translator-api` 会填 `translator-api`，CLI 填命令名）。
     pub holder: String,
-    /// Unix 秒。用于排查，不参与判定（判定只看 pid 存活）。
+    /// Unix 秒。用于排查，不参与存活判定。
     pub acquired_at_unix: u64,
+}
+
+/// 进程存活探测结果。
+///
+/// 刻意不是 `bool`：**"不知道"必须能被表达出来**。把未知当成"已死"会导致
+/// 删除正在被使用的目录；把未知当成"存活"只会多留一个文件，等人工 reclaim。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProcessLiveness {
+    /// 进程存在，附启动标识（平台不支持时为空）。
+    Alive(Option<u64>),
+    /// 进程确定不存在。
+    Dead,
+    /// 平台无法判定（非 Linux，或读取失败但 `/proc` 存在）。
+    Unknown,
+}
+
+/// 探测某个 pid 的存活状态与启动标识。
+///
+/// - Linux：`/proc/<pid>` 存在且可读 → `Alive(starttime)`；不存在 → `Dead`。
+/// - 其它平台：`Unknown`（不猜）。
+pub fn probe(pid: u32) -> ProcessLiveness {
+    if pid == 0 {
+        return ProcessLiveness::Dead;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let dir = Path::new("/proc").join(pid.to_string());
+        if !dir.exists() {
+            return ProcessLiveness::Dead;
+        }
+        match process_start_id(pid) {
+            Some(start) => ProcessLiveness::Alive(Some(start)),
+            // /proc 存在但读不出 starttime（权限、极短命进程）：存在即按存活处理
+            None => ProcessLiveness::Alive(None),
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        // 明确返回"不知道"：没有平台 API 就无法判定，绝不按存活/已死去猜。
+        let _ = pid;
+        ProcessLiveness::Unknown
+    }
+}
+
+/// 兼容旧接口：只看"是否可能存在"。`None` 表示无法判定。
+///
+/// 新代码应优先用 [`probe`]——它能识别 pid 复用。
+pub fn process_alive(pid: u32) -> Option<bool> {
+    match probe(pid) {
+        ProcessLiveness::Alive(_) => Some(true),
+        ProcessLiveness::Dead => Some(false),
+        ProcessLiveness::Unknown => None,
+    }
+}
+
+/// Linux 进程启动标识（`/proc/<pid>/stat` 第 22 个字段，单位 jiffies）。
+///
+/// 解析要点：`comm` 字段（第 2 个）用括号包住且**可以包含空格与括号**，
+/// 所以不能按空白简单切分——必须先定位最后一个 `)`，再数它之后的字段。
+#[cfg(target_os = "linux")]
+pub fn process_start_id(pid: u32) -> Option<u64> {
+    let text = fs::read_to_string(Path::new("/proc").join(pid.to_string()).join("stat")).ok()?;
+    let tail = &text[text.rfind(')')? + 1..];
+    // tail 以 " S 1 ..." 开头：字段 3(state) 起算，starttime 是第 22 个 → tail 里下标 19
+    tail.split_whitespace().nth(19)?.parse().ok()
+}
+
+/// 非 Linux 平台没有可移植的启动标识 API。
+#[cfg(not(target_os = "linux"))]
+pub fn process_start_id(_pid: u32) -> Option<u64> {
+    None
+}
+
+/// 判定一条（pid, start_id）记录是否仍代表**同一个活着的进程**。
+///
+/// 规则：
+/// - `Dead` → 失效；
+/// - `Unknown` → 视为存活（保守）；
+/// - `Alive(current)`：
+///   - 记录里有 `start_id` 且能读到当前值 → 相等才算同一进程（**识别 pid 复用**）；
+///   - 记录里没有 `start_id`（旧格式）或读不到当前值 → 视为存活。
+pub fn record_is_live(pid: u32, recorded_start: Option<u64>) -> bool {
+    match probe(pid) {
+        ProcessLiveness::Dead => false,
+        ProcessLiveness::Unknown => true,
+        ProcessLiveness::Alive(current) => match (recorded_start, current) {
+            (Some(rec), Some(cur)) => rec == cur,
+            _ => true,
+        },
+    }
 }
 
 /// 已登记的租约快照。
@@ -57,50 +162,36 @@ pub struct LeaseInfo {
     pub id: String,
     pub version: String,
     pub pid: u32,
+    /// 记录里的启动标识（旧记录为 `None`）。
+    pub start_id: Option<u64>,
     pub holder: String,
     pub acquired_at_unix: u64,
-    /// 进程是否仍存活。`None` 表示平台无法判定（保守当作存活）。
+    /// 进程是否仍存活（且是同一个进程）。`None` 表示平台无法判定。
     pub alive: Option<bool>,
+    /// pid 存在但启动标识不匹配 → pid 被复用，这条租约属于已死的旧进程。
+    pub pid_reused: bool,
     pub path: PathBuf,
 }
 
 impl LeaseInfo {
     /// 是否应被视为"占用中"。
     ///
-    /// 判定规则：**只有确定进程已死才算失效**。无法判定时按占用处理——
-    /// 代价是偶尔要求用户手动 `reclaim`，而不是偶发删除正在被 mmap 的文件。
+    /// 判定规则：**只有确定进程已死（或 pid 已被别的进程复用）才算失效**。
+    /// 无法判定时按占用处理——代价是偶尔要求用户手动 `reclaim`，
+    /// 而不是偶发删除正在被 mmap 的文件。
     pub fn is_active(&self) -> bool {
         self.alive != Some(false)
     }
 
     pub fn describe(&self) -> String {
-        format!(
+        let mut text = format!(
             "pid={} holder={} 起始=unix:{}",
             self.pid, self.holder, self.acquired_at_unix
-        )
-    }
-}
-
-/// 进程存活判定。
-///
-/// - Linux/Android：`/proc/<pid>` 存在即存活。这是本机唯一零依赖且可靠的判定。
-/// - 其它平台：返回 `None`（无法判定）。不猜，也不假装知道。
-///
-/// 注意 pid 会被复用：一个刚崩溃的进程的 pid 可能马上被新进程占用，
-/// 于是残留租约看起来"活着"。这是本机制的已知误判方向（偏保守，不偏危险）。
-pub fn process_alive(pid: u32) -> Option<bool> {
-    if pid == 0 {
-        return Some(false);
-    }
-    #[cfg(target_os = "linux")]
-    {
-        Some(Path::new("/proc").join(pid.to_string()).exists())
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        // 明确返回"不知道"：没有平台 API 就无法判定，绝不按存活/已死去猜。
-        let _ = pid;
-        None
+        );
+        if self.pid_reused {
+            text.push_str("（pid 已被复用）");
+        }
+        text
     }
 }
 
@@ -133,13 +224,28 @@ pub(crate) fn list_leases(root: &Path, id: &str, version: &str) -> ResourceResul
             // 半截文件（写入时崩溃）不构成占用
             Err(_) => continue,
         };
+        let liveness = probe(record.pid);
+        let alive = match liveness {
+            ProcessLiveness::Dead => Some(false),
+            ProcessLiveness::Unknown => None,
+            ProcessLiveness::Alive(current) => match (record.start_id, current) {
+                (Some(rec), Some(cur)) if rec != cur => Some(false),
+                _ => Some(true),
+            },
+        };
+        let pid_reused = matches!(
+            (record.start_id, liveness),
+            (Some(rec), ProcessLiveness::Alive(Some(cur))) if rec != cur
+        );
         out.push(LeaseInfo {
             id: id.to_string(),
             version: version.to_string(),
             pid: record.pid,
+            start_id: record.start_id,
             holder: record.holder,
             acquired_at_unix: record.acquired_at_unix,
-            alive: process_alive(record.pid),
+            alive,
+            pid_reused,
             path,
         });
     }
@@ -181,8 +287,10 @@ pub(crate) fn reclaim_stale(root: &Path) -> ResourceResult<usize> {
                 let lease = lease_entry_path(lease?);
                 let Some(lease) = lease else { continue };
                 if let Some(record) = read_record(&lease) {
-                    // 只有"确定进程已死"才回收：无法判定存活时按占用处理
-                    if process_alive(record.pid) == Some(false) && fs::remove_file(&lease).is_ok() {
+                    // 只有"确定进程已死 / pid 已复用"才回收：无法判定时按占用处理
+                    if !record_is_live(record.pid, record.start_id)
+                        && fs::remove_file(&lease).is_ok()
+                    {
                         removed += 1;
                     }
                 }
@@ -221,6 +329,9 @@ pub struct ResourceLease {
 
 impl ResourceLease {
     /// 登记一个新租约。
+    ///
+    /// **调用方必须持有仓库临界区**（见模块文档 S-01）：这里只负责写文件，
+    /// "版本是否已安装"的判断由 `ResourceStore::acquire_lease` 在锁内完成。
     pub(crate) fn acquire(
         root: &Path,
         id: &str,
@@ -234,9 +345,11 @@ impl ResourceLease {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let path = dir.join(format!("{}-{nonce}.json", std::process::id()));
+        let pid = std::process::id();
+        let path = dir.join(format!("{pid}-{nonce}.json"));
         let record = LeaseRecord {
-            pid: std::process::id(),
+            pid,
+            start_id: process_start_id(pid),
             holder: holder.to_string(),
             acquired_at_unix: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -344,6 +457,31 @@ mod tests {
         assert_eq!(process_alive(4_194_303), Some(false));
     }
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn 能读到当前进程的启动标识() {
+        let start = process_start_id(std::process::id());
+        assert!(start.is_some(), "Linux 上应能读到 starttime");
+        // 启动标识必须稳定（同一进程多读几次结果相同）
+        assert_eq!(start, process_start_id(std::process::id()));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn pid复用会被识别为失效() {
+        let me = std::process::id();
+        let real = process_start_id(me).expect("应能读到 starttime");
+        assert!(record_is_live(me, Some(real)), "同一进程必须算存活");
+        assert!(
+            !record_is_live(me, Some(real.wrapping_add(1))),
+            "启动标识不同 → pid 被复用 → 旧记录失效"
+        );
+        assert!(
+            record_is_live(me, None),
+            "旧记录没有启动标识时只能按存活处理"
+        );
+    }
+
     #[test]
     fn 垃圾租约文件不被当成占用() {
         let tmp = tempfile::tempdir().unwrap();
@@ -360,11 +498,34 @@ mod tests {
             id: "a".into(),
             version: "1".into(),
             pid: 12345,
+            start_id: None,
             holder: "x".into(),
             acquired_at_unix: 0,
             alive: None,
+            pid_reused: false,
             path: PathBuf::from("/dev/null"),
         };
         assert!(info.is_active(), "未知必须按占用处理，不能按已死处理");
+    }
+
+    #[test]
+    fn 旧格式租约仍然可读() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = lease_dir(tmp.path(), "a", "1.0.0");
+        fs::create_dir_all(&dir).unwrap();
+        // 没有 start_id 字段（P2.3 写的记录）
+        fs::write(
+            dir.join(format!("{}-1.json", std::process::id())),
+            format!(
+                r#"{{"pid":{},"holder":"old","acquired_at_unix":1}}"#,
+                std::process::id()
+            ),
+        )
+        .unwrap();
+        let list = list_leases(tmp.path(), "a", "1.0.0").unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].start_id, None);
+        assert!(list[0].is_active(), "本进程的旧租约仍算有效");
+        assert!(!list[0].pid_reused);
     }
 }

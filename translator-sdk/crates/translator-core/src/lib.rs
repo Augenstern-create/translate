@@ -34,4 +34,6 @@ pub use coordinator::{Coordinator, CoordinatorConfig};
 pub use diagnostics::{RuleTrace, TermTrace, TranslateOutput, TranslationDiagnostics};
 pub use routing::RouteOutcome;
 pub use rules::{NoRules, RuleOutcome, RulePreview, TextRules};
-pub use terms::{NoTermGuard, TargetTermGuard, TermOutcome, TermPolicy, TermViolation};
+pub use terms::{
+    NoTermGuard, TargetTermGuard, TermContext, TermOutcome, TermPolicy, TermViolation,
+};

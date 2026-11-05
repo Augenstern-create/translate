@@ -1,10 +1,23 @@
 {
   "schema_version": 1,
   "id": "terms.demo.zh-en",
-  "version": 1,
+  "version": 2,
   "terms": [
-    { "target": "en", "preferred": "computer", "variants": ["calculator", "calc"] },
-    { "target": "en", "preferred": "artificial intelligence", "variants": ["AI"] },
-    { "target": "*", "preferred": "world", "variants": ["planet earth"] }
+    {
+      "target": "en",
+      "preferred": "artificial intelligence",
+      "variants": ["AI", "A.I."]
+    },
+    {
+      "target": "en",
+      "preferred": "calculator",
+      "variants": ["computer"],
+      "source_variants": ["计算器"]
+    },
+    {
+      "target": "*",
+      "preferred": "world",
+      "variants": ["planet earth"]
+    }
   ]
 }

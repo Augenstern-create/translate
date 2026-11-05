@@ -11,10 +11,12 @@
 - `05_审查响应与P2实施计划.md` — 外部审查的逐条处置、ADR-008~014、P2 拆解与验收映射
 - `06_P2.1-P2.2_资源协议与仓库报告.md` — 资源协议（v1/v2 双版本号）、安装/激活/回滚、偏差清单
 - `07_P2.3-P2.5_租约预算与术语约束报告.md` — 资源租约、内存预算、术语约束与诊断、`dictionary.sqlite.v2` 实测
+- `08_P2完整技术审查与P3开发建议.md` — 外部审查归档：四个 P3 前决策、P0/P1 风险表、C-01～C-12 测试矩阵、P2-S 方案
+- `09_P2-S稳定化报告.md` — **本轮**：P0 收口（租约/卸载原子性、锁回收、术语默认值）+ 明确 pending 清单
 
 ---
 
-## 当前状态：P0 + P1 完成；**整个 P2 完成**（P2.1 – P2.5）
+## 当前状态：P0 + P1 + P2 完成；**P2-S 稳定化完成**（P3 准入前的 P0/P1 收口）
 
 - **P0**：workspace 结构、核心类型、插件契约、协调器与路由、缓存、门面 API、Mock 插件、CLI。
   **不接任何真实模型、不装任何 native 库**，整条链路即可运行 —— 这是设计文档规定的交付判据。
@@ -37,6 +39,14 @@
   **结构化诊断** `translate_with_diagnostics()`（规则命中、受保护跨度、还原缺失、术语替换明细、是否缓存命中）。
 - **P2.5**：`dictionary.sqlite.v2`（释义内联进 `entries.senses`）与 v2 打包工具。
   真实 CC-CEDICT 实测：查询 p50 **17.36 → 8.98 µs（−48%）**、库体积 **18.2 → 13.6 MB（−25%）**；v1 仍可读。
+- **P2-S**（稳定化，不新增能力）：
+  - **租约/卸载原子性**：`acquire_lease` 与 `uninstall`/`cleanup` 进同一个跨进程临界区并在锁内重读状态
+    （修复"租约指向已删除版本"的真实缺陷，C-01）；
+  - **锁与租约记进程身份**（pid + Linux 启动标识）：能识别 pid 复用，无法判定存活时按占用处理（C-04）；
+  - **术语默认策略改为 `Warn`**：默认不再改写译文，`Enforce` 必须显式开启；术语规则可声明源文触发条件
+    （`source_variants`），避免"译文里有这个词就认定源文该用某术语"（C-06）；
+  - **三方对账** `resource audit [--prune]`：state / installed / staging / 租约对账，只报告，删孤儿要显式；
+  - 跨进程测试 6 条（独立二进制 re-exec，不是线程模拟）。
 
 词库与规则都是**可选 feature**：不开 `dictionary` 时 `translator-api` 依赖树里没有 `rusqlite`；
 不开 `rules` 时没有 JSON 解析依赖（但 `TextRules` 契约始终可用，宿主可自己实现）。
@@ -188,6 +198,15 @@ cargo run --release -p translator-cli -- --store .resources --dict-id dictionary
 **安装新版本不会自动切换**激活版本，旧版本也不会被自动删除（P2.3 的租约只保护"正在用的"，
 不负责自动回收）。
 
+仓库自查（对账只报告，动手要显式）：
+
+```bash
+# state ↔ installed ↔ staging ↔ 租约 四方对账；有需要人介入的问题时退出码 1
+cargo run --release -p translator-cli -- --store .resources resource audit
+# 删掉"磁盘有目录、状态没记录"的孤儿（被租用的不会删）
+cargo run --release -p translator-cli -- --store .resources resource audit --prune
+```
+
 ### 租约：谁在用，谁登记
 
 ```bash
@@ -210,6 +229,8 @@ let translator = translator_api::Translator::builder()
 
 诚实边界：租约是**协作式**的，绕过本 SDK 直接 `open()` 资源文件的程序检测不到；
 无法判定进程存活时按"占用"处理（宁可要求人工 `reclaim`，不删正在被 mmap 的文件）。
+存活判定用「pid + 进程启动标识」（Linux `/proc/<pid>/stat` 的 starttime），因此 **pid 被复用**
+不会被误当成"还有人在用"；非 Linux 平台没有可移植 API，一律返回"无法判定"。
 
 ### 内存预算
 
@@ -225,10 +246,15 @@ cargo run --release -p translator-cli -- --dict resources/zh-en --memory-budget 
 ### 术语约束与诊断
 
 ```bash
-# 默认 enforce：按术语表改写译文（只改裸文本，URL/代码/{变量} 不动）
-cargo run --release -p translator-cli -- --terms fixtures/terms/zh-en.json     translate "planet earth has a computer" --diagnose
-# warn：只报告不改
-cargo run --release -p translator-cli -- --terms fixtures/terms/zh-en.json     --term-policy warn translate "planet earth has a computer" --diagnose
+# 默认 warn：只报告违规位置，一个字都不改（第三方术语表不该悄悄改用户译文）
+cargo run --release -p translator-cli -- --terms fixtures/terms/zh-en.json \
+  translate "计算器 computer 与 AI planet earth" --to en --from zh-Hans --diagnose
+# enforce：显式开启才改写（只改裸文本，URL/代码/{变量} 不动）
+cargo run --release -p translator-cli -- --terms fixtures/terms/zh-en.json --term-policy enforce \
+  translate "计算器 computer 与 AI planet earth" --to en --from zh-Hans
+# 源文触发：源文没有「计算器」时，computer 这条规则被跳过（不会误改正常词）
+cargo run --release -p translator-cli -- --terms fixtures/terms/zh-en.json --term-policy enforce \
+  translate "这台 computer 与 AI planet earth" --to en --from zh-Hans
 ```
 
 ```rust
@@ -239,8 +265,10 @@ for v in out.diagnostics.term.iter().flat_map(|t| t.violations.iter()) {
 }
 ```
 
-术语表格式见 `fixtures/terms/zh-en.json`；契约是 `TargetTermGuard`，宿主可自己实现，
-不必开 `rules` feature。详见 `../docs/07_P2.3-P2.5_租约预算与术语约束报告.md` §2.4–§2.5。
+术语表格式见 `fixtures/terms/zh-en.json`（含 `source_variants` 示例）；契约是 `TargetTermGuard`，
+宿主可自己实现，不必开 `rules` feature。**字典 `lookup()` 与词典直出不受术语约束改写**（ADR-020）：
+查词返回资源原样，最多给警告。详见 `../docs/07_P2.3-P2.5_租约预算与术语约束报告.md` §2.4–§2.5
+与 `../docs/09_P2-S稳定化报告.md` §1.4。
 
 ### 词典 payload：v1 还是 v2
 
@@ -268,6 +296,10 @@ cargo run --release -p pack-dictionary -- /tmp/cedict /tmp/pkg --payload-schema 
 | 结构化诊断不污染主结果（ADR-008/015） | `translate()` 返回类型不变；诊断走 `translate_with_diagnostics()` |
 | 术语约束不得破坏占位符（ADR-009/015） | `TargetTermTable` 复用 `text::protected_spans`，有 3 个集成测试 |
 | 预算不得宣传为硬上限（ADR-013） | 只做装配期准入 + 下界估计，文档与 CLI 输出都标注"不是 RSS" |
+| 术语默认只报告不改写（ADR-015 增补） | `TermPolicy::default() == Warn`；`Enforce` 需显式开启，测试锁死默认值 |
+| 查词不受术语改写（ADR-020） | `lookup()` 返回资源原样；输出侧约束只作用于整句译文 |
+| 租约与卸载同临界区（ADR-022） | `acquire_lease`/`uninstall`/`cleanup` 共享 Mutex + `state.lock`，锁内重读状态 |
+| 跨进程行为用独立进程验证 | `crates/translator-resource/tests/cross_process.rs`（线程无法构造锁/僵死/PID 复用） |
 
 ## 尚未实现
 
@@ -277,11 +309,15 @@ cargo run --release -p pack-dictionary -- /tmp/cedict /tmp/pkg --payload-schema 
 - 术语表与 `glossary_id` 联动（多术语表选择属宿主策略）
 - 规则包的其余能力：分句、词形；正则类匹配按 §7.3 的风险评估后决定不做
 - 词形分析（Lindera 等）
-- 内存**硬**上限与 RSS 监控；GPU/native 分配器记账（P3）
+- 内存**硬**上限与 RSS 监控；`ProcessMetricsProvider`（各平台真实占用观测，ADR-021，未实现）
+- 断电一致性加固（fsync 父目录/目录树）、加载前内容重新校验、依赖反向引用检查、崩溃注入测试
+- 术语"源文命中但译文缺失 → 建议重译"（当前只做到不误改）
+- `content_digest` 进缓存键（术语表快照，ADR-019 只落了 `id@version`）
 - single-flight、引用计数、TTL/LRU 热卸载（P2 没有按需加载/卸载路径）
 - `ResolvedExecutionPlan` 与执行计划哈希（ADR-011，等 P3 后端形状稳定）
 - Bergamot / ncnn / ONNX Runtime 适配
 - C ABI / JNI 绑定
+- Windows / macOS / Android 的构建与实证（**未在目标平台编译或运行过，明确 pending**）
 - 远程 LLM Provider 与凭据注入
 
 各项的具体原因与去向见 `../docs/04_P1_字典与离线查词报告.md` §8、§9

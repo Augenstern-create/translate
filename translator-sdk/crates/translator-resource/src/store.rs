@@ -119,6 +119,90 @@ pub struct RecoverReport {
     pub removed_temp_files: usize,
 }
 
+/// 一个已安装（或疑似已安装）的版本引用，用于对账报告。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InstalledRef {
+    pub id: String,
+    pub version: String,
+    pub path: PathBuf,
+}
+
+impl std::fmt::Display for InstalledRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}@{}（{}）", self.id, self.version, self.path.display())
+    }
+}
+
+/// `state.json` 与磁盘的三方对账结果（P2-S / S-05）。
+///
+/// 只报告、不自动删除：`state.json` 说"已安装"而目录不在，可能是人为删除、
+/// 也可能是断电丢了目录项——两者的正确处理不同，程序不该替用户决定。
+/// 唯一可以自动清理的是 `staging/` 与 `state.json.tmp-*`（它们按定义是半成品）。
+#[derive(Clone, Debug, Default)]
+pub struct StateAudit {
+    /// `state` 里有记录，磁盘上目录不存在。
+    pub missing_dirs: Vec<InstalledRef>,
+    /// 磁盘上有目录，`state` 里没有记录（安装到一半 / 状态被回滚）。
+    pub orphan_dirs: Vec<InstalledRef>,
+    /// 激活版本的目录缺失。这是最严重的一类：任何挂载都会失败。
+    pub active_missing: Vec<String>,
+    /// `state.json.tmp-*` 残留（写状态时崩溃）。
+    pub stale_tmp_files: Vec<String>,
+    /// `staging/` 里的半成品目录。
+    pub staging_dirs: Vec<String>,
+    /// 租约文件总数与其中已失效的数量。
+    pub lease_files: usize,
+    pub stale_leases: usize,
+}
+
+impl StateAudit {
+    /// 没有任何需要人工处理的问题（staging / tmp 残留不算，`recover()` 会自动清）。
+    pub fn is_clean(&self) -> bool {
+        self.missing_dirs.is_empty()
+            && self.orphan_dirs.is_empty()
+            && self.active_missing.is_empty()
+            && self.stale_tmp_files.is_empty()
+            && self.staging_dirs.is_empty()
+            && self.stale_leases == 0
+    }
+
+    /// 是否有需要人工介入的项（缺目录 / 孤儿目录 / 激活版本缺失）。
+    pub fn needs_attention(&self) -> bool {
+        !self.missing_dirs.is_empty()
+            || !self.orphan_dirs.is_empty()
+            || !self.active_missing.is_empty()
+    }
+
+    pub fn summary(&self) -> String {
+        if self.is_clean() {
+            return "仓库状态一致：state / installed / staging 三方无差异".to_string();
+        }
+        let mut parts = Vec::new();
+        if !self.active_missing.is_empty() {
+            parts.push(format!(
+                "激活版本目录缺失：{}",
+                self.active_missing.join(", ")
+            ));
+        }
+        if !self.missing_dirs.is_empty() {
+            parts.push(format!("{} 个版本有记录但无目录", self.missing_dirs.len()));
+        }
+        if !self.orphan_dirs.is_empty() {
+            parts.push(format!("{} 个目录无记录（孤儿）", self.orphan_dirs.len()));
+        }
+        if !self.staging_dirs.is_empty() {
+            parts.push(format!("{} 个 staging 残留", self.staging_dirs.len()));
+        }
+        if !self.stale_tmp_files.is_empty() {
+            parts.push(format!("{} 个状态临时文件", self.stale_tmp_files.len()));
+        }
+        if self.stale_leases > 0 {
+            parts.push(format!("{} 个失效租约", self.stale_leases));
+        }
+        parts.join("；")
+    }
+}
+
 /// `cleanup` 的结果。
 ///
 /// 返回结构而不是"删掉的版本列表"：被跳过的版本必须**可见**——
@@ -192,8 +276,23 @@ impl ResourceStore {
 
     /// 登记租约：表示"我要用这个版本的目录"。
     ///
-    /// 只做两件事：确认版本存在、写一个只属于本进程的租约文件。不上锁、不碰 `state.json`，
-    /// 因此可以高频调用，也不会与安装竞争。
+    /// # 为什么要持有仓库锁（P2-S / S-01）
+    ///
+    /// "版本已安装"与"版本被删除"必须互斥。否则会出现这个交错：
+    ///
+    /// ```text
+    /// A: 读 state → 1.0.0 已安装
+    /// B: 拿锁 → 检查租约（无）→ 删目录 → 写 state → 放锁
+    /// A: 写入租约 → 成功  ← 但版本已经不存在了
+    /// ```
+    ///
+    /// 结果是"租约登记成功、资源已被删除"，即 C-01 描述的非法状态。
+    /// 所以这里与 `uninstall` / `cleanup` 使用**同一把进程内 Mutex + 同一个跨进程
+    /// `state.lock`**，并在锁内**重新读状态**再判断。加锁顺序两处一致（先 Mutex 后文件锁），
+    /// 不会互相死锁。
+    ///
+    /// 代价：登记租约要拿一次跨进程锁。挂载是构建期动作（`build()` 里逐个资源），
+    /// 不在热路径上，这个代价可以接受。
     pub fn acquire_lease(
         &self,
         id: &str,
@@ -202,6 +301,9 @@ impl ResourceStore {
     ) -> ResourceResult<ResourceLease> {
         validate_component("id", id)?;
         validate_component("version", version)?;
+
+        let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
+        let _state_lock = self.acquire_state_lock()?;
         let state = self.read_state()?;
         let installed = state
             .resources
@@ -566,6 +668,126 @@ impl ResourceStore {
 
         self.write_state(&state)?;
         Ok(report)
+    }
+
+    /// 三方对账：`state.json` ↔ `installed/` ↔ `staging/`，外加租约。
+    ///
+    /// 只读，不改任何东西（`recover()` 才动手清理半成品）。
+    pub fn audit(&self) -> ResourceResult<StateAudit> {
+        let state = self.read_state()?;
+        let mut audit = StateAudit::default();
+
+        // 1) state 里记录的版本 → 目录是否真的在
+        for (id, entry) in &state.resources {
+            for version in entry.installed.keys() {
+                let dir = self.version_dir(id, version)?;
+                if !dir.exists() {
+                    audit.missing_dirs.push(InstalledRef {
+                        id: id.clone(),
+                        version: version.clone(),
+                        path: dir,
+                    });
+                }
+            }
+            if let Some(active) = &entry.active {
+                let dir = self.version_dir(id, active)?;
+                if !dir.exists() {
+                    audit.active_missing.push(format!("{id}@{active}"));
+                }
+            }
+        }
+
+        // 2) 磁盘上有目录但 state 里没记录 → 孤儿
+        let installed_root = self.root.join("installed");
+        if installed_root.exists() {
+            for id_entry in fs::read_dir(&installed_root)? {
+                let id_entry = id_entry?;
+                if !id_entry.file_type()?.is_dir() {
+                    continue;
+                }
+                let id = id_entry.file_name().to_string_lossy().to_string();
+                for version_entry in fs::read_dir(id_entry.path())? {
+                    let version_entry = version_entry?;
+                    if !version_entry.file_type()?.is_dir() {
+                        continue;
+                    }
+                    let version = version_entry.file_name().to_string_lossy().to_string();
+                    let known = state
+                        .resources
+                        .get(&id)
+                        .map(|e| e.installed.contains_key(&version))
+                        .unwrap_or(false);
+                    if !known {
+                        audit.orphan_dirs.push(InstalledRef {
+                            id: id.clone(),
+                            version,
+                            path: version_entry.path(),
+                        });
+                    }
+                }
+            }
+        }
+
+        // 3) 半成品
+        let staging_root = self.root.join("staging");
+        if staging_root.exists() {
+            for entry in fs::read_dir(&staging_root)? {
+                let entry = entry?;
+                if entry.file_type()?.is_dir() {
+                    audit
+                        .staging_dirs
+                        .push(entry.file_name().to_string_lossy().to_string());
+                }
+            }
+        }
+        for entry in fs::read_dir(&self.root)? {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with("state.json.tmp-") && entry.file_type()?.is_file() {
+                audit.stale_tmp_files.push(name);
+            }
+        }
+
+        // 4) 租约
+        let leases = self.all_leases()?;
+        audit.lease_files = leases.len();
+        audit.stale_leases = leases.iter().filter(|l| !l.is_active()).count();
+
+        audit
+            .orphan_dirs
+            .sort_by(|a, b| (&a.id, &a.version).cmp(&(&b.id, &b.version)));
+        audit
+            .missing_dirs
+            .sort_by(|a, b| (&a.id, &a.version).cmp(&(&b.id, &b.version)));
+
+        Ok(audit)
+    }
+
+    /// 删除孤儿目录（磁盘上有、`state` 里没有的版本目录）。
+    ///
+    /// 显式动作：返回被删除的条目。有有效租约的版本不会被删（先报 `ResourceLeased`）。
+    /// 缺失方向（有记录无目录）不在这里处理——那是数据丢失，需要人决定是重新安装还是清记录。
+    pub fn prune_orphans(&self) -> ResourceResult<Vec<InstalledRef>> {
+        let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
+        let _state_lock = self.acquire_state_lock()?;
+        let audit = self.audit()?;
+
+        let mut removed = Vec::new();
+        for orphan in audit.orphan_dirs {
+            // 孤儿目录也可能被别人 mmap 着，仍然要尊重租约
+            if !leases::active_leases(&self.root, &orphan.id, &orphan.version)?.is_empty() {
+                continue;
+            }
+            if orphan.path.exists() {
+                fs::remove_dir_all(&orphan.path)?;
+                removed.push(orphan);
+            }
+        }
+        // 顺手把空的 id 目录删掉
+        if let Some(parent) = removed.first().and_then(|r| r.path.parent()) {
+            let _ = fs::remove_dir(parent);
+        }
+        Ok(removed)
     }
 
     // ---------------- 查询 ----------------

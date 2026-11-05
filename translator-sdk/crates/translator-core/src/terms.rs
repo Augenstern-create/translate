@@ -10,6 +10,15 @@
 //! 这与 ADR-003（词典 vs 句子分开建模）不冲突：这里约束的是**译文用词**，
 //! 不是"这句话该不该由词典来译"。
 //!
+//! # 默认不改写（P2-S / S-03）
+//!
+//! 默认策略是 [`TermPolicy::Warn`]——**只报告，不改文本**。
+//!
+//! 原因是"目标侧出现某个变体"并不等于"这里就该用规范术语"：把 `planet earth`
+//! 换成 `world` 在某个句子里可能正确，在另一个句子里会毁掉原意。自动改写未知语境
+//! 的译文，风险大于收益。要改写必须显式 `Enforce`，并且术语条目应带上
+//! **源文触发条件**（`source_variants`），否则等于"只要译文里出现这个词就改"。
+//!
 //! # 契约
 //!
 //! [`TargetTermGuard`] 的实现者必须做到三件事，缺一不可：
@@ -82,6 +91,20 @@ impl TermOutcome {
     }
 }
 
+/// 术语检查的完整上下文。
+///
+/// `source_text` 是**送进引擎之前**的源文（已规范化、已过规则），
+/// 它让实现者能区分"源文确实提到了这个术语"与"译文里恰好有这个写法"。
+#[derive(Clone, Copy, Debug)]
+pub struct TermContext<'a> {
+    /// 源文（规范化、规则处理后）。
+    pub source_text: &'a str,
+    /// 译文（占位符已还原）。
+    pub target_text: &'a str,
+    pub source: &'a LanguageTag,
+    pub target: &'a LanguageTag,
+}
+
 /// 输出侧术语约束契约。
 ///
 /// `Send + Sync`：协调器会被多线程共享（`Translator` 是 `Sync`）。
@@ -90,8 +113,18 @@ pub trait TargetTermGuard: Send + Sync {
     fn id(&self) -> &str;
     /// 术语表版本，进诊断与缓存键。
     fn version(&self) -> u32;
-    /// 检查并（可选地）改写译文。
+    /// 只凭译文做检查（没有源文）。
+    ///
+    /// 实现方应把"需要源文才能判定"的规则**跳过**：没有源文时无法确认触发条件。
     fn apply(&self, text: &str, source: &LanguageTag, target: &LanguageTag) -> TermOutcome;
+
+    /// 带源文的完整检查。协调器走这条路径。
+    ///
+    /// 默认实现退化为 [`Self::apply`]，因此**加到已有实现上是非破坏的**；
+    /// 需要源触发语义的实现（如 `TargetTermTable`）覆盖它即可。
+    fn apply_with_context(&self, ctx: &TermContext<'_>) -> TermOutcome {
+        self.apply(ctx.target_text, ctx.source, ctx.target)
+    }
 }
 
 /// 空实现：什么都不做。用于"没配术语表"的默认路径。
@@ -117,13 +150,15 @@ impl TargetTermGuard for NoTermGuard {
 pub enum TermPolicy {
     /// 完全不检查（性能优先，或术语表只用于别处）。
     Off,
-    /// 只报告违规、**不改文本**。审计与灰度期用这个。
+    /// 只报告违规、**不改文本**。审计、灰度期、以及**默认**都用这个。
+    ///
+    /// 默认不改写是刻意的（P2-S / S-03）：仅凭"译文里出现了某个变体"
+    /// 无法判断这里是否真的该用规范术语。
+    #[default]
     Warn,
     /// 按术语表改写文本（不碰受保护跨度），并报告每处替换。
     ///
-    /// 这是默认值：宿主既然显式提供了术语表，通常就是要它生效。
-    /// 想先看效果再决定，显式写 `.term_policy(TermPolicy::Warn)`。
-    #[default]
+    /// 只能在显式启用后使用；术语条目最好带 `source_variants` 限定触发条件。
     Enforce,
 }
 
@@ -169,7 +204,27 @@ mod tests {
         assert!(!TermPolicy::Warn.applies_text());
         assert!(TermPolicy::Warn.runs());
         assert!(!TermPolicy::Off.runs());
-        assert_eq!(TermPolicy::default(), TermPolicy::Enforce);
+    }
+
+    #[test]
+    fn 默认策略不改写译文() {
+        // P2-S / S-03：默认必须只报告不改写
+        assert_eq!(TermPolicy::default(), TermPolicy::Warn);
+        assert!(
+            !TermPolicy::default().applies_text(),
+            "默认策略不得改写用户译文"
+        );
+    }
+
+    #[test]
+    fn 无上下文时退化为仅凭译文() {
+        let outcome = NoTermGuard.apply_with_context(&TermContext {
+            source_text: "源文",
+            target_text: "hello",
+            source: &lang("en"),
+            target: &lang("zh-Hans"),
+        });
+        assert_eq!(outcome.text, "hello");
     }
 
     #[test]

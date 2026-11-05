@@ -8,13 +8,27 @@
 //!   "id": "terms.zh-en.core",
 //!   "version": 1,
 //!   "terms": [
-//!     { "target": "en", "preferred": "artificial intelligence", "variants": ["AI", "A.I."] },
+//!     { "target": "en", "preferred": "artificial intelligence",
+//!       "variants": ["AI", "A.I."], "source_variants": ["人工智能"] },
 //!     { "target": "*",  "preferred": "large language model", "variants": ["LLM"] }
 //!   ]
 //! }
 //! ```
 //!
-//! `target` 为 `"*"` 表示对所有目标语言生效。同一个变体**不允许**在同一语言下
+//! `target` 为 `"*"` 表示对所有目标语言生效。
+//!
+//! # 源文触发条件（P2-S / S-03）
+//!
+//! `source_variants` 是**可选的源文触发条件**：只有源文里出现其中任意一个写法时，
+//! 这条术语才会在译文里被检查/改写。
+//!
+//! 没有它的时候，`"planet earth" → "world"` 这种规则的含义是"**只要译文里出现
+//! planet earth 就改**"——这在源文根本没提这件事时也可能触发，等于按字面改别人
+//! 的句子。加上 `source_variants: ["世界"]` 之后，语义变成"源文提到世界、
+//! 译文却写成 planet earth 时才纠正"，这才是术语约束该有的样子。
+//!
+//! 不带 `source_variants` 的条目仍然可用（等价于"永远触发"），但**默认策略是
+//! `Warn`**（只报告不改），要改写必须显式 `Enforce`。同一个变体**不允许**在同一语言下
 //! 出现两次（否则"该替换成哪个"就没有确定答案了），编译期直接报错。
 //!
 //! # 匹配规则（必须确定，不得依赖哈希顺序）
@@ -43,7 +57,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde::Deserialize;
-use translator_core::terms::{TargetTermGuard, TermOutcome, TermViolation};
+use translator_core::terms::{TargetTermGuard, TermContext, TermOutcome, TermViolation};
 use translator_core::text;
 use translator_types::LanguageTag;
 
@@ -109,6 +123,9 @@ struct RawTerm {
     target: String,
     preferred: String,
     variants: Vec<String>,
+    /// 源文触发条件。空表示"不限定源文"（总是检查）。
+    #[serde(default)]
+    source_variants: Vec<String>,
 }
 
 /// 编译后的一条替换规则。
@@ -118,6 +135,11 @@ struct Rule {
     preferred: String,
     /// 是否需要整词边界（变体首尾都是 ASCII 字母数字）。
     whole_word: bool,
+    /// 源文触发条件。空表示"不限定源文"。
+    ///
+    /// 非空时：调用方必须提供源文，且源文包含其中之一才会生效；
+    /// 拿不到源文（例如只做预览）时**跳过**该规则——无法确认触发条件就不动手。
+    sources: Vec<String>,
 }
 
 /// 编译后的术语表。实现 [`TargetTermGuard`]，可直接注入 `Translator`。
@@ -182,6 +204,25 @@ impl TargetTermTable {
                     term.preferred
                 )));
             }
+            for source in &term.source_variants {
+                if source.trim().is_empty() {
+                    return Err(TermError::Invalid(format!(
+                        "source_variants 不能含空字符串（preferred={}）",
+                        term.preferred
+                    )));
+                }
+                total_bytes = total_bytes.saturating_add(source.len());
+                if total_bytes > MAX_TOTAL_VARIANT_BYTES {
+                    return Err(TermError::Invalid(format!(
+                        "变体与触发条件总字节数超过上限 {MAX_TOTAL_VARIANT_BYTES}"
+                    )));
+                }
+            }
+            let sources: Vec<String> = term
+                .source_variants
+                .iter()
+                .map(|s| s.trim().to_string())
+                .collect();
             // 目标语言做一次规范化，避免 "EN" / "en" 变成两张表
             let target = if term.target == ANY_TARGET {
                 ANY_TARGET.to_string()
@@ -231,6 +272,7 @@ impl TargetTermTable {
                     whole_word: needs_word_boundary(&variant),
                     variant,
                     preferred: term.preferred.clone(),
+                    sources: sources.clone(),
                 });
             }
         }
@@ -261,12 +303,22 @@ impl TargetTermTable {
             .map(|(target, rules)| format!("{target}:{}", rules.len()))
             .collect();
         format!(
-            "{}@{}（{} 个变体；{}）",
+            "{}@{}（{} 个变体，其中 {} 条需源文触发；{}）",
             self.id,
             self.version,
             self.total_variants,
+            self.source_gated_count(),
             targets.join(", ")
         )
+    }
+
+    /// 需要源文触发条件的规则条数（诊断用：这些规则在无源文的预览里不会生效）。
+    pub fn source_gated_count(&self) -> usize {
+        self.by_target
+            .values()
+            .flatten()
+            .filter(|r| !r.sources.is_empty())
+            .count()
     }
 
     /// 某目标语言实际生效的规则条数（便于诊断"为什么没生效"）。
@@ -293,8 +345,36 @@ impl TargetTermGuard for TargetTermTable {
         self.version
     }
 
+    /// 只凭译文检查：需要源文触发条件的规则一律跳过。
+    ///
+    /// 这是刻意的保守行为——拿不到源文就无法确认"源文真的提到了这个术语"，
+    /// 凭译文猜等于按字面改别人的句子（S-03）。
     fn apply(&self, input: &str, _source: &LanguageTag, target: &LanguageTag) -> TermOutcome {
-        let rules: Vec<&Rule> = self.rules_for(target.as_str()).collect();
+        self.run(input, None, target)
+    }
+
+    fn apply_with_context(&self, ctx: &TermContext<'_>) -> TermOutcome {
+        self.run(ctx.target_text, Some(ctx.source_text), ctx.target)
+    }
+}
+
+impl TargetTermTable {
+    /// 统一实现：`source_text` 为 `None` 表示"没有源文"。
+    fn run(&self, input: &str, source_text: Option<&str>, target: &LanguageTag) -> TermOutcome {
+        let rules: Vec<&Rule> = self
+            .rules_for(target.as_str())
+            .filter(|rule| match (source_text, rule.sources.is_empty()) {
+                // 没有触发条件：总是适用
+                (_, true) => true,
+                // 有触发条件但拿不到源文：跳过
+                (None, false) => false,
+                // 有触发条件：源文必须命中其中之一
+                (Some(source), false) => rule
+                    .sources
+                    .iter()
+                    .any(|s| !find_all(source, s, needs_word_boundary(s)).is_empty()),
+            })
+            .collect();
         if rules.is_empty() || input.is_empty() {
             return TermOutcome::unchanged(input);
         }
@@ -650,6 +730,84 @@ mod tests {
         assert!(matches!(
             TargetTermTable::from_json(&json),
             Err(TermError::Json(_))
+        ));
+    }
+
+    // ---------- 源文触发条件（P2-S / S-03） ----------
+
+    const GATED: &str = r#"{
+        "schema_version": 1,
+        "id": "terms.gated",
+        "version": 1,
+        "terms": [
+            { "target": "en", "preferred": "world", "variants": ["planet earth"],
+              "source_variants": ["世界"] },
+            { "target": "en", "preferred": "computer", "variants": ["calc"] }
+        ]
+    }"#;
+
+    fn gated() -> TargetTermTable {
+        TargetTermTable::from_json(GATED).unwrap()
+    }
+
+    fn ctx<'a>(source: &'a str, target_text: &'a str, tgt: &'a LanguageTag) -> TermContext<'a> {
+        TermContext {
+            source_text: source,
+            target_text,
+            source: &EN,
+            target: tgt,
+        }
+    }
+
+    static EN: std::sync::LazyLock<LanguageTag> =
+        std::sync::LazyLock::new(|| LanguageTag::new("en").unwrap());
+
+    #[test]
+    fn 源文命中触发条件时才改写() {
+        let t = gated();
+        let target = en();
+
+        // 源文提到"世界" → 触发
+        let hit = t.apply_with_context(&ctx("世界很大", "planet earth is big", &target));
+        assert_eq!(hit.text, "world is big");
+        assert_eq!(hit.violations.len(), 1);
+
+        // 源文没提 → 不改（这正是 P2 之前缺的那道闸）
+        let miss = t.apply_with_context(&ctx("火星很小", "planet earth is big", &target));
+        assert_eq!(miss.text, "planet earth is big", "源文没触发就不许改");
+        assert!(miss.violations.is_empty());
+    }
+
+    #[test]
+    fn 没有源文时跳过需要触发的规则() {
+        let t = gated();
+        let target = en();
+        // apply() 没有源文：gated 规则必须跳过，无触发条件的规则照常
+        let outcome = t.apply(
+            "planet earth and a calc",
+            &LanguageTag::new("zh-Hans").unwrap(),
+            &target,
+        );
+        assert_eq!(outcome.text, "planet earth and a computer");
+        assert_eq!(outcome.violations.len(), 1, "只有无触发条件的那条生效");
+    }
+
+    #[test]
+    fn 触发条件的统计可见() {
+        let t = gated();
+        assert_eq!(t.source_gated_count(), 1);
+        assert!(t.summary().contains("需源文触发"));
+    }
+
+    #[test]
+    fn 空触发条件被拒收() {
+        let json = GATED.replace(
+            "\"source_variants\": [\"世界\"]",
+            "\"source_variants\": [\"\"]",
+        );
+        assert!(matches!(
+            TargetTermTable::from_json(&json),
+            Err(TermError::Invalid(_))
         ));
     }
 

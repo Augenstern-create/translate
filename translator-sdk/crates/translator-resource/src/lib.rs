@@ -38,7 +38,10 @@ pub use compat::{
     HostSupport,
 };
 pub use error::{ResourceError, ResourceResult};
-pub use leases::{process_alive, LeaseInfo, LeaseRecord, ResourceLease};
+pub use leases::{
+    probe, process_alive, process_start_id, record_is_live, LeaseInfo, LeaseRecord,
+    ProcessLiveness, ResourceLease,
+};
 pub use lockfile::{StateLock, DEFAULT_LOCK_TIMEOUT};
 pub use manifest::{
     Dependency, ManifestSchema, PackageFile, PayloadSchema, Provenance, ResourceKind,

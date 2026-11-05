@@ -17,7 +17,7 @@ use crate::cache::{CacheEntry, CacheKey, QueryCache};
 use crate::diagnostics::{RuleTrace, TermTrace, TranslateOutput, TranslationDiagnostics};
 use crate::routing;
 use crate::rules::{RulePreview, TextRules};
-use crate::terms::{TargetTermGuard, TermOutcome, TermPolicy};
+use crate::terms::{TargetTermGuard, TermContext, TermOutcome, TermPolicy};
 use crate::text;
 
 /// 协调器配置。
@@ -45,6 +45,8 @@ pub struct CoordinatorConfig {
     /// 输出侧术语约束（P2.4）。`None` 表示不约束。
     pub term_guard: Option<Arc<dyn TargetTermGuard>>,
     /// 术语约束策略。仅在配置了 `term_guard` 时有效。
+    ///
+    /// 默认 [`TermPolicy::Warn`]：只报告不改写（P2-S / S-03）。
     pub term_policy: TermPolicy,
 }
 
@@ -182,7 +184,14 @@ impl Coordinator {
         target: &translator_types::LanguageTag,
     ) -> Option<TermOutcome> {
         let guard = self.config.term_guard.as_ref()?;
-        Some(guard.apply(text, source, target))
+        // 预览没有源文：把预览文本当作源文传入，因此需要源触发条件的规则会被跳过，
+        // 这一点必须在返回值里看得出来（预览不是"线上效果"的等价物）。
+        Some(guard.apply_with_context(&TermContext {
+            source_text: text,
+            target_text: text,
+            source,
+            target,
+        }))
     }
 
     pub fn registry(&self) -> &PluginRegistry {
@@ -395,7 +404,7 @@ impl Coordinator {
         result.text = restored;
 
         // 9) 输出侧术语约束（P2.4）：只在译文上做，且不得触碰受保护跨度
-        let term_trace = self.apply_term_guard(&source, &req.target, &mut result);
+        let term_trace = self.apply_term_guard(&work_text, &source, &req.target, &mut result);
 
         // 10) 补全结果元信息
         result.source = source;
@@ -455,8 +464,11 @@ impl Coordinator {
     }
 
     /// 输出侧术语约束。返回 `None` 表示"没跑"（未配置或策略为 `Off`）。
+    ///
+    /// 传入源文，让实现者能按"源文是否触发"决定要不要检查（P2-S / S-03）。
     fn apply_term_guard(
         &self,
+        source_text: &str,
         source: &translator_types::LanguageTag,
         target: &translator_types::LanguageTag,
         result: &mut TranslationResult,
@@ -465,7 +477,12 @@ impl Coordinator {
             return None;
         }
         let guard = self.config.term_guard.as_ref()?;
-        let outcome = guard.apply(&result.text, source, target);
+        let outcome = guard.apply_with_context(&TermContext {
+            source_text,
+            target_text: &result.text,
+            source,
+            target,
+        });
 
         let enforced = self.config.term_policy.applies_text();
         if enforced {

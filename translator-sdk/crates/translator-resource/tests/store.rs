@@ -775,3 +775,149 @@ fn 并发安装同一版本只有一次成功() {
     assert!(a ^ b, "必须恰好一次成功，实际 a={a} b={b}");
     assert!(store.inspect("dictionary.test").unwrap().versions.len() == 1);
 }
+
+// ============================================================
+// P2-S / S-05：三方对账（audit）与显式清理
+//
+// 对账的定位是"给用户一个能自查的入口"，所以这里断言的重点不是"能修"，
+// 而是"报得准、并且不擅自替用户修"。
+// ============================================================
+
+#[test]
+fn 新建仓库对账是干净的() {
+    let (_root, store) = store();
+    let audit = store.audit().unwrap();
+    assert!(audit.is_clean(), "{}", audit.summary());
+    assert!(!audit.needs_attention());
+    assert_eq!(audit.lease_files, 0);
+    assert!(audit.summary().contains("一致"));
+}
+
+#[test]
+fn 孤儿目录被报出并可显式清理() {
+    let (root, store) = store();
+    let pkg = build_package(root.path(), PackageSpec::v2("dictionary.test", "1.0.0"));
+    store.install_from_dir(&pkg).unwrap();
+
+    // 手工造一个"目录在、状态里没有"的孤儿（模拟安装到一半被中断 / 状态回滚）
+    let orphan = root.path().join("installed/dictionary.test/9.9.9");
+    std::fs::create_dir_all(&orphan).unwrap();
+    std::fs::write(orphan.join("index.fst"), b"leftover").unwrap();
+
+    let audit = store.audit().unwrap();
+    assert!(!audit.is_clean());
+    assert!(audit.needs_attention(), "孤儿目录需要人确认");
+    assert_eq!(audit.orphan_dirs.len(), 1, "{}", audit.summary());
+    assert_eq!(audit.orphan_dirs[0].version, "9.9.9");
+    assert!(audit.summary().contains("孤儿"));
+
+    // 只对账不修：再问一次还是同样的结果
+    assert_eq!(store.audit().unwrap().orphan_dirs.len(), 1);
+
+    let removed = store.prune_orphans().unwrap();
+    assert_eq!(removed.len(), 1);
+    assert_eq!(removed[0].version, "9.9.9");
+    assert!(!orphan.exists());
+    assert!(store.audit().unwrap().is_clean());
+    // 正常版本一点没动
+    assert!(store
+        .version_dir("dictionary.test", "1.0.0")
+        .unwrap()
+        .exists());
+}
+
+#[test]
+fn 目录丢失被报成缺失且不会自动删记录() {
+    let (root, store) = store();
+    let pkg = build_package(root.path(), PackageSpec::v2("dictionary.test", "1.0.0"));
+    store.install_from_dir(&pkg).unwrap();
+
+    // 模拟"人手工删了目录"或"文件系统丢了目录项"
+    std::fs::remove_dir_all(root.path().join("installed/dictionary.test/1.0.0")).unwrap();
+
+    let audit = store.audit().unwrap();
+    assert!(!audit.is_clean());
+    assert!(audit.needs_attention());
+    assert_eq!(audit.missing_dirs.len(), 1);
+    assert_eq!(audit.missing_dirs[0].version, "1.0.0");
+    assert_eq!(
+        audit.active_missing,
+        vec!["dictionary.test@1.0.0".to_string()],
+        "激活版本目录缺失必须单独报出来"
+    );
+    assert!(
+        audit.summary().contains("激活版本目录缺失"),
+        "{}",
+        audit.summary()
+    );
+
+    // 缺失方向不自动修：状态记录还在（用户可以选择重新安装或手工清理）
+    assert_eq!(store.inspect("dictionary.test").unwrap().versions.len(), 1);
+    assert!(
+        store.prune_orphans().unwrap().is_empty(),
+        "别把缺失当孤儿删"
+    );
+    assert_eq!(store.audit().unwrap().missing_dirs.len(), 1);
+}
+
+#[test]
+fn 半成品残留可被对账发现并自动回收() {
+    let (root, store) = store();
+    let pkg = build_package(root.path(), PackageSpec::v2("dictionary.test", "1.0.0"));
+    store.install_from_dir(&pkg).unwrap();
+
+    // staging 半成品 + 写状态时崩溃残留的临时文件
+    let staging = root.path().join("staging/dictionary.test-2.0.0-4242-abc");
+    std::fs::create_dir_all(&staging).unwrap();
+    std::fs::write(staging.join("manifest.json"), b"{}").unwrap();
+    let tmp = root.path().join("state.json.tmp-4242-abc");
+    std::fs::write(&tmp, b"{}").unwrap();
+
+    let audit = store.audit().unwrap();
+    assert_eq!(audit.staging_dirs.len(), 1);
+    assert_eq!(audit.stale_tmp_files.len(), 1);
+    assert!(!audit.is_clean());
+    assert!(
+        !audit.needs_attention(),
+        "半成品是自动可清的，不该要求人工介入"
+    );
+
+    let report = store.recover().unwrap();
+    assert_eq!(report.removed_staging, 1);
+    assert_eq!(report.removed_temp_files, 1);
+    assert!(!staging.exists());
+    assert!(!tmp.exists());
+    assert!(store.audit().unwrap().is_clean());
+}
+
+#[test]
+fn 被租用的孤儿目录不会被清理() {
+    let (root, store) = store();
+    let pkg = build_package(root.path(), PackageSpec::v2("dictionary.test", "1.0.0"));
+    store.install_from_dir(&pkg).unwrap();
+
+    let orphan = root.path().join("installed/dictionary.test/9.9.9");
+    std::fs::create_dir_all(&orphan).unwrap();
+    // 孤儿目录也可能正被别人 mmap：手写一条"本进程"的租约（本进程一定活着）
+    let lease_dir = root.path().join("leases/dictionary.test/9.9.9");
+    std::fs::create_dir_all(&lease_dir).unwrap();
+    std::fs::write(
+        lease_dir.join(format!("{}-1.json", std::process::id())),
+        format!(
+            r#"{{"pid":{},"holder":"other-process","acquired_at_unix":0}}"#,
+            std::process::id()
+        ),
+    )
+    .unwrap();
+
+    let audit = store.audit().unwrap();
+    assert_eq!(audit.orphan_dirs.len(), 1);
+    assert_eq!(audit.lease_files, 1);
+    assert_eq!(audit.stale_leases, 0, "活进程的租约不算失效");
+
+    let removed = store.prune_orphans().unwrap();
+    assert!(removed.is_empty(), "被租用的目录不得删除");
+    assert!(orphan.exists(), "目录必须还在");
+    // 租约本身也留着，由持有人自己释放
+    assert_eq!(store.all_leases().unwrap().len(), 1);
+}

@@ -42,6 +42,7 @@ translator-cli —— 轻量跨平台翻译 SDK 调试工具
   resource cleanup <id> [--keep <n>]   保留激活 + 最近 n 个历史版本
   resource lease [<id> [<version>]]    列出租约（谁在用哪个版本）
   resource lease reclaim               回收已死进程留下的租约
+  resource audit [--prune]             三方对账（state ↔ installed ↔ staging）；--prune 删孤儿目录
   memory                               打印内存预算与实际挂载情况
   translate <文本> [--from <lang>] [--to <lang>] [--policy <p>] [--explain]
              --to 缺省时按源语言推断：中文→en，其它→zh-Hans
@@ -55,7 +56,7 @@ translator-cli —— 轻量跨平台翻译 SDK 调试工具
   --store <仓库目录>  资源仓库根目录（默认 .resources）
   --memory-budget <MiB>  峰值内存上限；超限时 build() 直接 OutOfBudget
   --terms <术语表>   输出侧术语表（JSON，P2.4）
-  --term-policy <p>  术语策略：off | warn | enforce（默认 enforce）
+  --term-policy <p>  术语策略：off | warn | enforce（默认 warn：只报告不改写）
   --rules <规则文件>  挂载规则包（JSON 或已编译的二进制）
 
 策略 (--policy):
@@ -522,7 +523,9 @@ fn cmd_detect(translator: &translator_api::Translator, args: &[String]) -> ExitC
 
 fn cmd_resource(store_dir: &str, args: &[String]) -> ExitCode {
     let Some(action) = args.first() else {
-        eprintln!("resource 需要子命令：install | list | inspect | activate | rollback | uninstall | cleanup");
+        eprintln!(
+            "resource 需要子命令：install | list | inspect | activate | rollback | uninstall | cleanup | lease | audit"
+        );
         return ExitCode::from(2);
     };
 
@@ -791,6 +794,63 @@ fn cmd_resource(store_dir: &str, args: &[String]) -> ExitCode {
                     ExitCode::FAILURE
                 }
             }
+        }
+        "audit" => {
+            // 对账：只报告，不改动；--prune 才删孤儿目录（P2-S / S-05）
+            let prune = args.iter().any(|a| a == "--prune");
+            let audit = match store.audit() {
+                Ok(audit) => audit,
+                Err(err) => {
+                    eprintln!("对账失败：{err}");
+                    return ExitCode::FAILURE;
+                }
+            };
+            println!("{}", audit.summary());
+            println!();
+            println!(
+                "记录缺目录 {} / 孤儿目录 {} / 激活缺失 {} / staging {} / 临时文件 {} / 租约 {}（失效 {}）",
+                audit.missing_dirs.len(),
+                audit.orphan_dirs.len(),
+                audit.active_missing.len(),
+                audit.staging_dirs.len(),
+                audit.stale_tmp_files.len(),
+                audit.lease_files,
+                audit.stale_leases
+            );
+            for item in &audit.missing_dirs {
+                println!("  缺失：{item}");
+            }
+            for item in &audit.orphan_dirs {
+                println!("  孤儿：{item}");
+            }
+            for item in &audit.active_missing {
+                println!("  激活缺失：{item}");
+            }
+
+            if prune {
+                match store.prune_orphans() {
+                    Ok(removed) if removed.is_empty() => println!("没有需要删除的孤儿目录"),
+                    Ok(removed) => {
+                        for item in removed {
+                            println!("已删除孤儿目录：{item}");
+                        }
+                        println!("staging / 临时文件残留可用 `recover()` 或下次安装自动清理。");
+                    }
+                    Err(err) => {
+                        eprintln!("删除孤儿目录失败：{err}");
+                        return ExitCode::FAILURE;
+                    }
+                }
+                return ExitCode::SUCCESS;
+            }
+
+            if audit.needs_attention() {
+                println!();
+                println!("注：对账只报告不改动。孤儿目录可用 `resource audit --prune` 删除；");
+                println!("    「记录缺目录」是数据丢失，需要人决定重装还是清记录——不替你猜。");
+                return ExitCode::FAILURE;
+            }
+            ExitCode::SUCCESS
         }
         other => {
             eprintln!("未知 resource 子命令：{other}");
