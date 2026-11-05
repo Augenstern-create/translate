@@ -59,6 +59,18 @@ translator-cli —— 轻量跨平台翻译 SDK 调试工具
   --term-policy <p>  术语策略：off | warn | enforce（默认 warn：只报告不改写）
   --rules <规则文件>  挂载规则包（JSON 或已编译的二进制）
 
+真实本地 NMT（需以 --features nmt 编译）:
+  --nmt                    挂载 Bergamot 引擎（缺省仍用 Mock）
+  --nmt-native <path>      bergamot native 可执行文件（或 NMT_BERGAMOT_BIN）
+  --nmt-model-dir <dir>    模型目录（或 NMT_MODEL_DIR）
+  --nmt-worker <path>      nmt-worker 可执行文件（或 NMT_WORKER_BIN）
+  --nmt-snapshot-root <d>  快照根目录（或 NMT_SNAPSHOT_ROOT）
+  --nmt-protection <p>     segment | marker（默认 segment）
+  --nmt-threads <n>        native 线程数（默认 1）
+  --nmt-beam <n>           beam size（默认 1）
+  --nmt-source <lang>      引擎语言对源（默认 en）
+  --nmt-target <lang>      引擎语言对目标（默认 zh-Hans）
+
 策略 (--policy):
   auto         AutoLocalFirst（默认）
   dictionary   DictionaryOnly
@@ -95,7 +107,7 @@ fn main() -> ExitCode {
         return cmd_resource(&options.store, &args[1..]);
     }
 
-    let translator = match build_translator(&options) {
+    let (translator, banner) = match build_translator(&options) {
         Ok(t) => t,
         Err(err) => {
             eprintln!("插件注册失败：{err}");
@@ -104,7 +116,7 @@ fn main() -> ExitCode {
     };
 
     match args[0].as_str() {
-        "translate" => cmd_translate(&translator, &args[1..]),
+        "translate" => cmd_translate(&translator, &args[1..], &banner),
         "lookup" => cmd_lookup(&translator, &args[1..]),
         "detect" => cmd_detect(&translator, &args[1..]),
         "capabilities" => cmd_capabilities(&translator),
@@ -128,6 +140,29 @@ struct GlobalOptions {
     /// 输出侧术语表文件。
     terms: Option<String>,
     term_policy: translator_api::TermPolicy,
+    /// 真实本地 NMT 选项（`--nmt*`）。
+    nmt: NmtOptions,
+}
+
+/// 真实本地 NMT 的全局选项。只有以 `--features nmt` 编译出的二进制才认得它们。
+#[derive(Default)]
+struct NmtOptions {
+    enabled: bool,
+    worker: Option<String>,
+    native: Option<String>,
+    model_dir: Option<String>,
+    snapshot_root: Option<String>,
+    protection: Option<String>,
+    threads: Option<u16>,
+    beam: Option<u8>,
+    source: Option<String>,
+    target: Option<String>,
+}
+
+/// 运行时身份横幅（`--diagnose` 时打印）。不含 pid、socket、权重路径。
+#[derive(Default)]
+struct RuntimeBanner {
+    lines: Vec<(&'static str, String)>,
 }
 
 const DEFAULT_STORE: &str = ".resources";
@@ -142,6 +177,7 @@ fn take_global_options(args: &mut Vec<String>) -> Result<GlobalOptions, ExitCode
         memory_budget: None,
         terms: None,
         term_policy: translator_api::TermPolicy::default(),
+        nmt: NmtOptions::default(),
     };
 
     let take = |args: &mut Vec<String>, flag: &str| -> Option<String> {
@@ -184,6 +220,45 @@ fn take_global_options(args: &mut Vec<String>) -> Result<GlobalOptions, ExitCode
         }
     }
 
+    options.nmt.worker = take(args, "--nmt-worker");
+    options.nmt.native = take(args, "--nmt-native");
+    options.nmt.model_dir = take(args, "--nmt-model-dir");
+    options.nmt.snapshot_root = take(args, "--nmt-snapshot-root");
+    options.nmt.protection = take(args, "--nmt-protection");
+    options.nmt.source = take(args, "--nmt-source");
+    options.nmt.target = take(args, "--nmt-target");
+    if let Some(raw) = take(args, "--nmt-threads") {
+        match raw.parse::<u16>() {
+            Ok(n) if n > 0 => options.nmt.threads = Some(n),
+            _ => {
+                eprintln!("--nmt-threads 需要正整数：{raw}");
+                return Err(ExitCode::from(2));
+            }
+        }
+    }
+    if let Some(raw) = take(args, "--nmt-beam") {
+        match raw.parse::<u8>() {
+            Ok(n) if n > 0 => options.nmt.beam = Some(n),
+            _ => {
+                eprintln!("--nmt-beam 需要 1..=255：{raw}");
+                return Err(ExitCode::from(2));
+            }
+        }
+    }
+    if let Some(pos) = args.iter().position(|a| a == "--nmt") {
+        options.nmt.enabled = true;
+        args.remove(pos);
+    }
+    if !options.nmt.enabled
+        && (options.nmt.worker.is_some()
+            || options.nmt.native.is_some()
+            || options.nmt.model_dir.is_some()
+            || options.nmt.protection.is_some())
+    {
+        eprintln!("--nmt-* 需要与 --nmt 一起使用");
+        return Err(ExitCode::from(2));
+    }
+
     if options.dict.is_some() && options.dict_id.is_some() {
         eprintln!("--dict 与 --dict-id 只能用一个");
         return Err(ExitCode::from(2));
@@ -198,7 +273,7 @@ fn take_global_options(args: &mut Vec<String>) -> Result<GlobalOptions, ExitCode
 /// 持有租约——另一个进程想 `uninstall` 这个版本会被 `ResourceLeased` 拒绝（P2.3）。
 fn build_translator(
     options: &GlobalOptions,
-) -> Result<translator_api::Translator, translator_api::TranslationError> {
+) -> Result<(translator_api::Translator, RuntimeBanner), translator_api::TranslationError> {
     let mut builder = translator_api::Translator::builder()
         // 本地 NMT：模拟 Marian（真实模型在 P3 接入）
         .engine(MockNmtEngine::new())
@@ -206,6 +281,15 @@ fn build_translator(
         .engine(MockRemoteEngine::new(false))
         .backend(MockBackend::new())
         .cache_capacity(64);
+
+    // 真实本地 NMT：显式传 `--nmt` 才挂载；未编译该特性时给出明确提示而不是静默降级
+    let banner = match register_nmt(builder, &options.nmt) {
+        Ok((next, banner)) => {
+            builder = next;
+            banner
+        }
+        Err(err) => return Err(err),
+    };
 
     if let Some(path) = &options.rules {
         builder = builder.rules_file(path);
@@ -240,10 +324,154 @@ fn build_translator(
         }
     }
 
-    builder.build()
+    builder.build().map(|translator| (translator, banner))
 }
 
-fn cmd_translate(translator: &translator_api::Translator, args: &[String]) -> ExitCode {
+/// 把 `--nmt*` 翻成 `BergamotNmtConfig` 并挂上引擎；返回身份横幅。
+#[cfg(feature = "nmt")]
+fn register_nmt(
+    builder: translator_api::TranslatorBuilder,
+    options: &NmtOptions,
+) -> Result<(translator_api::TranslatorBuilder, RuntimeBanner), translator_api::TranslationError> {
+    use translator_api::nmt_bergamot::{BergamotNmtConfig, BergamotNmtEngine};
+
+    if !options.enabled {
+        return Ok((builder, RuntimeBanner::default()));
+    }
+
+    let env = |key: &str| std::env::var(key).ok().filter(|v| !v.is_empty());
+    let native = options
+        .native
+        .clone()
+        .or_else(|| env("NMT_BERGAMOT_BIN"))
+        .ok_or_else(|| {
+            translator_api::TranslationError::new(
+                translator_api::TranslationErrorCode::RuntimeInitFailed,
+                "缺少 --nmt-native 或环境变量 NMT_BERGAMOT_BIN",
+            )
+        })?;
+    let model_dir = options
+        .model_dir
+        .clone()
+        .or_else(|| env("NMT_MODEL_DIR"))
+        .ok_or_else(|| {
+            translator_api::TranslationError::new(
+                translator_api::TranslationErrorCode::RuntimeInitFailed,
+                "缺少 --nmt-model-dir 或环境变量 NMT_MODEL_DIR",
+            )
+        })?;
+    let worker = options
+        .worker
+        .clone()
+        .or_else(|| env("NMT_WORKER_BIN"))
+        .unwrap_or_else(|| "nmt-worker".to_string());
+
+    let mut config = BergamotNmtConfig::new(worker, native, model_dir);
+    if let Some(root) = options
+        .snapshot_root
+        .clone()
+        .or_else(|| env("NMT_SNAPSHOT_ROOT"))
+    {
+        config.snapshot_root = std::path::PathBuf::from(root);
+    }
+    if let Some(raw) = &options.protection {
+        config.protection = match raw.as_str() {
+            "segment" => translator_api::nmt_bergamot::ProtectionMode::Segment,
+            "marker" => translator_api::nmt_bergamot::ProtectionMode::Marker,
+            other => {
+                return Err(translator_api::TranslationError::new(
+                    translator_api::TranslationErrorCode::InvalidRequest,
+                    format!("--nmt-protection 只能是 segment | marker：{other}"),
+                ));
+            }
+        };
+    }
+    if let Some(threads) = options.threads {
+        config.cpu_threads = threads;
+    }
+    if let Some(beam) = options.beam {
+        config.beam_size = beam;
+    }
+    if let Some(source) = &options.source {
+        config.source = LanguageTag::new(source)?;
+    }
+    if let Some(target) = &options.target {
+        config.target = LanguageTag::new(target)?;
+    }
+
+    let engine = std::sync::Arc::new(BergamotNmtEngine::new(config)?);
+    // 显式加载：把"模型坏了"暴露在启动阶段，而不是第一条译文时
+    let identity = engine.load()?;
+
+    let mut banner = RuntimeBanner::default();
+    banner
+        .lines
+        .push(("引擎", translator_api::nmt_bergamot::ENGINE_ID.to_string()));
+    banner
+        .lines
+        .push(("模型版本", identity.model_revision.clone()));
+    banner.lines.push((
+        "运行时",
+        identity.runtime.clone().unwrap_or_else(|| "unknown".into()),
+    ));
+    banner.lines.push((
+        "构建",
+        identity
+            .runtime_build
+            .clone()
+            .unwrap_or_else(|| "unknown".into()),
+    ));
+    banner.lines.push((
+        "线程/beam",
+        format!("{}/{}", identity.threads, identity.beam_size),
+    ));
+    banner.lines.push((
+        "保护策略",
+        match engine.config().protection {
+            translator_api::nmt_bergamot::ProtectionMode::Segment => "分段（受保护跨度不进模型）",
+            translator_api::nmt_bergamot::ProtectionMode::Marker => {
+                "标记（受保护跨度以占位符进模型）"
+            }
+        }
+        .to_string(),
+    ));
+    banner.lines.push((
+        "策略版本",
+        translator_api::nmt_bergamot::protection_label().to_string(),
+    ));
+    // 执行计划摘要 = 未来的缓存身份（ADR-027）：模型五文件摘要 + 解码参数 + 语言对 + 保护策略
+    let plan = engine.plan(&identity, engine.config().protection);
+    banner.lines.push((
+        "计划摘要",
+        format!(
+            "{}（plan-v1，隐私域 {}）",
+            plan.short_digest(),
+            plan.privacy_domain
+        ),
+    ));
+
+    Ok((builder.engine(engine), banner))
+}
+
+#[cfg(not(feature = "nmt"))]
+fn register_nmt(
+    builder: translator_api::TranslatorBuilder,
+    options: &NmtOptions,
+) -> Result<(translator_api::TranslatorBuilder, RuntimeBanner), translator_api::TranslationError> {
+    if options.enabled {
+        return Err(translator_api::TranslationError::new(
+            translator_api::TranslationErrorCode::CapabilityUnavailable,
+            "本二进制未启用 nmt 特性：请用 `cargo build -p translator-cli --features nmt` 重新编译",
+        ));
+    }
+    Ok((builder, RuntimeBanner::default()))
+}
+
+fn cmd_translate(
+    translator: &translator_api::Translator,
+    args: &[String],
+    banner: &RuntimeBanner,
+) -> ExitCode {
     let mut text: Option<String> = None;
     let mut from: Option<String> = None;
     let mut to: Option<String> = None;
@@ -398,6 +626,13 @@ fn cmd_translate(translator: &translator_api::Translator, args: &[String]) -> Ex
             }
             if diagnose {
                 // 再跑一次只是为了拿诊断；缓存命中所以没有额外计算成本
+                if !banner.lines.is_empty() {
+                    println!();
+                    println!("运行时  （真实本地 NMT）");
+                    for (key, value) in &banner.lines {
+                        println!("  {key:<8}{value}");
+                    }
+                }
                 if let Ok(out) = pollster::block_on(translator.translate_with_diagnostics(&req)) {
                     println!();
                     println!("诊断    {}", out.diagnostics.summary());

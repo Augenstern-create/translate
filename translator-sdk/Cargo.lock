@@ -410,6 +410,7 @@ dependencies = [
  "tempfile",
  "translator-core",
  "translator-dictionary",
+ "translator-nmt-bergamot",
  "translator-plugin-api",
  "translator-resource",
  "translator-rules",
@@ -432,6 +433,7 @@ name = "translator-core"
 version = "0.1.0"
 dependencies = [
  "pollster",
+ "sha2",
  "translator-analysis",
  "translator-plugin-api",
  "translator-types",
@@ -451,6 +453,18 @@ dependencies = [
  "sha2",
  "tempfile",
  "translator-plugin-api",
+ "translator-types",
+]
+
+[[package]]
+name = "translator-nmt-bergamot"
+version = "0.1.0"
+dependencies = [
+ "pollster",
+ "tempfile",
+ "translator-core",
+ "translator-plugin-api",
+ "translator-runtime",
  "translator-types",
 ]
 

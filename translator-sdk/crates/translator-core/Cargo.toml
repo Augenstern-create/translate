@@ -9,6 +9,8 @@ license.workspace = true
 translator-types.workspace = true
 translator-plugin-api.workspace = true
 translator-analysis.workspace = true
+# 执行计划 digest（P3.1-D）：纯 Rust、无 native 依赖
+sha2.workspace = true
 
 [dev-dependencies]
 # 路由测试需要 Mock 引擎

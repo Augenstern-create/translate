@@ -12,7 +12,7 @@
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use std::path::Path;
 
@@ -60,6 +60,11 @@ pub struct ProcessTransport {
     restart_budget: u32,
     state: Mutex<State>,
     shutdown_requested: AtomicU32,
+    /// single-flight 闸门：加载是一个"昂贵且不可并行"的动作，
+    /// 只有拿到闸门的调用者才会真正加载，其余人在闸门外排队并在进入后复用结果。
+    load_gate: Mutex<()>,
+    /// 进行中的翻译请求数（租约的可观测部分；`docs/17` LC-02）。
+    active_requests: AtomicU32,
 }
 
 impl ProcessTransport {
@@ -79,11 +84,45 @@ impl ProcessTransport {
                 next_epoch: 1,
             }),
             shutdown_requested: AtomicU32::new(0),
+            load_gate: Mutex::new(()),
+            active_requests: AtomicU32::new(0),
         }
     }
 
     fn guard(&self) -> std::sync::MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// 带截止时间地拿状态锁：**排队不能无限等**（`docs/17` LC-04）。
+    fn guard_until(
+        &self,
+        deadline: Option<Instant>,
+    ) -> Result<std::sync::MutexGuard<'_, State>, RuntimeError> {
+        let started = Instant::now();
+        loop {
+            match self.state.try_lock() {
+                Ok(guard) => return Ok(guard),
+                Err(std::sync::TryLockError::Poisoned(poisoned)) => {
+                    return Ok(poisoned.into_inner());
+                }
+                Err(std::sync::TryLockError::WouldBlock) => {
+                    if let Some(deadline) = deadline {
+                        if Instant::now() >= deadline {
+                            return Err(RuntimeError::Timeout {
+                                operation: "queue",
+                                waited_ms: started.elapsed().as_millis() as u64,
+                            });
+                        }
+                    }
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            }
+        }
+    }
+
+    /// 当前是否有请求正在执行（租约观测，`docs/17` LC-02）。
+    pub fn active_requests(&self) -> u32 {
+        self.active_requests.load(Ordering::SeqCst)
     }
 
     /// 平台门禁。
@@ -179,6 +218,20 @@ impl ProcessTransport {
         threads: u16,
         beam_size: u8,
     ) -> Result<ModelInfo, RuntimeError> {
+        // single-flight：同一个传输层上并发调用只会真正加载一次（`docs/17` LC-01）。
+        // 闸门只在"加载"这一件事上互斥；翻译请求不会拿到它。
+        let _gate = self.load_gate.lock().unwrap_or_else(|e| e.into_inner());
+        let expected_revision = manifest.content_digest();
+        // 注意：scrutinee 里的 `guard()` 临时量会活到整个 if-let 结束，
+        // 在体内再取锁就是自死锁（std::sync::Mutex 不可重入）。
+        let cached = self.guard().loaded.clone();
+        if let Some(info) = cached {
+            let worker_alive = self.guard().worker.as_ref().is_some_and(|w| !w.is_dead());
+            if info.model_revision == expected_revision && worker_alive {
+                return Ok(info);
+            }
+        }
+
         let started = Instant::now();
         let snapshot = ModelSnapshot::materialize(manifest, snapshot_root, threads, beam_size)?;
         let prepare_ms = started.elapsed().as_millis() as u64;
@@ -214,6 +267,58 @@ impl ProcessTransport {
             .as_ref()
             .and_then(|snap| snap.spec().path_of(crate::model::FileRole::Model))
             .map(std::path::PathBuf::from)
+    }
+}
+
+impl ProcessTransport {
+    /// 带**绝对截止时间**的翻译：排队等待与执行共用同一个预算。
+    ///
+    /// 与 [`RuntimeTransport::translate`] 的区别只有一处：拿不到锁时会按时返回
+    /// `Timeout{operation:"queue"}`，而不是无限等（`docs/17` LC-04）。
+    pub fn translate_with_deadline(
+        &self,
+        job: &TranslationJob,
+        deadline: Instant,
+    ) -> Result<TranslationReply, RuntimeError> {
+        let mut state = self.guard_until(Some(deadline))?;
+        self.ensure_worker(&mut state)?;
+        let Some(loaded) = state.loaded.clone() else {
+            return Err(RuntimeError::InitFailed(
+                "尚未加载模型（worker 可能已重启，需要重新 load）".into(),
+            ));
+        };
+        let worker = state
+            .worker
+            .as_mut()
+            .ok_or_else(|| RuntimeError::InitFailed("worker 未就绪".into()))?;
+        if Instant::now() >= deadline {
+            return Err(RuntimeError::Timeout {
+                operation: "queue",
+                waited_ms: 0,
+            });
+        }
+        self.active_requests.fetch_add(1, Ordering::SeqCst);
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let outcome = worker.request_with_timeout(
+            Request::Translate {
+                text: job.text.clone(),
+                target: job.target.clone(),
+            },
+            remaining,
+        );
+        self.active_requests.fetch_sub(1, Ordering::SeqCst);
+        let payload = outcome?;
+        let Payload::Translated { text, elapsed_ms } = payload else {
+            return Err(RuntimeError::Protocol(
+                "Translate 返回了非 Translated 载荷".into(),
+            ));
+        };
+        Ok(TranslationReply {
+            text,
+            worker_elapsed_ms: elapsed_ms,
+            worker_epoch: worker.epoch(),
+            model_revision: loaded.model_revision,
+        })
     }
 }
 
@@ -286,10 +391,13 @@ impl RuntimeTransport for ProcessTransport {
             .worker
             .as_mut()
             .ok_or_else(|| RuntimeError::InitFailed("worker 未就绪".into()))?;
+        self.active_requests.fetch_add(1, Ordering::SeqCst);
         let payload = worker.request(Request::Translate {
             text: job.text.clone(),
             target: job.target.clone(),
-        })?;
+        });
+        self.active_requests.fetch_sub(1, Ordering::SeqCst);
+        let payload = payload?;
         let Payload::Translated { text, elapsed_ms } = payload else {
             return Err(RuntimeError::Protocol(
                 "Translate 返回了非 Translated 载荷".into(),

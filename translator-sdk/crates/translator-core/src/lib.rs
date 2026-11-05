@@ -23,6 +23,8 @@ pub mod budget;
 pub mod cache;
 pub mod coordinator;
 pub mod diagnostics;
+pub mod plan;
+pub mod protection;
 pub mod routing;
 pub mod rules;
 pub mod terms;

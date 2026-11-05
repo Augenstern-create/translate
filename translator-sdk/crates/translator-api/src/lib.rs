@@ -28,6 +28,9 @@ pub use translator_dictionary as dictionary;
 #[cfg(feature = "rules")]
 pub use translator_rules as rules;
 
+#[cfg(feature = "nmt-bergamot")]
+pub use translator_nmt_bergamot as nmt_bergamot;
+
 // 规则契约：即使不开 `rules` feature，宿主也可以自己实现 `TextRules` 注入。
 pub use translator_core::rules::{NoRules, RuleOutcome, RulePreview, TextRules};
 // 术语契约（P2.4）：同上，宿主可自己实现 `TargetTermGuard`。
@@ -241,6 +244,23 @@ impl TranslatorBuilder {
             memory_limit: None,
             #[cfg(feature = "resource")]
             leases: Vec::new(),
+        }
+    }
+
+    /// 挂载真实本地 NMT 引擎（需启用 `nmt-bergamot` feature）。
+    ///
+    /// 构造期只做**文件存在性与摘要校验**，不 spawn 进程、不加载权重：
+    /// 首次翻译（或宿主显式调用 `engine.load()`）才会真正加载。
+    /// 构造失败计入构建错误，`build()` 时返回，不会带病运行。
+    #[cfg(feature = "nmt-bergamot")]
+    pub fn nmt_bergamot(self, config: translator_nmt_bergamot::BergamotNmtConfig) -> Self {
+        match translator_nmt_bergamot::BergamotNmtEngine::new(config) {
+            Ok(engine) => self.engine(Arc::new(engine)),
+            Err(err) => {
+                let mut this = self;
+                this.errors.push(err);
+                this
+            }
         }
     }
 

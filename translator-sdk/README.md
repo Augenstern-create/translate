@@ -18,11 +18,13 @@
 - `12_P3.0技术审查与P3.1准入决策.md` — 外部审查归档：P3.0 有条件通过、三个 P0 门槛、P3.1-A～E 拆分与测试矩阵
 - `13_P3.1-A报告.md` — 独立 worker 进程 + 帧协议 + mock worker（实现/测试/偏差三部分）
 - `14_P3.1-A技术审查与P3.1-B实施建议.md` — 外部审查归档：P3.1-A 有条件通过、P3.1-B 实施约束与 B-T01…T12 验收矩阵
-- `15_P3.1-B报告.md` — **本轮**：真实 Bergamot 进 worker 进程（隔离快照 / 类型化配置 / 分阶段超时 / 实测基线）
+- `15_P3.1-B报告.md` — 真实 Bergamot 进 worker 进程（隔离快照 / 类型化配置 / 分阶段超时 / 实测基线）
+- `17_P3完整实施与验收总报告.md` — 外部 P3 验收框架归档：C/D/E 待办、SP-01～12 与 LC-01～10 矩阵、发布红线
+- `18_P3.1-CDE集成验收报告.md` — **本轮**：严格文本保护（默认安全分段）+ 执行计划/single-flight/排队截止时间 + 真实 NMT 接入 `Translator`/CLI
 
 ---
 
-## 当前状态：P0 + P1 + P2 + P2-S + P3.0 + P3.1-A 完成；**P3.1-B 完成**（真实 Bergamot 已经在独立进程里跑通，占位符保护仍未做）
+## 当前状态：P0 + P1 + P2 + P2-S + P3.0 + P3.1-A + P3.1-B 完成；**P3.1-C/D/E 完成**（公共入口能跑真实模型，且结构不会被静默破坏）。P3.2/P3.3/P3.4 仍 pending
 
 - **P0**：workspace 结构、核心类型、插件契约、协调器与路由、缓存、门面 API、Mock 插件、CLI。
   **不接任何真实模型、不装任何 native 库**，整条链路即可运行 —— 这是设计文档规定的交付判据。
@@ -90,7 +92,29 @@
     native 峰值 **413.8 MiB**（与 P3.0 一致）、卸载 43 ms、重载 725 ms；
   - 崩溃隔离：缺权重让 Marian 真 `abort()`（SIGABRT）→ 宿主收到 `RuntimeInitFailed` 并存活；
     native 被外部 SIGKILL → `BackendFailed` + worker 退出 → 下一次请求才重启（不重放）。
-  详见 `../docs/15_P3.1-B报告.md`。**占位符 `{name}` 仍会被吞（`docs/15` §2.5），那是 P3.1-C。**
+  详见 `../docs/15_P3.1-B报告.md`。
+
+- **P3.1-C/D/E**（`docs/18`，一次合并批次）：公共入口终于能跑真实模型，而且**结构不会被静默破坏**。
+  - **严格文本保护**（`translator-core::protection`）：URL / 邮箱 / 反引号代码 / `{name}` 在送入真实模型前被摘出，
+    译文按字节拼回；缺失 / 重复 / 未知标记 → `IntegrityFailure`，不返回"看起来正常"的译文。
+    **默认策略是安全分段**：受保护跨度根本不进模型。原因不是偷懒——5 种候选标记 × 7 类句子实测
+    没有一种能稳定穿过真实 Marian（最好的 `#Pn#` 也只过 6/7），"唯一无碰撞标记"在该后端上不成立。
+    代价：一句 N 个跨度 = N+1 次 native 调用，且逐段丢失上下文。
+  - **执行计划与摘要**（`translator-core::plan`）：`plan-v1` 覆盖 engine / runtime / runtime build / 模型五文件摘要 /
+    语言对 / beam / 线程 / 保护策略 / 规则与术语 / 隐私域，`canonical()` 稳定编码 → sha256。
+    摘要就是**未来的**缓存身份；金值被钉在单元测试里。真实 NMT 目前**仍无缓存**，所以摘要只用于诊断。
+  - **生命周期**：single-flight 加载（并发 10 次只 spawn 一次）、排队绝对截止时间（到期 `Timeout{operation:"queue"}`）、
+    在飞请求计数、卸载等待在飞请求（不杀进程、不死锁）、worker epoch 校验防止复用旧加载。
+  - **真实引擎** `translator-nmt-bergamot`：`ENGINE_ID = nmt.bergamot.cli`，`supports()` 只认配置的语言对，
+    错误原码透传、**没有任何自动远程回退分支**；经 `TranslatorBuilder::nmt_bergamot()`（feature `nmt-bergamot`）
+    与 CLI 的 `--nmt`（feature `nmt`）接入。
+  - 实测（1 线程、beam=1）：`Hello world!` → `你好,世界!`（首句含加载 ≈ 1.13 s，热态 9–15 ms）；
+    `Hello {name}! See https://example.com/a for {name}.` → 两个跨度逐字节保留。
+  - **默认依赖树里没有 native 与进程代码**：`cargo tree -p translator-api` 默认看不到
+    `translator-nmt-bergamot`/`translator-runtime`；未编译 `nmt` 特性却传 `--nmt` 会得到
+    `CapabilityUnavailable`，不会静默降级成 Mock。
+  详见 `../docs/18_P3.1-CDE集成验收报告.md`。**P3.2（反向依赖、安装 `kill -9` 注入）/ P3.3（PSS、长稳、质量评分）/
+  P3.4（许可、CI、打包）仍 pending，P3 不标 Done。**
 
 词库与规则都是**可选 feature**：不开 `dictionary` 时 `translator-api` 依赖树里没有 `rusqlite`；
 不开 `rules` 时没有 JSON 解析依赖（但 `TextRules` 契约始终可用，宿主可自己实现）。
@@ -108,6 +132,7 @@ translator-sdk/
 │   ├── translator-dictionary/  # 词典包读取、FST+SQLite 查询、引擎实现
 │   ├── translator-resource/    # 资源协议（v1/v2）+ 安装/激活/回滚仓库 + 租约 + 跨进程锁
 │   ├── translator-runtime/     # P3.1-A：worker 进程边界（帧协议 / 生命周期 / 模型校验）+ mock worker
+│   ├── translator-nmt-bergamot/# P3.1-E：真实本地 NMT 引擎（保护计划 + 进程传输 → TranslationEngine）
 │   └── translator-api/         # 唯一对外入口 + Builder
 ├── apps/
 │   └── translator-cli/         # 调试与演示命令行
@@ -130,7 +155,8 @@ translator-types  ←  translator-plugin-api  ←  translator-core  ←  transla
 translator-dictionary  ←  translator-api（仅 `dictionary` feature）
 translator-rules       ←  translator-api（仅 `rules` feature；内含术语表编译）
 translator-resource    ←  translator-api（仅 `resource` feature）
-translator-runtime     ←  （尚无上层消费者；P3.1-D 由 translator-api 接入）
+translator-nmt-bergamot ←  translator-api（仅 `nmt-bergamot` feature）+ CLI（仅 `nmt` feature）
+translator-runtime     ←  translator-nmt-bergamot（唯一上层消费者）
 ```
 
 `translator-types` 与 `translator-plugin-api` **不依赖任何** native runtime、HTTP 客户端或 SQLite。
@@ -290,6 +316,48 @@ cargo run --release -p translator-cli -- --dict resources/zh-en --memory-budget 
 预算在 `build()` 装配期判定，超限返回 `OutOfBudget`。数字是各组件**自报的下界估计**
 （索引大小 + 配置的页缓存 + 一个写死的连接开销），**不是 RSS**：
 真实包实测 RSS 约 24 MB，而记账只有约 3 MB。所以它只能回答"肯定不够"，不能回答"够用"。
+
+### 真实本地 NMT（Bergamot，可选 feature）
+
+默认构建**不需要**任何模型或 native 库；要用真实模型必须显式开 feature 并给出路径：
+
+```bash
+export NMT_BERGAMOT_BIN=/path/to/bergamot          # native 可执行文件
+export NMT_MODEL_DIR=/path/to/models               # 五文件模型目录
+export NMT_WORKER_BIN=$PWD/target/debug/nmt-worker  # 需要先 cargo build -p translator-runtime --bin nmt-worker
+export LD_LIBRARY_PATH=...                          # native 的依赖（Marian/OpenBLAS 等）
+
+cargo run -q -p translator-cli --features nmt -- translate 'Hello world!' \
+  --from en --to zh-Hans --policy local --diagnose --nmt
+# → 译文 你好,世界! / 引擎 nmt.bergamot.cli / 模型 nmt.enzh.mozilla@3.0#4e5accc1… 
+#   运行时 bergamot-cli / 保护 protect-seg-v1 / 计划摘要 dcc88e56fc890b9a
+```
+
+- `--nmt` 打开引擎；`--nmt-native/--nmt-model-dir/--nmt-worker/--nmt-snapshot-root/--nmt-protection/
+  --nmt-threads/--nmt-beam/--nmt-source/--nmt-target` 覆盖对应配置（优先级高于同名环境变量）。
+- **保护策略**默认 `segment`（受保护跨度不进模型）；`--nmt-protection marker` 是可选对照实验，
+  失败会明确报 `IntegrityFailure`，不要把它当默认安全路径。
+- 宿主侧等价写法：
+
+```toml
+translator-api = { path = "crates/translator-api", features = ["nmt-bergamot"] }
+```
+
+```rust
+let mut config = translator_api::nmt_bergamot::BergamotNmtConfig::new(
+    "/path/to/nmt-worker", "/path/to/bergamot", "/path/to/models",
+);
+config.runtime_build = "9271618".into();
+let translator = translator_api::Translator::builder()
+    .nmt_bergamot(config)
+    .build()?;
+```
+
+真实模型测试不在默认门禁里（需要权重与环境变量）：
+
+```bash
+cargo test --workspace --all-features -- --ignored --test-threads=1   # 35 条
+```
 
 ### 术语约束与诊断
 

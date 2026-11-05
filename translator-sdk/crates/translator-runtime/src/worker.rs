@@ -281,8 +281,21 @@ impl WorkerProcess {
         }
     }
 
-    /// 发一个请求并等它的响应。
+    /// 发一个请求并等它的响应（用该操作类型的默认截止时间）。
     pub fn request(&mut self, request: Request) -> Result<Payload, RuntimeError> {
+        let timeout = self.timeout_for(&request);
+        self.request_with_timeout(request, timeout)
+    }
+
+    /// 发一个请求，**由调用方**给截止时间。
+    ///
+    /// 排队 deadline 与执行 deadline 必须能合成同一个预算（`docs/17` LC-04）：
+    /// 调用方算出"还剩多少时间"，这里只负责不超过它。
+    pub fn request_with_timeout(
+        &mut self,
+        request: Request,
+        timeout: Duration,
+    ) -> Result<Payload, RuntimeError> {
         if self.is_dead() {
             return Err(self.exit_error("请求发出前 worker 已退出"));
         }
@@ -309,8 +322,7 @@ impl WorkerProcess {
             return Err(self.exit_error(&format!("写入请求失败：{e}")));
         }
 
-        let budget = envelope.request.clone();
-        match receiver.recv_timeout(self.timeout_for(&budget)) {
+        match receiver.recv_timeout(timeout) {
             Ok(response) => {
                 // 世代/版本不符说明这个 worker 已经不可信（可能是别人的迟到响应，
                 // 也可能是协议实现坏了）。不做猜测：标记不可用，让上层决定要不要重来。
@@ -332,7 +344,7 @@ impl WorkerProcess {
             }
             Err(RecvTimeoutError::Timeout) => {
                 // native 推理可能不可中断：不能假装"停下来了"，只能杀掉独占 worker
-                let waited = self.timeout_for(&budget).as_millis() as u64;
+                let waited = timeout.as_millis() as u64;
                 self.terminate();
                 Err(RuntimeError::Timeout {
                     operation: envelope.request.op_name(),

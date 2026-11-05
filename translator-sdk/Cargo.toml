@@ -10,6 +10,7 @@ members = [
     "crates/translator-rules",
     "crates/translator-resource",
     "crates/translator-runtime",
+    "crates/translator-nmt-bergamot",
     "tools/pack-dictionary",
     "tools/migrate-rules",
     "apps/translator-cli",
@@ -34,6 +35,7 @@ translator-analysis = { path = "crates/translator-analysis" }
 translator-rules = { path = "crates/translator-rules" }
 translator-resource = { path = "crates/translator-resource" }
 translator-runtime = { path = "crates/translator-runtime" }
+translator-nmt-bergamot = { path = "crates/translator-nmt-bergamot" }
 pack-dictionary = { path = "tools/pack-dictionary" }
 migrate-rules = { path = "tools/migrate-rules" }
 

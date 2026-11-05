@@ -5,6 +5,11 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+default = []
+# 真实本地 NMT（P3.1-E）。默认关闭：默认构建出的二进制依旧不依赖任何模型/进程代码。
+nmt = ["translator-api/nmt-bergamot"]
+
 [[bin]]
 name = "translator-cli"
 path = "src/main.rs"

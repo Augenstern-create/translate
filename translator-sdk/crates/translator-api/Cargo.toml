@@ -16,6 +16,9 @@ rules = ["dep:translator-rules"]
 # 资源仓库集成（P2.3）：可从仓库按 id 挂载激活版本并持有租约。
 # 默认关闭：多数宿主自己决定资源放在哪，不需要仓库。
 resource = ["dep:translator-resource"]
+# 真实本地 NMT（P3.1-E）：启用后可通过 `nmt_bergamot()` 挂载 Bergamot 引擎。
+# 默认关闭：默认依赖树里不出现任何 native runtime / 进程管理代码。
+nmt-bergamot = ["dep:translator-nmt-bergamot"]
 
 [dependencies]
 translator-types.workspace = true
@@ -24,6 +27,7 @@ translator-core.workspace = true
 translator-dictionary = { workspace = true, optional = true }
 translator-rules = { workspace = true, optional = true }
 translator-resource = { workspace = true, optional = true }
+translator-nmt-bergamot = { workspace = true, optional = true }
 
 [dev-dependencies]
 # 测试通过 `--all-features` 启用 mocks，解析出的特性对本 crate 同样生效
