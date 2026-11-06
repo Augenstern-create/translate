@@ -294,9 +294,18 @@ Windows 上必须用 MSVC host，否则 `link.exe` 与 `ort` 的 DLL 都会对�
 
 ### 4.3 我拿到 SSH 之后的顺序
 
-`windows-recon.sh` 只读勘察 → 与 Linux 基线并排（`docs/31`）→ 按 §1.5 的 W1–W10 逐项跑并留原文证据 →
-写 W7 的 `CapabilityUnavailable` 显式断言 → 给出 Windows 的"能用到什么程度"结论（预计：解词、规则、CLI、
-ORT 后端可用；Bergamot 不可用）→ 需要时再谈 C 路线（CI）与 libtorch/其它后端的取舍。
+`windows-recon.sh` 只读勘察 → 按 §1.5 的 W1–W10 逐项跑并留原文证据 →
+写 W7 的 `CapabilityUnavailable` 显式断言 → 与 Linux 基线并排（`docs/32`；原计划写 `docs/31`，
+该编号已被部署清单 `docs/31` 占用，见那份文档的 D-94）→ 给出 Windows 的"能用到什么程度"结论
+（预计：解词、规则、CLI、ORT 后端可用；Bergamot 不可用）→ 需要时再谈 C 路线（CI）与其它后端的取舍。
+
+### 4.4 部署清单已交付：`docs/31`
+
+你要的"Windows 需要装什么"清单在 `docs/31_Windows验证机部署清单.md`：必装 6 件、
+明确不要装的 7 类、以及**机器判定**的自检链
+（`tools/p5/windows-recon.sh` 采集 → `tools/p5/windows-preflight.py` 按 `R1`～`R15` 判 PASS/FAIL，
+全无 FAIL 再给 SSH）。清单里写进了本轮读代码发现的两件事：`ort` 的 Windows 预编译包没有纯 CPU 行
+（默认解析到 DirectML，D-92）、以及 `link.exe` 不在 PATH 属正常（要用 vswhere 查组件）。
 
 Android 侧本轮到此为止：**没有 ARM64 真机就不做 ARM64 运行结论**。若以后接上一台，
 在它上面跑同一套 JNI 冒烟 + `translator-cli`，并按 `docs/26` 的口径补延迟/内存即可，

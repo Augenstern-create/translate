@@ -105,11 +105,25 @@ foreach ($r in @("${env:ProgramFiles(x86)}\Windows Kits\10\Lib", "${env:ProgramF
     }
 }
 
+# `link.exe` is normally NOT on PATH (it lives in the VS install dir); the
+# authoritative "is the MSVC x64 toolset installed" probe is vswhere with the
+# component requirement, which is what the `cc` crate and rustc do too.
+$vcToolsVersion = $null
+$vcToolsPath = $null
+if (Test-Path $vswhere) {
+    try {
+        $vcToolsVersion = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationVersion 2>$null | Out-String).Trim()
+        $vcToolsPath    = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null | Out-String).Trim()
+        if ($vcToolsVersion -eq '') { $vcToolsVersion = $null }
+        if ($vcToolsPath -eq '')    { $vcToolsPath = $null }
+    } catch { }
+}
+
 $linkExe = Get-Command link.exe -ErrorAction SilentlyContinue
 $clExe   = Get-Command cl.exe   -ErrorAction SilentlyContinue
 
 # ------------------------------------------------------------------- rust ----
-$rust = [ordered]@{ cargo = $null; rustc = $null; rustup = $null; targets = @() }
+$rust = [ordered]@{ cargo = $null; rustc = $null; rustup = $null; targets = @(); components = @(); default_toolchain = $null }
 if (Test-Cmd 'cargo')  { $rust.cargo  = (Get-Command cargo).Source;  $rust.cargo_version  = Get-FirstLine 'cargo'  '--version' }
 if (Test-Cmd 'rustc')  { $rust.rustc  = (Get-Command rustc).Source;  $rust.rustc_version  = Get-FirstLine 'rustc'  '--version' }
 if (Test-Cmd 'rustup') {
@@ -117,6 +131,18 @@ if (Test-Cmd 'rustup') {
     try {
         $t = & rustup target list --installed 2>&1 | Out-String
         $rust.targets = @($t -split "`r?`n" | Where-Object { $_.Trim() -ne '' })
+    } catch { }
+    try {
+        $c = & rustup component list --installed 2>&1 | Out-String
+        $rust.components = @($c -split "`r?`n" | Where-Object { $_.Trim() -ne '' })
+    } catch { }
+    try { $rust.default_toolchain = (Get-FirstLine 'rustup' 'show active-toolchain') } catch { }
+    # `rustc --version` does not print the host triple; the MSVC-vs-GNU decision
+    # depends on it, so pull it out of `rustc -vV`.
+    try {
+        $vv = (& rustc -vV 2>&1 | Out-String)
+        $m = [regex]::Match($vv, '(?m)^host:\s*(\S+)')
+        if ($m.Success) { $rust.host = $m.Groups[1].Value }
     } catch { }
 }
 
@@ -215,7 +241,12 @@ $result = [ordered]@{
         link_exe = $(if ($null -ne $linkExe) { $linkExe.Source } else { $null })
         cl_exe   = $(if ($null -ne $clExe)   { $clExe.Source }   else { $null })
     }
-    vs = [ordered]@{ vswhere = $(if (Test-Path $vswhere) { $vswhere } else { $null }); installs = @($vsInstalls) }
+    vs = [ordered]@{
+        vswhere          = $(if (Test-Path $vswhere) { $vswhere } else { $null })
+        installs         = @($vsInstalls)
+        vc_tools_version = $vcToolsVersion
+        vc_tools_path    = $vcToolsPath
+    }
     windows_sdk_lib_versions = $sdkRoots
     rust = $rust
     ssh = [ordered]@{

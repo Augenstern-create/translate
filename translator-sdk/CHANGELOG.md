@@ -1,10 +1,39 @@
 # 变更记录
 
 版本号策略：P3 期间一律 `0.1.0`（**不发布**，`publish = false`）；每次阶段结束打 tag，
-tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2` `p4.3` `p5.0` `p5.1`）。
+tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2` `p4.3` `p5.0` `p5.1` `p5.2`）。
 真正的语义化版本从 P7（SDK 发行）开始。
 
 每条都标注证据所在：能复现的测试或 `docs/NN` 报告。
+
+## P5-02 — Windows 验证机部署清单与机器判定（tag `p5.2`，报告 `docs/31`）
+
+不改任何 crate（`Cargo.lock` 不变）。新增 `tools/p5/windows-preflight.py`；`windows-recon.ps1` 增采
+`rust.host` / `rust.components` / `rust.default_toolchain` / `vs.vc_tools_version` / `vs.vc_tools_path`。
+
+### 交付
+
+- `docs/31`：必装 6 件（Git + `core.autocrlf=false`、VS 2022 Build Tools 的 MSVC v143 + Win11 SDK、
+  rustup 钉 1.99.1 + rustfmt/clippy、Python 3.12、OpenSSH Server 自启 + 防火墙、长路径注册表）、
+  3 个非安装前提（≥25 GiB、NTFS、仓库别放 OneDrive）、**明确不要装**的 7 类（GNU 工具链 / CMake /
+  OpenSSL / 完整 VS / WSL-Docker / Node-Java-Android SDK / 安全卫士类软件）。
+- `tools/p5/windows-preflight.py`：把部署要求编成 `R1`～`R15` 的 PASS/FAIL/WARN/INFO，读
+  `dsh-win-recon/v1`、输出 `dsh-win-preflight/v1`，`FAIL` 时退出码 1（可进 CI）。已用构造的
+  PASS/FAIL/错误输入三份样本验过。
+- 两个"为什么"写进清单：`link.exe` **不在** PATH 是正常的（用 vswhere 查
+  `Microsoft.VisualStudio.Component.VC.Tools.x86.x64`）；`libsqlite3-sys`（`rusqlite` 的 `bundled`）
+  现场编 C，所以 C 编译器是硬依赖。
+
+### 本轮读代码得到的关键发现
+
+- **D-92**：`ort-sys 2.0.0-rc.15` 的预编译索引里，`x86_64-unknown-linux-gnu` 有 `none` 行（即 P4 用的
+  静态 CPU 版），而 **`x86_64-pc-windows-msvc` 没有 `none` 行**（只有 directml/webgpu/openvino/nvrtx/cuda13）；
+  `resolve_dist()` 在无精确匹配时取"第一个候选" → 默认特征会解析到 **directml** 包。
+  推论：Windows 首次构建要访问 `cdn.pyke.io`、产物旁多出 `onnxruntime.dll`，
+  且**它的 ORT 性能数字与 Linux 不是同一 runtime 变体，不能并排算倍数**（ADR-052 口径）。
+  未实测，真机结果优先。
+- **D-93/D-94/D-95**：判定脚本先写后验；`docs/31` 占用了原计划的对比报告编号（对比报告顺延 `docs/32`）；
+  Rust 钉 1.99.1 是为了让 `cargo fmt --check` 的差异只反映代码而不是工具链。
 
 ## P5-01 — Android 工具链就位与 Windows 验证矩阵（tag `p5.1`，报告 `docs/30`）
 
