@@ -132,8 +132,8 @@ fn main() {
     let max_new: Option<usize> = args.get(2).and_then(|a| a.parse().ok());
     let dir = std::env::var("P4_ORT_MODEL_DIR").expect("需要 P4_ORT_MODEL_DIR");
 
-                                                    // 三个长度：17 / 94 / 499 个字符。
-                                                    // **文本与 `docs/24` 的 Python 侧 B 类测量逐字相同**，否则两边的 p50 不能放在一张表里。
+    // 三个长度：17 / 94 / 499 个字符。
+    // **文本与 `docs/24` 的 Python 侧 B 类测量逐字相同**，否则两边的 p50 不能放在一张表里。
     let cases: [(&str, &str); 3] = [
         ("17", "The library opens at 9."),
         (
