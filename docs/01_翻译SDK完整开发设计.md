@@ -685,6 +685,18 @@ P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运
   `R1`～`R15` 的 PASS/FAIL（系统版本、架构、CPU/内存/磁盘、rustc host 是否 MSVC、rustfmt/clippy、
   Python ≥3.9、Git、sshd、长路径、MSVC 工具集、工具链对齐），退出码可直接进 CI。
   理由：只"报告"不"判定"，部署是否合格就变成人与人之间的口头确认。
+- ADR-057（Accepted，`docs/32` 提出、`docs/33` 已落地）：**唯一可写工作区 + 逐项审批的权限边界**。
+  在验证机（Windows 实体机）上，只有 `E:\augenstern\translate` 是默认可写；**工作区外一律只读**，
+  任何创建/覆盖/删除——以及 `git config --global|--system`、注册表、PATH、Defender、服务、持久环境变量、
+  已有工具的安装位置——都必须先获用户逐项批准，**且与是否需要管理员权限无关**；SSH 会话里带管理员令牌
+  不构成任何预授权。Python 固定用 `D:\Anaconda3\python.exe`；Rust 不由本会话安装或切换；代理只允许
+  "当前进程/当前命令"临时设置。落地：`tools/p5/windows-env-current.ps1`（`dsh-win-env/v1`，纯 getter）
+  与 `windows-env.sh`；`docs/33` 是首个按此边界执行的阶段（唯一写入 = 工作区内 4,210 B 的证据文件）。
+  理由：前几轮的设计默认"为了验证可以顺手改环境"（D 盘建目录、全局 git 配置、Defender 排除），
+  在别人的生产机上这是越权；而**边界一旦靠人品维持，就等于没有边界**。代价：三件事变慢或变贵——
+  `CARGO_HOME` 落工作区导致依赖全量重下、不能用 Defender 排除（构建慢一倍以上）、
+  `core.autocrlf` 只能在项目内覆盖且必须逐仓库设置。推论：Windows 侧的耗时数字**不得**与 Linux 并排算倍数
+  （ADR-052 的口径纪律再加一条限定词："Defender 未排除"）。
 
 > 状态含义：**Accepted** = 已决定并（如注明）已实现；**Proposed** = 已决定方向但尚未实现，写入 ADR 不等于已验证；
 > **Deferred** = 明确延后。上表未标注 Deferred 的项均须在对应阶段交付。
@@ -712,6 +724,7 @@ P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运
 | v1.16 | 2026-11-06 | P5-01（`docs/30`）：路线落定——Windows 只走实体机 SSH（用户决策），Android 装 NDK r30 并在 x86_64 AVD 上打通 JNI。新增 ADR-054（平台证据按实体机 > 模拟器 > CI 分层，只认最高可得一层）、ADR-055（Android 三段链分别证明；x86_64 产物不得充当 ARM64 证据，附 `EM_AARCH64` 实测负对照）、ADR-056（环境证据由只读版本化脚本采集，禁止手抄）。新增 `tools/p5/windows-recon.{ps1,sh}` 与 W1～W10 验证矩阵（均未在 Windows 真机上执行，D-89）。编号处理：按当前最大号 053 之后顺延 054～056，**未覆盖任何旧编号** |
 | v1.17 | 2026-11-06 | P5-02（`docs/31`）：交付 Windows 验证机部署清单（必装 6 件 / 明确不要装 7 类 / 目录与 CRLF 纪律）与判定工具 `tools/p5/windows-preflight.py`（`R1`～`R15`，退出码可进 CI），ADR-056 追加"采集之外还要判定"。同时记下 **D-92：`ort` 的 Windows 预编译包没有纯 CPU 行，默认解析到 DirectML 变体**（读 `ort-sys` 的 `dist.tsv` + `resolve.rs` 得出，未实测）——这直接影响 Windows ORT 数字能否与 Linux 并排比较（ADR-052 口径）。`docs/31` 原预留为并排对比报告，现改为部署清单、对比报告顺延 `docs/32`（D-94，编号为空位，非覆盖） |
 | v1.18 | 2026-11-06 | P5-03（`docs/31` v2）：**实体机实测**（`ssh home` = NAN-WINDOWS，Win11 25H2 build 26200）后重写部署清单——8 项必装里 6 项已就绪，判定 `R1`～`R15` = PASS 12 / FAIL 0 / WARN 1（rustc 1.97.0 ≠ 1.99.1）/ INFO 2；`cargo build` hello-world 实测 40.1 s 通过，W1 闭合。真正待办收窄为 4 条写文件级动作（关 CRLF、仓库落 `D:\dev`、指定 Python 解释器、ORT 下载走代理）。勘察脚本在真机上修掉两处缺陷（`curl` 取到 PS 别名、`rustup show active-toolchain` 不存在）并增采 `env`/`python_path`/`python_launcher`（D-96）。清单口径由"钉 1.99.1"改为"优先沿用已装版本"（D-97），位置假设由 `C:\dev` 改为 `D:\dev`（D-98）。**未新增 ADR**（无新决策，仅事实与台账修订） |
+| v1.19 | 2026-11-06 | P5.1（`docs/33`，审查稿归档 `docs/32`）：采纳"唯一可写工作区 `E:\augenstern\translate` + 逐项审批"，新增 **ADR-057**；由此作废旧建议（`D:\dev`/`C:\dev`、全局 `core.autocrlf`、Defender 排除、`D:\python` 作默认解释器）。只读预检实测：Rust 已升到 **1.99.1**（与 Linux 同版，`docs/33` D-102 使 `cargo fmt` 比对口径收紧）、Anaconda Python 3.13.5、VC 17.14 + SDK 26100、工作区空且 E: 剩 133.7 GiB；**更正** `docs/31` 的 `cdn.pyke.io` 结论（直连非"不通"而是极慢/不稳：HEAD 12 s 超时、采样 ≈224 B/s；代理 200），并把 ORT 包体积更正为 **32.4 MB**（D-103）。新增 `tools/p5/windows-env-current.ps1` + `windows-env.sh`（`dsh-win-env/v1`），修掉三处真机才暴露的工具缺陷（`$args` 自动变量、`$py`/`$PY` 大小写冲突、脚本非 ASCII 经 stdin 被代码页破坏，D-107）。编号处理：ADR 按最大号 056 之后顺延 057；`docs/32` 被审查稿占用，并排对比报告顺延 `docs/34`（D-106），**未覆盖任何旧编号** |
 
 ## 15. 主要风险与应对
 

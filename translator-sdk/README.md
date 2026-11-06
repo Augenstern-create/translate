@@ -30,11 +30,13 @@
 - `28_P4审查响应与验收口径修订报告.md` — 验收台账（C9）、同文本 A/B 重测、499 字口径拆解、D-77～D-82
 - `29_P5环境勘察与Windows验证方案对比报告.md` — P5 前置：本机硬件/Android 现状实测、Windows 三种验证路线对比与建议、D-83～D-85
 - `30_P5-01_Android工具链与Windows验证矩阵报告.md` — NDK r30 + x86_64 AVD 打通 JNI 三段链（含 `EM_AARCH64` 负对照）、只读勘察脚本与 W1～W10 验证矩阵、D-86～D-91
-- `31_Windows验证机部署清单.md` — **本轮**：实体机（NAN-WINDOWS / Win11 25H2）实测后的清单 v2——8 项必装已满足 6、判定 `R1`～`R15` PASS 12/FAIL 0/WARN 1、`cargo build` 40.1 s 通过、待办收窄为 4 条；D-92/D-96～D-100
+- `31_Windows验证机部署清单.md` — 实体机实测后的清单 v2（**部分建议已被 `docs/32` 取代，见文首状态块**）
+- `32_P5开发建议与实施计划（工作区与权限边界）.md` — 外部审查/计划稿归档：唯一可写工作区 `E:\augenstern\translate`、逐项审批、固定 Anaconda Python
+- `33_P5.1_工作区与环境只读核验报告.md` — **本轮**：P5.1 只读预检（Rust 1.99.1 / Anaconda 3.13.5 / VC 17.14 / 工作区空且 E: 133.7 GiB）、`dsh-win-env/v1` 采集脚本、D-101～D-107
 
 ---
 
-## 当前状态：P0～P3 完成并**已冻结**（`p3.4` / 分支 `p3-frozen`），**P3 = Conditional**：功能可验收，含权重的发行被 release-blockers（G12 等五项）阻断。P4 工作包全部交付（P4-01～P4-07，`p4.3`），裁定 **`conditional-go`**：插件替换可行 = go，替换 P3 后端 = **no-go**；**门禁闭合情况是 6 项通过 + G05/G06 部分满足**（未闭合项已进机器可查台账 `fixtures/p4/acceptance.json`，由 `check-release.py` 的 C9 盯）。**P5 进行中**（`p5.1`）：Android 工具链与 JNI 三段链已通（x86_64 预演），**ARM64 真机与 Windows 实体机验证仍为空**——见 `docs/30`
+## 当前状态：P0～P3 完成并**已冻结**（`p3.4` / 分支 `p3-frozen`），**P3 = Conditional**：功能可验收，含权重的发行被 release-blockers（G12 等五项）阻断。P4 工作包全部交付（P4-01～P4-07，`p4.3`），裁定 **`conditional-go`**：插件替换可行 = go，替换 P3 后端 = **no-go**；**门禁闭合情况是 6 项通过 + G05/G06 部分满足**（未闭合项已进机器可查台账 `fixtures/p4/acceptance.json`，由 `check-release.py` 的 C9 盯）。**P5 进行中**（`p5.4`）：Android 工具链与 JNI 三段链已通（x86_64 预演，ARM64 真机仍 pending）；Windows 侧已接入实体机并完成 P5.1 只读核验，**工作区 `E:\augenstern\translate` 为空，尚未导入仓库/未跑任何构建**——见 `docs/33`
 
 - **P0**：workspace 结构、核心类型、插件契约、协调器与路由、缓存、门面 API、Mock 插件、CLI。
   **不接任何真实模型、不装任何 native 库**，整条链路即可运行 —— 这是设计文档规定的交付判据。

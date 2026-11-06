@@ -1,10 +1,44 @@
 # 变更记录
 
 版本号策略：P3 期间一律 `0.1.0`（**不发布**，`publish = false`）；每次阶段结束打 tag，
-tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2` `p4.3` `p5.0` `p5.1` `p5.2` `p5.3`）。
+tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2` `p4.3` `p5.0` `p5.1` `p5.2` `p5.3` `p5.4`）。
 真正的语义化版本从 P7（SDK 发行）开始。
 
 每条都标注证据所在：能复现的测试或 `docs/NN` 报告。
+
+## P5-04 — 权限边界与 P5.1 只读核验（tag `p5.4`，报告 `docs/33`，审查稿 `docs/32`）
+
+不改任何 crate。新增两个只读工具与一份证据；采纳"唯一可写工作区"约束。
+
+### 新规则（ADR-057，来自 `docs/32`）
+
+- 验证机上**只有 `E:\augenstern\translate` 默认可写**；工作区外一律只读，任何写入（含 `git --global`、
+  注册表、PATH、Defender、服务、持久环境变量、工具安装位置）须**逐项先获批**，且与是否需要管理员无关。
+- Python 固定 `D:\Anaconda3\python.exe`；Rust 不由本会话安装/切换（你已升到 1.99.1）；代理只允许进程级临时设置。
+- 由此作废：`D:\dev`/`C:\dev` 落盘、全局 `core.autocrlf`、Defender 排除、`D:\python` 作默认解释器
+  （`docs/31` 文首已加"部分取代"状态块，原始实测记录不改写）。
+
+### 交付
+
+- `tools/p5/windows-env-current.ps1` + `windows-env.sh`：`dsh-win-env/v1` 只读采集（workspace / toolchain /
+  python / msvc / git / ort / network / write_risk），Linux 侧一条命令取回并校验。
+- `docs/33`：P5.1 报告（三段式）+ 证据 `fixtures/p5/windows-env-current.json`（4,210 B，工作区内同名一份）。
+
+### 实测（2026-11-06）
+
+- 工作区 `E:\augenstern\translate`：**存在、空、无 `.git`**，所在盘剩 **133.7 GiB** → 需导入仓库（P5.2 前置）。
+- **Rust = 1.99.1**（2026-10-13，host msvc，LLVM 23.1.1）与 Linux 完全同版 → `docs/31` 的 R13 WARN 消失，
+  `cargo fmt --check` 的比对口径随之**收紧**（若有差异即代码问题）。
+- Anaconda Python **3.13.5**；VC 工具集 17.14.36429.23；SDK 10.0.26100.0 + 10.0.18362.0；`cl`/`link` 不在 PATH（正常）。
+- ORT 本地仍是 **1.29.0**（CUDA13，12 个文件，pdb 合计约 900 MB），只读保留。
+- 网络更正（D-103）：`cdn.pyke.io` **不是"不通"而是"极慢/不稳"**——HEAD 直连 12 s 超时、有界采样 20 s 仅 4,483 B
+  （≈224 B/s），经代理 200；包体实为 **32.4 MB**（此前估"100–200 MB"偏高 3–6 倍）。
+
+### 修复（真机才暴露，D-107）
+
+`$args` 是 PowerShell 自动变量（参数同名会让 `cargo -V`/`git --version`/`python --version` 静默无参执行）；
+`$py` 与 `$PY` 因变量名大小写不敏感而互相覆盖；脚本非 ASCII（中文注释、`§`）经 `ssh` + `-Command -` 传输时按 ACP 936
+解码会导致**整脚本静默不执行**。三条都写进脚本注释，脚本现为全 ASCII。
 
 ## P5-03 — 实体机实测与部署清单重写（tag `p5.3`，报告 `docs/31` v2）
 
