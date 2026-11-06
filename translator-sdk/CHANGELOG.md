@@ -1,10 +1,23 @@
 # 变更记录
 
 版本号策略：P3 期间一律 `0.1.0`（**不发布**，`publish = false`）；每次阶段结束打 tag，
-tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2` `p4.3` `p5.0` `p5.1` `p5.2` `p5.3` `p5.4` `p5.5` `p5.6` `p5.7` `p6.0` `p6.1` `p6.2`）。
+tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2` `p4.3` `p5.0` `p5.1` `p5.2` `p5.3` `p5.4` `p5.5` `p5.6` `p5.7` `p6.0` `p6.1` `p6.2` `p7.0`）。
 真正的语义化版本从 P7（SDK 发行）开始。
 
 每条都标注证据所在：能复现的测试或 `docs/NN` 报告。
+
+## P7-00 — 基线与测试矩阵（tag `p7.0`，报告 `docs/43`，计划稿 `docs/42`）
+
+不改代码、不跑 Android 测试。只做只读核对 + 判据冻结。
+
+- 基线：tag `p6.2` / `1397657`；Rust 1.99.1；NDK 30.0.16248370；jni 0.21.1；ORT（Windows）= directml 静态包。
+- 依赖：`cargo tree -p translator-api --no-default-features` 命中 `ort|onnx|reqwest|hyper|tauri|tokio` = **0**；
+  `translator-api` **无反向依赖**（JNI 不在其依赖图）；`translator-jni` 只开 `dictionary/mocks/resource/rules`。
+- **阻断项按台账纠偏**（旧报告措辞有误）：G12 权重许可未确认 / G11 CI 未真实 runner 运行 /
+  **G06 = 不支持取消在途请求** / **G08 = 恢复测试用 `abort()` 而非外部 `kill -9`** / **D-46 = LICENSE 正文未入库**。
+  其中 D-46 是补文件级、G06 才是功能缺口。
+- 冻结 J-07/J-10/J-14/J-15 的注入方法与期望错误码（含 J-15c `.so` 重载标 PENDING：ART 类加载器限制）。
+- 两处待批资源（360.9 MB ORT 旧缓存、3.1 GB arm64 镜像 + AVD）**未删未移未改**。
 
 ## P6-01/P6-02 — JNI 绑定层与 P6 收口（tag `p6.1` / `p6.2`，报告 `docs/40` / `docs/41`）
 
