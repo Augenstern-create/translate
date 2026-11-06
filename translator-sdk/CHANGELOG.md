@@ -1,10 +1,41 @@
 # 变更记录
 
 版本号策略：P3 期间一律 `0.1.0`（**不发布**，`publish = false`）；每次阶段结束打 tag，
-tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2` `p4.3` `p5.0` `p5.1` `p5.2` `p5.3` `p5.4` `p5.5`）。
+tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2` `p4.3` `p5.0` `p5.1` `p5.2` `p5.3` `p5.4` `p5.5` `p5.6`）。
 真正的语义化版本从 P7（SDK 发行）开始。
 
 每条都标注证据所在：能复现的测试或 `docs/NN` 报告。
+
+## P5-06 — P5.4 Windows 存活探测与跨进程资源验证（tag `p5.6`，报告 `docs/35`）
+
+### 实现
+
+- `translator-resource/src/leases.rs`：新增 `#[cfg(windows)] mod win_probe`，用 `kernel32` 四个函数
+  （`OpenProcess` / `GetExitCodeProcess` / `GetProcessTimes` / `CloseHandle`），**零新依赖**；
+  `ERROR_INVALID_PARAMETER(87)` → `Dead`、`ERROR_ACCESS_DENIED(5)` → `Unknown`、退出码 ≠ `STILL_ACTIVE` → `Dead`、
+  `GetProcessTimes` 失败 → `Alive(None)`。创建时间（FILETIME）当启动标识，等价 Linux starttime。
+- `process_start_id`(windows) 复用探测。
+
+### 测试口径（解 gate 3 处 / 改断言 3 条 / 新增 3 条，无删除无跳过）
+
+解 gate：`lc08`（5 个崩溃点）、`cross_process.rs` 全文件（6 条跨进程不变量）、`store::recover回收死进程的租约`。
+改断言：`当前进程必然存活`、`不存在的pid视为已死`、`死进程的锁会被回收`（旧断言编码的是 probe 恒 Unknown 的旧语义）。
+新增：已退出子进程判 Dead / 启动标识不一致视为不同进程 / 活着的子进程判 Alive。
+**删掉一条自己写错的断言**：父子 start_id 必不同——Linux jiffies 10ms 粒度会撞（实测都是 19734338），
+改为钉机制（`record_is_live(pid, start+1) == false`）。
+
+### 结果
+
+- Windows：`cargo test --workspace` **333 passed / 0 failed / 60 ignored**；`translator-resource` 80 passed
+  （lib 30 + lifecycle 4 + store 40 + cross_process 6）；clippy `-D warnings` PASS。
+- Linux：**375 / 0 / 60**，fmt + clippy 通过（无回退）。
+- 差值 42 = 仍按平台 gate 的 Linux 专属用例（worker_process 17 / lifecycle 6 / Bergamot 配置 5 / transport 2 / 其余 unix）。
+
+### D-115 结案（只读调查）
+
+`ort-sys` 的 `internal::dirs::cache_dir()` **优先读 `ORT_CACHE_DIR`**，其次才是平台默认目录。
+→ 后续 ORT 构建只需在构建进程内设 `$env:ORT_CACHE_DIR = '<workspace>\.build\ort-cache'`，
+无需注册表/junction/系统环境变量。旧 `%LOCALAPPDATA%\ort.pyke.io`（360.9 MB）按用户决定原样保留，**本轮未跑任何 ORT 构建**。
 
 ## P5-05 — Windows 构建回归与 ORT 实跑（tag `p5.5`，报告 `docs/34`）
 
