@@ -1,10 +1,40 @@
 # 变更记录
 
 版本号策略：P3 期间一律 `0.1.0`（**不发布**，`publish = false`）；每次阶段结束打 tag，
-tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2` `p4.3` `p5.0` `p5.1` `p5.2`）。
+tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2` `p4.3` `p5.0` `p5.1` `p5.2` `p5.3`）。
 真正的语义化版本从 P7（SDK 发行）开始。
 
 每条都标注证据所在：能复现的测试或 `docs/NN` 报告。
+
+## P5-03 — 实体机实测与部署清单重写（tag `p5.3`，报告 `docs/31` v2）
+
+不改任何 crate。`windows-recon.ps1` 修两处真机缺陷并增采三项；`docs/31` 从"通用清单"改写为"这台机器的实测版"。
+
+### 实测（`ssh home` → NAN-WINDOWS，2026-11-06）
+
+- **判定 `R1`～`R15`：PASS 12 / FAIL 0 / WARN 1 / INFO 2**（唯一 WARN 是 rustc 1.97.0 vs Linux 1.99.1）。
+- 机器：Win11 Pro 25H2 build 26200 / i7-1260P 12C16T / 15.7 GiB / C 38.6 GiB 空闲、D 120.2、E 133.7。
+- 工具链都在 **D 盘**：VS Community 2022（VC 17.14 + SDK 10.0.26100）在 `D:\VisualStudio`、Git 2.51 在 `D:\Git`、
+  Python 有 4 个（裸 `python` 是 MSYS2 3.12.11，`py -3` 是 `D:\python` 3.13.7）、cmake/node/msys2 mingw 齐全。
+- **W1 已闭合**：`cargo new --bin smoke && cargo build` → 40.1 s，`smoke.exe` 129,536 B
+  （`rustc 1.97.0` + D 盘 VS 的 `link.exe` + SDK 26100 这条链通）。
+- **网络矩阵**：`static.rust-lang.org` 与 `index.crates.io` 直连 200；**`cdn.pyke.io` 直连 20 s 超时、经
+  `127.0.0.1:7890` 200**。本机只设了 `ALL_PROXY`（无 `http_proxy/https_proxy`），而 `ort-sys` 用
+  `ureq::Proxy::try_from_env()` 认 `ALL_PROXY`（源码可查），所以 ORT 下载大概率可用，仍建议显式设。
+- **额外发现**：`D:\Programs\onnx` 有一套 ORT **1.29.0 CUDA 13** 的 dll/lib/include，且该 lib 目录在 PATH 上
+  → 与 W6 要用的 1.31 DirectML 版同名 DLL 有"串味"风险；可作为离线备份方案但需改 `api-*` feature（决策 D）。
+
+### 修复
+
+- `windows-recon.ps1`：`tools.curl` 取到的是 PowerShell 5.1 的 `curl` 别名（返回 .NET 502）→ 改用 `curl.exe`；
+  `rustup show active-toolchain` 在该 rustup 上不存在 → 失败时退回 `rustup show` 解析 `name:`；
+  新增 `env`（含 `ALL_PROXY`/`CARGO_HOME`）、`tools.python_path`、`tools.python_launcher`。
+- 真机跑通同时**关闭了 `docs/30` D-89 的一半欠账**：脚本确实在 **PowerShell 5.1** 上执行，37 个字段全部有值。
+
+### 待你审核后才动
+
+`git config --global core.autocrlf false` + `core.longpaths true`；仓库落 `D:\dev\translate-workspace`（bundle 传输）；
+Defender 排除仓库与 `~/.cargo`（机器级改动，需批准）；W6 的 ORT 变体选择（决策 D）。见 `docs/31` §7。
 
 ## P5-02 — Windows 验证机部署清单与机器判定（tag `p5.2`，报告 `docs/31`）
 

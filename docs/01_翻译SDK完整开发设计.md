@@ -711,6 +711,7 @@ P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运
 | v1.15 | 2026-11-06 | P5 前置环境勘察（`docs/29`，无代码变更）：记录本机硬件/虚拟化工具链实测、Android 环境现状（仅 x86_64 镜像，P5 的 ARM64 需求缺口 D-83）、Windows 三种验证路线对比，并记下 **D-84：平台门禁只认 linux，Windows 上 Bergamot worker 必然不可用**（ORT 后端无平台判断）。P5 的平台验证策略 ADR 待路线选定后再落，本轮不预写 |
 | v1.16 | 2026-11-06 | P5-01（`docs/30`）：路线落定——Windows 只走实体机 SSH（用户决策），Android 装 NDK r30 并在 x86_64 AVD 上打通 JNI。新增 ADR-054（平台证据按实体机 > 模拟器 > CI 分层，只认最高可得一层）、ADR-055（Android 三段链分别证明；x86_64 产物不得充当 ARM64 证据，附 `EM_AARCH64` 实测负对照）、ADR-056（环境证据由只读版本化脚本采集，禁止手抄）。新增 `tools/p5/windows-recon.{ps1,sh}` 与 W1～W10 验证矩阵（均未在 Windows 真机上执行，D-89）。编号处理：按当前最大号 053 之后顺延 054～056，**未覆盖任何旧编号** |
 | v1.17 | 2026-11-06 | P5-02（`docs/31`）：交付 Windows 验证机部署清单（必装 6 件 / 明确不要装 7 类 / 目录与 CRLF 纪律）与判定工具 `tools/p5/windows-preflight.py`（`R1`～`R15`，退出码可进 CI），ADR-056 追加"采集之外还要判定"。同时记下 **D-92：`ort` 的 Windows 预编译包没有纯 CPU 行，默认解析到 DirectML 变体**（读 `ort-sys` 的 `dist.tsv` + `resolve.rs` 得出，未实测）——这直接影响 Windows ORT 数字能否与 Linux 并排比较（ADR-052 口径）。`docs/31` 原预留为并排对比报告，现改为部署清单、对比报告顺延 `docs/32`（D-94，编号为空位，非覆盖） |
+| v1.18 | 2026-11-06 | P5-03（`docs/31` v2）：**实体机实测**（`ssh home` = NAN-WINDOWS，Win11 25H2 build 26200）后重写部署清单——8 项必装里 6 项已就绪，判定 `R1`～`R15` = PASS 12 / FAIL 0 / WARN 1（rustc 1.97.0 ≠ 1.99.1）/ INFO 2；`cargo build` hello-world 实测 40.1 s 通过，W1 闭合。真正待办收窄为 4 条写文件级动作（关 CRLF、仓库落 `D:\dev`、指定 Python 解释器、ORT 下载走代理）。勘察脚本在真机上修掉两处缺陷（`curl` 取到 PS 别名、`rustup show active-toolchain` 不存在）并增采 `env`/`python_path`/`python_launcher`（D-96）。清单口径由"钉 1.99.1"改为"优先沿用已装版本"（D-97），位置假设由 `C:\dev` 改为 `D:\dev`（D-98）。**未新增 ADR**（无新决策，仅事实与台账修订） |
 
 ## 15. 主要风险与应对
 

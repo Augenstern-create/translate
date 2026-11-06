@@ -1,0 +1,88 @@
+{
+  "schema": "dsh-win-preflight/v1",
+  "source": "fixtures/p5/win-recon-nan-windows.json",
+  "summary": {
+    "pass": 12,
+    "fail": 0,
+    "warn": 1,
+    "info": 2
+  },
+  "verdict": "PASS",
+  "results": [
+    {
+      "id": "R1",
+      "status": "PASS",
+      "detail": "Microsoft Windows 11 Pro build 26200"
+    },
+    {
+      "id": "R2",
+      "status": "PASS",
+      "detail": "OS 架构 64-bit（必须 x64）"
+    },
+    {
+      "id": "R3",
+      "status": "PASS",
+      "detail": "12th Gen Intel(R) Core(TM) i7-1260P 12C/16T"
+    },
+    {
+      "id": "R4",
+      "status": "PASS",
+      "detail": "15.7 GiB"
+    },
+    {
+      "id": "R5",
+      "status": "PASS",
+      "detail": "C: NTFS 剩 38.6 GiB"
+    },
+    {
+      "id": "R6",
+      "status": "PASS",
+      "detail": "rustc 1.97.0 (2d8144b78 2026-07-07)（host x86_64-pc-windows-msvc）"
+    },
+    {
+      "id": "R7",
+      "status": "PASS",
+      "detail": "rustfmt + clippy 已装"
+    },
+    {
+      "id": "R8",
+      "status": "PASS",
+      "detail": "Python 3.12.11"
+    },
+    {
+      "id": "R9",
+      "status": "PASS",
+      "detail": "git version 2.51.0.windows.1"
+    },
+    {
+      "id": "R10",
+      "status": "PASS",
+      "detail": "Running/Automatic，监听 :::22, 0.0.0.0:22"
+    },
+    {
+      "id": "R11",
+      "status": "PASS",
+      "detail": "LongPathsEnabled=1"
+    },
+    {
+      "id": "R12",
+      "status": "PASS",
+      "detail": "MSVC toolset 17.14.36429.23（SDK Lib: 10.0.18362.0, 10.0.26100.0）"
+    },
+    {
+      "id": "R13",
+      "status": "WARN",
+      "detail": "1.97.0 (2d8144b78 2026-07-07)（Linux 侧 1.99.1）：rustfmt 版本差会让 `cargo fmt --check` 出现与代码无关的差异，报告要写成工具链差异"
+    },
+    {
+      "id": "R14",
+      "status": "INFO",
+      "detail": "当前会话是否提权：True（只读勘察不需要；设 Defender 排除/装组件才需要）"
+    },
+    {
+      "id": "R15",
+      "status": "INFO",
+      "detail": "Defender 排除路径 2 条"
+    }
+  ]
+}

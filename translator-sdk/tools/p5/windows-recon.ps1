@@ -49,6 +49,16 @@ $os   = Get-CimInstance Win32_OperatingSystem
 $cs   = Get-CimInstance Win32_ComputerSystem
 $cpu  = Get-CimInstance Win32_Processor | Select-Object -First 1
 
+# Proxy + cargo/rustup-home state. This is not cosmetic: a machine that only
+# has ALL_PROXY set (no http_proxy/https_proxy) will let `curl` reach a host
+# that `cargo` cannot, and vice versa -- it bit us on the first real machine
+# (docs/32 D-97).
+$envBlock = [ordered]@{}
+foreach ($n in @('http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY',
+                 'NO_PROXY', 'CARGO_HOME', 'RUSTUP_HOME', 'CARGO_TARGET_DIR', 'RUSTUP_TOOLCHAIN')) {
+    $envBlock[$n] = [Environment]::GetEnvironmentVariable($n)
+}
+
 $displayVersion = $null
 try {
     $displayVersion = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -Name DisplayVersion -ErrorAction Stop).DisplayVersion
@@ -136,7 +146,19 @@ if (Test-Cmd 'rustup') {
         $c = & rustup component list --installed 2>&1 | Out-String
         $rust.components = @($c -split "`r?`n" | Where-Object { $_.Trim() -ne '' })
     } catch { }
-    try { $rust.default_toolchain = (Get-FirstLine 'rustup' 'show active-toolchain') } catch { }
+    # `rustup show active-toolchain` only exists on newer rustup; on the older
+    # ones it fails with "invalid value ... for '[+toolchain]'" (seen on the
+    # first real machine, docs/32 D-97). Fall back to `rustup show` and read
+    # the "name:" line of the "active toolchain" block.
+    try {
+        $at = (& rustup show active-toolchain 2>&1 | Out-String)
+        if ($at -match 'invalid value|error:') {
+            $show = (& rustup show 2>&1 | Out-String)
+            $m2 = [regex]::Match($show, '(?ms)active toolchain\s*-+\s*name:\s*(\S+)')
+            if ($m2.Success) { $at = $m2.Groups[1].Value } else { $at = $null }
+        }
+        if ($at) { $rust.default_toolchain = ($at -split "`r?`n")[0].Trim() }
+    } catch { }
     # `rustc --version` does not print the host triple; the MSVC-vs-GNU decision
     # depends on it, so pull it out of `rustc -vV`.
     try {
@@ -233,8 +255,13 @@ $result = [ordered]@{
     volumes = $volumes
     tools = [ordered]@{
         git    = (Get-FirstLine 'git' '--version')
-        curl   = (Get-FirstLine 'curl' '--version')
+        # `curl` is an alias for Invoke-WebRequest in Windows PowerShell 5.1;
+        # asking the alias for `--version` yields a .NET 502 from the system
+        # proxy instead of curl's version. Always go through curl.exe.
+        curl   = (Get-FirstLine 'curl.exe' '--version')
         python = (Get-FirstLine 'python' '--version')
+        python_path = $(try { (@(& where.exe python 2>&1) -join '; ').Trim() } catch { $null })
+        python_launcher = $(try { (@(& py -0p 2>&1) -join '; ').Trim() } catch { $null })
         cmake  = (Get-FirstLine 'cmake' '--version')
         node   = (Get-FirstLine 'node' '--version')
         tar    = (Get-FirstLine 'tar' '--version')
@@ -248,6 +275,7 @@ $result = [ordered]@{
         vc_tools_path    = $vcToolsPath
     }
     windows_sdk_lib_versions = $sdkRoots
+    env = $envBlock
     rust = $rust
     ssh = [ordered]@{
         sshd_service   = $sshdSvc
