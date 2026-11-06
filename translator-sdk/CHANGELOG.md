@@ -1,10 +1,35 @@
 # 变更记录
 
 版本号策略：P3 期间一律 `0.1.0`（**不发布**，`publish = false`）；每次阶段结束打 tag，
-tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2` `p4.3`）。
+tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2` `p4.3` `p5.0`）。
 真正的语义化版本从 P7（SDK 发行）开始。
 
 每条都标注证据所在：能复现的测试或 `docs/NN` 报告。
+
+## P5 前置 — 环境勘察与 Windows 验证方案对比（tag `p5.0`，报告 `docs/29`）
+
+无代码变更，只做勘察与结论（因此不改 `Cargo.lock`、不动任何 crate）。
+
+### 勘察结论
+
+- **本机**：ASUS X542URV 笔记本（i5-8250U 4C/8T / 31 GiB / 根分区在 931 G SATA SSD，
+  实测 449 写 419 读 MB/s / 剩余 597 G / VT-x + KVM 可用 / qemu 8.2.2 + OVMF(secboot) + Samba 已装，
+  缺 libvirt、virt-manager、swtpm、virtiofsd）。
+- **Android 环境还在且能跑**：`~/Android/Sdk` 8.3 GB、emulator 37.2.12、platform-tools 37.0.1、
+  AVD `gms2`（android-34 Play Store，x86_64，4 核 / 2 GB）；headless 启动后 **35 s 内 `boot_completed=1`**，
+  `adb emu kill` 干净退出。**但只有 x86_64 镜像、没有 NDK** → P5 要的 ARM64 JNI/物理机基准仍缺（D-83）。
+- **Windows 三条路**：本机 KVM（快照可回滚，适合破坏性测试）／实体机 SSH（唯一能给"物理机基准"）／
+  CI `windows-latest`（成本最低，且能为 G11 供证）。报告给的是**组合**而不是三选一。
+- **关键约束（D-84）**：`translator-runtime` 的平台门禁只认 `linux`，所以 Windows 上 **Bergamot worker 必然
+  被拒**；而 ORT 后端没有平台判断、ONNX Runtime 支持 Windows。Windows 验证矩阵必须据此裁剪。
+
+### 结论
+
+建议顺序：**C（CI 加 windows job，立刻）→ A（本机 KVM 迭代 + 快照）→ B（实体机验收 + 物理机基准）**；
+Android 侧先装 NDK 用 x86_64 AVD 打通 JNI 调用链，另备一台 ARM64 真机出基准。
+路线选定后再落 ADR（"平台验证三层策略"）。
+
+---
 
 ## P4 审查响应 — 验收口径修订与比较方法修正（tag `p4.3`，报告 `docs/28`）
 
