@@ -1,10 +1,37 @@
 # 变更记录
 
 版本号策略：P3 期间一律 `0.1.0`（**不发布**，`publish = false`）；每次阶段结束打 tag，
-tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2` `p4.3` `p5.0` `p5.1` `p5.2` `p5.3` `p5.4` `p5.5` `p5.6` `p5.7` `p6.0`）。
+tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2` `p4.3` `p5.0` `p5.1` `p5.2` `p5.3` `p5.4` `p5.5` `p5.6` `p5.7` `p6.0` `p6.1` `p6.2`）。
 真正的语义化版本从 P7（SDK 发行）开始。
 
 每条都标注证据所在：能复现的测试或 `docs/NN` 报告。
+
+## P6-01/P6-02 — JNI 绑定层与 P6 收口（tag `p6.1` / `p6.2`，报告 `docs/40` / `docs/41`）
+
+### 新增
+
+- `bindings/translator-jni`（cdylib + rlib）：契约 v1 四个导出符号；`"gen:index"` 代际句柄；
+  锁内只查表 + `Arc::clone`、锁外调 SDK；`catch_unwind` 兜 panic；NUL 输入拒绝；`NewString(UTF-16)` 输出；
+  `capabilities` 带 `runtimes[]` 如实报告未编译的 NMT；`mock_engines` 需显式开启。
+- `tests/android-harness`（`javac → d8 → adb push → app_process`，**不用 Gradle**）：23 条断言，
+  输出 `PASS/FAIL` + `SUMMARY`。
+- 依赖 `jni 0.21`（MIT OR Apache-2.0）；`licenses/third-party.json` 重算为 **172 包**。
+
+### 实测
+
+- AVD `gms2`（android-34/x86_64）：**23/23 PASS** —— create/capabilities/close、中文+😀🚀、
+  NUL 与空白拒绝、真词典 `你好→hello/hi`（cc-cedict）、多义不丢、空结果、
+  重复关闭幂等、关闭后 `AlreadyClosed`、非法/过期句柄、资源清单、mock NMT 路由、
+  `NetworkNotAuthorized`、坏 JSON/未知 method/缺字段。
+- **并发关闭**：400 次 `lookup` 中主线程 60 ms 后 `close` → **389 ok / 11 `AlreadyClosed` / 0 崩溃**。
+- J-11 `cargo tree -p translator-api` 命中 `jni` **0**；J-13 ARM64 cdylib：`AArch64` / `LOAD 0x4000` / 4 符号。
+- J-12 Windows：`cargo test --workspace` **337 passed / 0 failed / 60 ignored**，clippy PASS。
+- Linux：**379 passed / 0 failed / 60 ignored**；fmt / clippy / license-audit PASS；`--release-mode` 仍 **FAIL**。
+
+### pending（未做，不算 PASS）
+
+J-07 坏资源/路径穿越、J-14 模拟器 RSS/时延、J-15 装卸生命周期、APK/Instrumentation 载体、
+真实 Android NMT、ARM64 运行。5 条发行阻断项仍 open。
 
 ## P6-00 — JNI 契约冻结与只读预检（tag `p6.0`，报告 `docs/39`，计划稿 `docs/38`）
 

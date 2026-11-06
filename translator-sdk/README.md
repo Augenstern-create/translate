@@ -32,7 +32,9 @@
 - `30_P5-01_Android工具链与Windows验证矩阵报告.md` — NDK r30 + x86_64 AVD 打通 JNI 三段链（含 `EM_AARCH64` 负对照）、只读勘察脚本与 W1～W10 验证矩阵、D-86～D-91
 - `31_Windows验证机部署清单.md` — 实体机实测后的清单 v2（**部分建议已被 `docs/32` 取代，见文首状态块**）
 - `32_P5开发建议与实施计划（工作区与权限边界）.md` — 外部审查/计划稿归档：唯一可写工作区 `E:\augenstern\translate`、逐项审批、固定 Anaconda Python
-- `39_P6.0_契约冻结与只读预检报告.md` — **本轮**：JNI 契约 v1 冻结（4 入口/字符串代际句柄/JSON DTO/UTF-16/NUL 拒绝）、只读预检（无 JNI crate、默认 feature 无 HTTP）、D-130～D-135
+- `41_P6阶段总结与验收报告.md` — **本轮**：P6 收口——J 矩阵最终状态（11 PASS / 4 pending）、契约增量、裁定 Conditional、5 条阻断项未动
+- `40_P6.1-P6.4_JNI绑定层实施报告.md` — **本轮**：`translator-jni` + Android Harness，模拟器 23/23 PASS（含并发关闭 389/11/0 崩溃）
+- `39_P6.0_契约冻结与只读预检报告.md` — JNI 契约 v1 冻结（4 入口/字符串代际句柄/JSON DTO/UTF-16/NUL 拒绝）、只读预检（无 JNI crate、默认 feature 无 HTTP）、D-130～D-135
 - `38_P6跨平台绑定与Android_JNI开发建议与验收计划.md` — 外部计划稿归档：P6.0～P6.5 分解、J-01～J-15 测试矩阵、权限边界
 - `37_P5阶段总结与验收报告.md` — P5 收口——三分口径裁定 **Conditional**、平台证据表（九项能力 × 四平台）、工作包索引、未验证项清单
 - `36_P5.5_Android模拟器验证报告.md` — **本轮**：真 SDK 跑在 x86_64 AVD（词典/资源/CLI/识别/翻译）、ARM64 仅编译合规（运行被模拟器证伪）、物理性能未验证
@@ -42,7 +44,7 @@
 
 ---
 
-## 当前状态：P0～P3 完成并**已冻结**（`p3.4` / 分支 `p3-frozen`），**P3 = Conditional**：功能可验收，含权重的发行被 release-blockers（G12 等五项）阻断。P4 工作包全部交付（P4-01～P4-07，`p4.3`），裁定 **`conditional-go`**：插件替换可行 = go，替换 P3 后端 = **no-go**；**门禁闭合情况是 6 项通过 + G05/G06 部分满足**（未闭合项已进机器可查台账 `fixtures/p4/acceptance.json`，由 `check-release.py` 的 C9 盯）。**P5 已收口**（`p5.7`）：裁定 **Conditional**——Windows 实体机 W1–W10 全绿（333 passed / 0 failed / 60 ignored，含 ORT 24 条真实模型、6 条跨进程不变量、5 个崩溃注入点），Linux 375/0/60 无回退；Android x86_64 模拟器上真 SDK 跑通（词典/资源/CLI），ARM64 仅编译合规、运行不可得、物理性能**未验证**；5 条发行阻断项仍 open。见 `docs/37`
+## 当前状态：P0～P3 完成并**已冻结**（`p3.4` / 分支 `p3-frozen`），**P3 = Conditional**：功能可验收，含权重的发行被 release-blockers（G12 等五项）阻断。P4 工作包全部交付（P4-01～P4-07，`p4.3`），裁定 **`conditional-go`**：插件替换可行 = go，替换 P3 后端 = **no-go**；**门禁闭合情况是 6 项通过 + G05/G06 部分满足**（未闭合项已进机器可查台账 `fixtures/p4/acceptance.json`，由 `check-release.py` 的 C9 盯）。**P6 已收口**（`p6.2`）：`bindings/translator-jni` 让完整 Rust SDK 经 JNI 在 Android x86_64 模拟器上真实可用（23/23 断言，含真词典/并发关闭）；Linux 379 / Windows 337 passed 无倒退；J-07/J-14/J-15 与 APK 载体、真实 Android NMT、ARM64 运行仍 pending。**P5**（`p5.7`）：裁定 **Conditional**——Windows 实体机 W1–W10 全绿（333 passed / 0 failed / 60 ignored，含 ORT 24 条真实模型、6 条跨进程不变量、5 个崩溃注入点），Linux 375/0/60 无回退；Android x86_64 模拟器上真 SDK 跑通（词典/资源/CLI），ARM64 仅编译合规、运行不可得、物理性能**未验证**；5 条发行阻断项仍 open。见 `docs/37`
 
 - **P0**：workspace 结构、核心类型、插件契约、协调器与路由、缓存、门面 API、Mock 插件、CLI。
   **不接任何真实模型、不装任何 native 库**，整条链路即可运行 —— 这是设计文档规定的交付判据。
