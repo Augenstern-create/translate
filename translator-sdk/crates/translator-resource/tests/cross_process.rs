@@ -19,12 +19,13 @@
 //!
 //! # 平台范围（诚实说明）
 //!
-//! 整个文件只在 Linux 上运行：存活判定依赖 `/proc/<pid>/stat` 的 starttime，
-//! 非 Linux 平台 [`translator_resource::probe`] 返回 `Unknown`（按"占用中"处理），
-//! 本文件的断言（`alive == Some(true/false)`、pid 复用、死锁回收）都无法成立。
-//! Windows / macOS 的等价测试**尚未编写、未验证**，不在此处假装通过。
+//! Linux 与 Windows 都跑：两边的存活判定都能给出确定答案
+//! （Linux 读 `/proc/<pid>/stat` 的 starttime；Windows 用 `OpenProcess` +
+//! `GetProcessTimes` 的创建时间，见 `leases.rs` 的 `win_probe`），
+//! 所以本文件的断言（`alive == Some(true/false)`、pid 复用、死锁回收）在两个平台都成立。
+//! macOS 仍是 `Unknown`（按"占用中"处理），因此不在那里跑——不假装通过。
 
-#![cfg(target_os = "linux")]
+#![cfg(any(target_os = "linux", windows))]
 
 use std::io::{BufRead, BufReader, Lines};
 use std::path::{Path, PathBuf};

@@ -704,15 +704,17 @@ fn recover回收死进程的租约() {
     )
     .unwrap();
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     {
+        // Linux(/proc) 与 Windows(OpenProcess+GetProcessTimes) 都能判定"这个 pid 不存在"，
+        // 因此崩溃残留的租约必须被回收，而不是永远挂着等人工处理。
         let report = store.recover().unwrap();
         assert_eq!(report.reclaimed_leases, 1);
         assert!(store.all_leases().unwrap().is_empty());
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", windows)))]
     {
-        // 非 Linux 无法判定存活：必须保留，绝不猜
+        // 其余平台无法判定存活：必须保留，绝不猜（把未知当"已死"会删掉正在用的版本）
         let report = store.recover().unwrap();
         assert_eq!(report.reclaimed_leases, 0);
         assert_eq!(store.all_leases().unwrap().len(), 1);
