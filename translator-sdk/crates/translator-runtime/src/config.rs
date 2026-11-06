@@ -173,6 +173,11 @@ mod tests {
         }
     }
 
+    // 下面这几条的夹具用 POSIX 绝对路径（`/snap/abc`）。Windows 上它不是绝对路径，配置渲染会先
+    // 因"必须是绝对路径"失败；而 Bergamot 配置渲染在 Windows 上本来就不可达（`ensure_supported()`
+    // 直接返回 CapabilityUnavailable，worker 的终止升级与 /proc 采样只在 Linux 验证过）。
+    // 因此按平台语义把它们限定在 unix，Windows 侧记为"未验证"，而不是让它红着或悄悄跳过。
+    #[cfg(unix)]
     #[test]
     fn 生成的配置把shortlist放在独立键而不是models段() {
         let yaml = render_bergamot_config(&spec("/snap/abc"), &BergamotOptions::default()).unwrap();
@@ -191,6 +196,7 @@ mod tests {
         assert_eq!(models_block.matches("  - \"").count(), 1, "{yaml}");
     }
 
+    #[cfg(unix)]
     #[test]
     fn 解码参数来自类型化选项而不是字符串拼接() {
         let options = BergamotOptions {
@@ -205,6 +211,7 @@ mod tests {
         assert!(yaml.contains("mini-batch: 1"), "批处理必须固定为 1：{yaml}");
     }
 
+    #[cfg(unix)]
     #[test]
     fn 没有短名单时就不生成shortlist键() {
         let mut s = spec("/snap/abc");
@@ -214,6 +221,7 @@ mod tests {
         assert!(yaml.contains("vocabs:"), "{yaml}");
     }
 
+    #[cfg(unix)]
     #[test]
     fn ssplit前缀文件存在时才写键() {
         let mut s = spec("/snap/abc");
@@ -258,6 +266,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn 相对路径与含引号的路径被拒绝或被正确转义() {
         let mut s = spec("/snap/abc");

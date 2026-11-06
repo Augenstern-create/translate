@@ -36,6 +36,15 @@ import os
 import shutil
 import subprocess
 import sys
+
+# Windows 控制台默认是 ANSI 代码页（如 cp936），打印 UTF-8 内容（中文、U+FFFD 替换符）
+# 会 UnicodeEncodeError。输出流统一改成 UTF-8 + replace：宁可显示"?"，也不要因为打印崩掉。
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:  # noqa: BLE001 - 老版本 Python 或非 TTY 时不支持 reconfigure
+    pass
+
 from pathlib import Path
 
 SDK = Path(__file__).resolve().parent.parent

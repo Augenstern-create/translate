@@ -528,6 +528,9 @@ mod tests {
         }
     }
 
+    // 这条依赖进程隔离 worker（Linux 语义：SIGTERM 升级、/proc 采样、kill -9 恢复）与
+    // 宿主 RSS 观测；Windows 上平台门禁直接给 CapabilityUnavailable，故限定在 Linux。
+    #[cfg(target_os = "linux")]
     #[test]
     fn 未加载就翻译给出明确的初始化错误() {
         let transport = ProcessTransport::new(WorkerConfig::new("/bin/true"), 1);
@@ -559,6 +562,9 @@ mod tests {
         assert_eq!(transport.metrics().spawns, 0);
     }
 
+    // 这条依赖进程隔离 worker（Linux 语义：SIGTERM 升级、/proc 采样、kill -9 恢复）与
+    // 宿主 RSS 观测；Windows 上平台门禁直接给 CapabilityUnavailable，故限定在 Linux。
+    #[cfg(target_os = "linux")]
     #[test]
     fn 指标包含宿主rss() {
         let transport = ProcessTransport::new(WorkerConfig::new("/bin/true"), 1);
