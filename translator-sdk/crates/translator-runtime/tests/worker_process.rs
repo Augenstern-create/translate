@@ -3,6 +3,12 @@
 //! 这些测试全部跑**真的子进程**：`nmt-worker --mock`。用真实进程而不是 mock 的
 //! `WorkerProcess`，是因为要验证的正是"宿主在子进程 abort/SIGSEGV/超时之后还活着"。
 
+// 这个文件里的行为全部依赖 Linux 独有语义：`/proc/<pid>` 判活、SIGTERM 宽限期、
+// SIGKILL 收尸。Windows 上这些 API 不存在，若照跑会"通过"得很假（`reachable()` 恒 false
+// → `gone_within()` 立刻为真）。所以整目标只在 Linux 编译；Windows 侧记为**未验证**，
+// 而不是让它悄悄通过（ADR-055：编得出 ≠ 跑得通）。
+#![cfg(target_os = "linux")]
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};

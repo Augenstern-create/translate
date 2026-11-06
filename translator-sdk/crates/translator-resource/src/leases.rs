@@ -442,7 +442,13 @@ mod tests {
 
     #[test]
     fn 当前进程必然存活() {
+        // Linux 读 /proc 能给出确定答案；其它平台没有可移植 API，`probe()` 明确返回 Unknown
+        // （保守语义：租约视为仍被占用，绝不误回收）。所以这里钉的是**平台语义**而不是
+        // "进程一定活着"：Windows 的真实存活探测还没实现（P5.4 工作包），不许假装知道。
+        #[cfg(target_os = "linux")]
         assert_eq!(process_alive(std::process::id()), Some(true));
+        #[cfg(not(target_os = "linux"))]
+        assert_eq!(process_alive(std::process::id()), None);
     }
 
     #[test]

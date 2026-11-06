@@ -390,6 +390,8 @@ mod tests {
         let src = tempfile::tempdir().unwrap();
         let root = tempfile::tempdir().unwrap();
         let manifest = manifest(src.path());
+        // Windows 上物化本身仍要跑（这条用例至少验证"能建出快照"），只是只读位断言在 unix 块里。
+        #[cfg_attr(not(unix), allow(unused_variables))]
         let snapshot = ModelSnapshot::materialize(&manifest, root.path(), 1, 1).unwrap();
 
         // 只读位是 Unix 的权限位语义；Windows 没有等价物（DOS 只读属性不是同一件事），
