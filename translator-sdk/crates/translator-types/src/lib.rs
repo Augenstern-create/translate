@@ -7,6 +7,8 @@
 //! 而不应各自定义一套。
 
 use std::fmt;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 // ============================================================
 // 语言标签
@@ -122,6 +124,32 @@ impl fmt::Display for Capability {
 // ============================================================
 // 请求与策略
 // ============================================================
+/// 协作式取消令牌：可在任意线程 `cancel()`，调用方在检查点观察。
+///
+/// 取消是**协作式**的：SDK 在阶段边界检查令牌；真正阻塞在 native 推理里的调用
+/// 需要后端自己实现（Bergamot 后端的做法是终止独占 worker 进程，见 `docs/44`）。
+/// 克隆共享同一个标志位。
+#[derive(Clone, Debug, Default)]
+pub struct CancelToken {
+    flag: Arc<AtomicBool>,
+}
+
+impl CancelToken {
+    pub fn new() -> Self {
+        Self {
+            flag: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// 请求取消。幂等。
+    pub fn cancel(&self) {
+        self.flag.store(true, Ordering::SeqCst);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.flag.load(Ordering::SeqCst)
+    }
+}
 
 /// 引擎选择策略。
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -489,6 +517,11 @@ pub struct TranslationError {
 }
 
 impl TranslationError {
+    /// 取消错误（码固定为 `Cancelled`，不新增错误码）。
+    pub fn cancelled() -> Self {
+        Self::new(TranslationErrorCode::Cancelled, "请求已取消")
+    }
+
     pub fn new(code: TranslationErrorCode, message: impl Into<String>) -> Self {
         Self {
             code,

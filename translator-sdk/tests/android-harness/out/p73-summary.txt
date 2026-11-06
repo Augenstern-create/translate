@@ -1,0 +1,12 @@
+$ cargo fmt --all -- --check
+EXIT=0
+
+$ cargo clippy --workspace --all-targets -- -D warnings
+    Checking translator-jni v0.1.0 (/home/nan/deepseek-harness/translate-workspace/translator-sdk/bindings/translator-jni)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.21s
+
+$ cargo test --workspace
+TOTAL passed=391 failed=0 ignored=60
+
+$ cargo test --workspace --all-features
+TOTAL passed=391 failed=0 ignored=65

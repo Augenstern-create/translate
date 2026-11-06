@@ -36,7 +36,7 @@ pub use translator_runtime::platform;
 use translator_runtime::transport::{ProcessTransport, RuntimeTransport};
 use translator_runtime::WorkerConfig;
 use translator_types::{
-    Capability, EngineDescriptor, LanguageTag, PluginApiVersion, TranslateRequest,
+    CancelToken, Capability, EngineDescriptor, LanguageTag, PluginApiVersion, TranslateRequest,
     TranslationError, TranslationErrorCode, TranslationResult,
 };
 
@@ -381,7 +381,11 @@ impl BergamotNmtEngine {
     fn translate_blocking(
         &self,
         req: &TranslateRequest,
+        cancel: Option<&CancelToken>,
     ) -> Result<TranslationResult, TranslationError> {
+        if cancel.is_some_and(CancelToken::is_cancelled) {
+            return Err(TranslationError::cancelled());
+        }
         let started = Instant::now();
         if req.text.trim().is_empty() {
             return Err(TranslationError::new(
@@ -410,6 +414,9 @@ impl BergamotNmtEngine {
         }
 
         let identity = self.load()?;
+        if cancel.is_some_and(CancelToken::is_cancelled) {
+            return Err(TranslationError::cancelled());
+        }
         let deadline = req
             .timeout_ms
             .map(|ms| Instant::now() + Duration::from_millis(ms))
@@ -431,13 +438,20 @@ impl BergamotNmtEngine {
             ProtectionMode::Segment => {
                 let mut translated = Vec::new();
                 for part in plan.plain_texts() {
+                    if cancel.is_some_and(CancelToken::is_cancelled) {
+                        return Err(TranslationError::cancelled());
+                    }
                     if part.trim().is_empty() {
                         translated.push(part.to_string());
                         continue;
                     }
                     let reply = self
                         .transport
-                        .translate_with_deadline(&job_of(part, &self.config.target), deadline)
+                        .translate_with_deadline_and_cancel(
+                            &job_of(part, &self.config.target),
+                            deadline,
+                            cancel,
+                        )
                         .map_err(to_translation_error)?;
                     translated.push(reply.text);
                 }
@@ -446,7 +460,11 @@ impl BergamotNmtEngine {
             ProtectionMode::Marker => {
                 let reply = self
                     .transport
-                    .translate_with_deadline(&job_of(plan.masked(), &self.config.target), deadline)
+                    .translate_with_deadline_and_cancel(
+                        &job_of(plan.masked(), &self.config.target),
+                        deadline,
+                        cancel,
+                    )
                     .map_err(to_translation_error)?;
                 (plan.restore(&reply.text)?, Vec::new())
             }
@@ -500,7 +518,15 @@ impl TranslationEngine for BergamotNmtEngine {
         &'a self,
         req: &'a TranslateRequest,
     ) -> BoxFuture<'a, Result<TranslationResult, TranslationError>> {
-        Box::pin(async move { self.translate_blocking(req) })
+        Box::pin(async move { self.translate_blocking(req, None) })
+    }
+
+    fn translate_cancellable<'a>(
+        &'a self,
+        req: &'a TranslateRequest,
+        cancel: &'a CancelToken,
+    ) -> BoxFuture<'a, Result<TranslationResult, TranslationError>> {
+        Box::pin(async move { self.translate_blocking(req, Some(cancel)) })
     }
 }
 

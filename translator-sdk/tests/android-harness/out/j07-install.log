@@ -1,0 +1,25 @@
+$ translator-cli --store /tmp/p7repo resource install /tmp/p7-j07-work/good
+[J-07 baseline v1] exit=0 expect_ok=True
+已安装 dictionary.p7.base@1.0.0（dictionary / dictionary.sqlite.v1）
+已激活（此前没有激活版本）
+$ translator-cli --store /tmp/p7repo resource install /tmp/p7-j07-work/tampered
+[J-07a tampered sha256] exit=1 expect_ok=False
+安装失败：完整性校验失败：entries.sqlite 期望 aeaace719c66cf5cde2b352a68b120e6b01caecdd2b0b9dd4b2232177e29575a 实际 bc9ba8973c4a3307981a82d8681458a47893ecf2576ca41e6ac6887a6d708162
+$ translator-cli --store /tmp/p7repo resource install /tmp/p7-j07-work/missing
+[J-07b missing file] exit=1 expect_ok=False
+安装失败：完整性校验失败：entries.sqlite 期望 12 字节 实际 文件缺失
+$ translator-cli --store /tmp/p7repo resource install /tmp/p7-j07-work/unknown-manifest
+[J-07c unknown manifest schema] exit=1 expect_ok=False
+安装失败：不支持的 manifest_schema_version=999（本 SDK 支持 1 与 2）
+$ translator-cli --store /tmp/p7repo resource install /tmp/p7-j07-work/unknown-payload
+[J-07c unknown payload schema] exit=1 expect_ok=False
+安装失败：不支持的 payload_schema_version=dictionary.sqlite.v9
+$ translator-cli --store /tmp/p7repo resource install /tmp/p7-j07-work/bad-id
+[J-07d traversal id] exit=1 expect_ok=False
+安装失败：版本号非法：id="../evil" 不能用作目录名
+$ translator-cli --store /tmp/p7repo resource install /tmp/p7-j07-work/bad-file
+[J-07d traversal file path] exit=1 expect_ok=False
+安装失败：清单里出现不安全的路径：../evil
+$ translator-cli --store {REPO} resource list
+dictionary.p7.base  激活=1.0.0  历史=[]
+  - 1.0.0（激活）  dictionary  unix:1793986532

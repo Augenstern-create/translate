@@ -13,3 +13,7 @@ sha2.workspace = true
 
 [dev-dependencies]
 tempfile = "3"
+
+# G08：父进程用 SIGKILL 做"外部 kill -9"，只在 Unix 测试里链接。
+[target.'cfg(unix)'.dev-dependencies]
+libc = "0.2"

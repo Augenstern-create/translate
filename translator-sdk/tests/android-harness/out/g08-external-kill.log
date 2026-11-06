@@ -1,0 +1,14 @@
+   Compiling translator-resource v0.1.0 (/home/nan/deepseek-harness/translate-workspace/translator-sdk/crates/translator-resource)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.24s
+     Running tests/p32_lifecycle.rs (target/debug/deps/p32_lifecycle-d72ba69d5d7bf933)
+
+running 1 test
+after-staging: 崩溃后 1 个 staging 残留；recover=RecoverReport { removed_staging: 1, reclaimed_leases: 0, removed_temp_files: 0, removed_orphans: 0, dropped_records: 0 }；修复后 仓库状态一致：state / installed / staging 三方无差异
+before-rename: 崩溃后 1 个 staging 残留；recover=RecoverReport { removed_staging: 1, reclaimed_leases: 0, removed_temp_files: 0, removed_orphans: 0, dropped_records: 0 }；修复后 仓库状态一致：state / installed / staging 三方无差异
+after-rename: 崩溃后 1 个目录无记录（孤儿）；recover=RecoverReport { removed_staging: 0, reclaimed_leases: 0, removed_temp_files: 0, removed_orphans: 1, dropped_records: 0 }；修复后 仓库状态一致：state / installed / staging 三方无差异
+before-state: 崩溃后 1 个目录无记录（孤儿）；recover=RecoverReport { removed_staging: 0, reclaimed_leases: 0, removed_temp_files: 0, removed_orphans: 1, dropped_records: 0 }；修复后 仓库状态一致：state / installed / staging 三方无差异
+after-state: 崩溃后 仓库状态一致：state / installed / staging 三方无差异；recover=RecoverReport { removed_staging: 0, reclaimed_leases: 0, removed_temp_files: 0, removed_orphans: 0, dropped_records: 0 }；修复后 仓库状态一致：state / installed / staging 三方无差异
+test lc08_安装关键点被外部sigkill杀死后仓库仍可修复且旧版本不损坏 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.15s
+

@@ -98,7 +98,7 @@ public final class Harness {
                 + "\"protocol_version\":1,"
                 + "\"data_dir\":\"/data/local/tmp/p6\","
                 + "\"dict_package\":\"" + dictDir + "\","
-                + "\"resource_repo\":\"/data/local/tmp/p6repo\","
+                + "\"resource_repo\":\"/data/local/tmp/p7repo\","
                 + "\"mock_engines\":true}";
         String h2 = extract(NativeBridge.nativeCreate(config2), "\"handle\":\"", "\"");
 
@@ -135,6 +135,52 @@ public final class Harness {
         String missing = NativeBridge.nativeCall(h2, "translate", "{\"text\":\"x\"}");
         check("J-10c", missing.contains("InvalidRequest"),
                 "缺 target 受控失败: " + trim(missing));
+
+        // J-10 边界：超长文本 / 控制字符 / 深嵌套 / 超大 payload / limit 上限
+        String long64k = repeat('a', 64 * 1024);
+        String l64 = NativeBridge.nativeCall(h2, "detect",
+                "{\"text\":\"" + long64k + "\"}");
+        check("J-10d", l64.contains("\"ok\":true"),
+                "64 KiB 文本正常处理: " + trim(l64));
+
+        String long1m = repeat('a', 1024 * 1024);
+        String l1m = NativeBridge.nativeCall(h2, "detect",
+                "{\"text\":\"" + long1m + "\"}");
+        check("J-10e", l1m.contains("InvalidRequest") && l1m.contains("上限"),
+                "1 MiB 文本明确拒绝且不 OOM: " + trim(l1m));
+
+        String ctrl = NativeBridge.nativeCall(h2, "detect",
+                "{\"text\":\"a\\u0001b\"}");
+        check("J-10f", ctrl.contains("InvalidRequest") && ctrl.contains("控制字符"),
+                "控制字符明确拒绝: " + trim(ctrl));
+
+        String deep = repeat('[', 200) + "0" + repeat(']', 200);
+        String dj = NativeBridge.nativeCall(h2, "detect", deep);
+        check("J-10g", dj.contains("InvalidRequest"),
+                "200 层嵌套 JSON 受控失败: " + trim(dj));
+
+        String huge = repeat('a', 300 * 1024);
+        String hg = NativeBridge.nativeCall(h2, "detect",
+                "{\"text\":\"" + huge + "\"}");
+        check("J-10h", hg.contains("InvalidRequest"),
+                "超过 payload 上限受控失败: " + trim(hg));
+
+        String lim = NativeBridge.nativeCall(h2, "lookup",
+                "{\"term\":\"x\",\"limit\":1001}");
+        check("J-10i", lim.contains("InvalidRequest") && lim.contains("limit"),
+                "lookup limit 上限受控失败: " + trim(lim));
+
+        // ---------- J-07：资源仓库由宿主构造并推送（坏包安装已在主机侧拒绝） ----------
+        // 注意：创建新句柄会让旧代际失效（nativeCreate 的设计），因此这里复用 h2，
+        // 不额外 create，避免把 J-06 的句柄提前作废。
+        String res3 = NativeBridge.nativeCall(h2, "resources", "{}");
+        check("J-07a", res3.contains("\"ok\":true")
+                        && res3.contains("dictionary.p7.base")
+                        && res3.contains("1.0.0"),
+                "仓库里激活版本可读: " + trim(res3));
+        check("J-07b", !res3.contains("dictionary.p7.evil")
+                        && !res3.contains("dictionary.p7.traversal"),
+                "坏包/穿越包没有进入仓库: " + trim(res3));
 
         // ---------- J-06：并发 lookup 与 close 不得互相释放 ----------
         final String concHandle = h2;
@@ -175,6 +221,54 @@ public final class Harness {
         check("J-06", !crashed[0] && (okCount.get() + closedCount.get()) == 400 && okCount.get() > 0,
                 "并发调用与关闭无崩溃：ok=" + okCount.get() + " alreadyClosed=" + closedCount.get()
                         + " close=" + trim(closeConc));
+        // J-15b 与 J-06 同一实验：400 次在飞调用 + 中途 close，无崩溃、无 UAF。
+        check("J-15b", !crashed[0] && (okCount.get() + closedCount.get()) == 400,
+                "并发 close 与在飞调用：ok=" + okCount.get() + " alreadyClosed=" + closedCount.get());
+
+        // J-15c：ART 不保证 System.loadLibrary 卸载语义，不伪造 PASS。
+        System.out.println("PENDING J-15c .so 重载：ART 类加载器不保证卸载，不可测（docs/43 D-146）");
+
+        // ---------- J-15a：50 次 create → lookup → close，代际单调且旧句柄失效 ----------
+        boolean genOk = true;
+        int prevGen = -1;
+        for (int i = 0; i < 50; i++) {
+            String h = extract(NativeBridge.nativeCreate(config2), "\"handle\":\"", "\"");
+            if (h == null || !h.contains(":")) {
+                genOk = false;
+                break;
+            }
+            int gen = Integer.parseInt(h.substring(0, h.indexOf(':')));
+            if (prevGen >= 0 && gen != prevGen + 1) {
+                System.out.println("generation jump: " + prevGen + " -> " + gen);
+                genOk = false;
+            }
+            prevGen = gen;
+            String lk = NativeBridge.nativeCall(h, "lookup", "{\"term\":\"你好\"}");
+            if (!lk.contains("\"ok\":true")) {
+                System.out.println("lookup failed: " + trim(lk));
+                genOk = false;
+            }
+            NativeBridge.nativeClose(h);
+            String stale15 = NativeBridge.nativeCall(h, "lookup", "{\"term\":\"你好\"}");
+            if (!stale15.contains("AlreadyClosed")) {
+                System.out.println("stale handle accepted: " + trim(stale15));
+                genOk = false;
+            }
+        }
+        check("J-15a", genOk && prevGen > 0,
+                "50 次重建：代际单调、旧句柄 AlreadyClosed（last gen=" + prevGen + "）");
+
+        // ---------- G06：JNI 取消路径（预取消的 request_id 必须返回 Cancelled） ----------
+        String h4 = extract(NativeBridge.nativeCreate(config2), "\"handle\":\"", "\"");
+        String cancelAck = NativeBridge.nativeCall(h4, "cancel",
+                "{\"request_id\":\"g06-pre\"}");
+        String cancelled = NativeBridge.nativeCall(h4, "translate",
+                "{\"text\":\"Hello\",\"target\":\"zh-Hans\",\"request_id\":\"g06-pre\"}");
+        check("G06-JNI", cancelAck.contains("\"cancelled\":true")
+                        && cancelled.contains("Cancelled"),
+                "JNI 预取消返回 Cancelled: " + trim(cancelled));
+        NativeBridge.nativeClose(h4);
+
 
         // ---------- 收尾 ----------
         System.out.println("SUMMARY pass=" + pass + " fail=" + fail);
@@ -191,6 +285,12 @@ public final class Harness {
             fail++;
             System.out.println("FAIL " + id + " " + detail);
         }
+    }
+
+    private static String repeat(char c, int n) {
+        char[] chars = new char[n];
+        java.util.Arrays.fill(chars, c);
+        return new String(chars);
     }
 
     private static String extract(String s, String start, String end) {

@@ -19,3 +19,8 @@ translator-sdk/models/
 *.swp
 *~
 .DS_Store
+
+# ===== P7 构建产物（二进制不入库；日志与 JSON 证据保留）=====
+translator-sdk/dist/
+translator-sdk/tests/android-harness/out/classes/
+translator-sdk/tests/android-harness/out/dex/

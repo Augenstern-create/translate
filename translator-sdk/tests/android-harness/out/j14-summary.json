@@ -1,0 +1,53 @@
+{
+  "stage": "P7.2/J-14",
+  "device": "gms2/34/x86_64",
+  "iterations": 35,
+  "rss_source": "proc/self/status",
+  "latency_ms": {
+    "create": {
+      "n": 35,
+      "min": 0.192,
+      "p50": 0.209,
+      "p95": 0.241,
+      "max": 0.253,
+      "mean": 0.212
+    },
+    "lookup": {
+      "n": 35,
+      "min": 0.199,
+      "p50": 0.207,
+      "p95": 0.306,
+      "max": 0.312,
+      "mean": 0.215
+    },
+    "detect": {
+      "n": 35,
+      "min": 0.127,
+      "p50": 0.134,
+      "p95": 0.154,
+      "max": 0.175,
+      "mean": 0.136
+    },
+    "close": {
+      "n": 35,
+      "min": 0.052,
+      "p50": 0.052,
+      "p95": 0.062,
+      "max": 0.075,
+      "mean": 0.053
+    }
+  },
+  "rss_kb": {
+    "after_create_first": 113964,
+    "after_close_last": 116632,
+    "growth": 2668,
+    "vmhwm": 120848,
+    "peak_observed": 116640
+  },
+  "caveats": [
+    "x86_64 模拟器（gms2 / android-34），不是物理设备",
+    "JNI v1 未编译真实 NMT，本数据不代表 Android NMT 内存预算",
+    "RSS 为 Java+native 同进程口径（/proc/self/status VmRSS）",
+    "lookup 命中词典 mmap/页缓存，热路径数字偏乐观"
+  ]
+}

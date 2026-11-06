@@ -76,6 +76,29 @@ impl Translator {
         self.coordinator.translate(req).await
     }
 
+    /// 可取消的翻译入口（G06）。
+    ///
+    /// 令牌可在任意线程 `cancel()`；取消后返回 `Cancelled`，不写缓存。
+    /// 对真实 Bergamot 后端，取消会终止独占 worker 进程（下次请求需要重新 load）。
+    pub async fn translate_cancellable(
+        &self,
+        req: &TranslateRequest,
+        cancel: &CancelToken,
+    ) -> Result<TranslationResult, TranslationError> {
+        self.coordinator.translate_cancellable(req, cancel).await
+    }
+
+    /// 带诊断的可取消翻译入口。
+    pub async fn translate_with_diagnostics_cancellable(
+        &self,
+        req: &TranslateRequest,
+        cancel: &CancelToken,
+    ) -> Result<TranslateOutput, TranslationError> {
+        self.coordinator
+            .translate_with_diagnostics_cancellable(req, cancel)
+            .await
+    }
+
     /// 带结构化诊断的翻译入口（P2.4）。
     ///
     /// 与 [`Translator::translate`] 走**同一条**流水线，因此不会出现

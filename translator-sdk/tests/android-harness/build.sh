@@ -16,7 +16,7 @@ sdk="${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}"
 adb="$sdk/platform-tools/adb"
 d8="$sdk/cmdline-tools/latest/bin/d8"
 out="$here/out"
-devdir="/data/local/tmp/p6"
+devdir="/data/local/tmp/p7"
 lib="$repo/target/x86_64-linux-android/release/libtranslator_jni.so"
 
 mode="${1:-all}"
@@ -26,13 +26,15 @@ if [ ! -f "$lib" ]; then
   exit 3
 fi
 
-rm -rf "$out"
+# 只清理构建产物，保留 out/ 下的证据日志（p71.log、j07-install.log 等）。
+rm -rf "$out/classes" "$out/dex"
 mkdir -p "$out/classes" "$out/dex"
 
 echo "== javac"
 javac -encoding UTF-8 -source 8 -target 8 -d "$out/classes" \
   "$here/src/ai/ridge/translator/NativeBridge.java" \
-  "$here/src/ai/ridge/translator/Harness.java" 2>&1 | grep -v "警告\|warning" || true
+  "$here/src/ai/ridge/translator/Harness.java" \
+  "$here/src/ai/ridge/translator/PerfHarness.java"
 
 echo "== d8 → dex"
 "$d8" --min-api 21 --output "$out/dex" \
@@ -50,6 +52,19 @@ echo "== adb push"
 "$adb" push "$out/dex/classes.dex" "$devdir/classes.dex" >/dev/null
 if [ -d /tmp/dictpkg ]; then
   "$adb" push /tmp/dictpkg "$devdir/dictpkg" >/dev/null
+fi
+if [ -d /tmp/p7repo ]; then
+  "$adb" shell "rm -rf $devdir/repo && mkdir -p $devdir/repo" >/dev/null
+  "$adb" push /tmp/p7repo/. "$devdir/repo/" >/dev/null
+  # 模拟器内路径与宿主脚本约定一致
+  "$adb" shell "rm -rf /data/local/tmp/p7repo && mv $devdir/repo /data/local/tmp/p7repo"
+fi
+
+if [ "$mode" = "--perf" ]; then
+  echo "== run J-14"
+  "$adb" shell "cd $devdir && app_process -Djava.class.path=$devdir/classes.dex \
+    -Djava.library.path=$devdir /system/bin ai.ridge.translator.PerfHarness $devdir/dictpkg ${2:-35}"
+  exit 0
 fi
 
 echo "== run"

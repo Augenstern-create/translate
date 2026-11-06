@@ -1,0 +1,13 @@
+   Compiling translator-types v0.1.0 (/home/nan/deepseek-harness/translate-workspace/translator-sdk/crates/translator-types)
+   Compiling translator-runtime v0.1.0 (/home/nan/deepseek-harness/translate-workspace/translator-sdk/crates/translator-runtime)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.73s
+     Running tests/cancellation.rs (target/debug/deps/cancellation-2b5f81d38567ac31)
+
+running 4 tests
+test g06_已取消的令牌不产生任何进程 ... ok
+test g06_终止会收掉worker的整个进程组 ... ok
+test g06_排队中取消立即返回且不spawn ... ok
+test g06_执行中取消终止worker并不留孤儿 ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.55s
+

@@ -210,8 +210,12 @@ fn child_install_with_crash() {
     println!("CHILD_RESULT={outcome:?}");
 }
 
-fn run_child(root: &Path, pkg: &Path, crash: &str) -> bool {
-    let status = Command::new(std::env::current_exe().unwrap())
+/// 子进程角色：到达指定崩溃点后写 marker，等父进程从**外部** SIGKILL（G08）。
+///
+/// 返回子进程的退出状态；Unix 上额外由调用方断言 `signal == SIGKILL`。
+fn run_child(root: &Path, pkg: &Path, crash: &str, marker: &Path) -> std::process::ExitStatus {
+    let _ = std::fs::remove_file(marker);
+    let mut child = Command::new(std::env::current_exe().unwrap())
         .arg("--ignored")
         .arg("--exact")
         .arg("child_install_with_crash")
@@ -219,18 +223,42 @@ fn run_child(root: &Path, pkg: &Path, crash: &str) -> bool {
         .env(ROOT_ENV, root)
         .env(PKG_ENV, pkg)
         .env(CRASH_ENV, crash)
+        .env("TRANSLATOR_TEST_CRASH_MARKER", marker)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status()
+        .spawn()
         .expect("无法启动子进程");
-    status.success()
+
+    // 等子进程真正到达崩溃点（marker 出现）；最多 10 s。
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while std::time::Instant::now() < deadline {
+        if marker.exists() {
+            break;
+        }
+        if let Ok(Some(status)) = child.try_wait() {
+            return status;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(marker.exists(), "{crash}：子进程没有到达崩溃点");
+
+    // 外部 kill -9：父进程发 SIGKILL（Windows 用 TerminateProcess 等价）。
+    #[cfg(unix)]
+    unsafe {
+        libc::kill(child.id() as libc::pid_t, libc::SIGKILL);
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = child.kill();
+    }
+    child.wait().expect("等待子进程失败")
 }
 
 // 两个平台都跑：崩溃子进程留下的 `state.lock` 必须被判死并回收。
 // （Windows 侧靠 `OpenProcess` + `GetExitCodeProcess` + `GetProcessTimes` 创建时间，
 //  见 `leases.rs` 的 `win_probe`；P5.4 之前这里是 ignore，因为那时 probe() 恒为 Unknown。）
 #[test]
-fn lc08_安装关键点崩溃后仓库仍可修复() {
+fn lc08_安装关键点被外部sigkill杀死后仓库仍可修复且旧版本不损坏() {
     let points = [
         "after-staging",
         "before-rename",
@@ -241,12 +269,29 @@ fn lc08_安装关键点崩溃后仓库仍可修复() {
     for point in points {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        let pkg = build_package(root, "dictionary.crash", "1.0.0", &[]);
+        // 先装好并激活 v1：崩溃安装 v2 时，v1 必须原样可用。
+        let pkg_v1 = build_package(root, "dictionary.crash", "1.0.0", &[]);
+        let pkg_v2 = build_package(root, "dictionary.crash", "2.0.0", &[]);
+        let store0 = store(root);
+        store0.install_from_dir(&pkg_v1).unwrap();
+        let v1_manifest = translator_resource::store::read_manifest_from(
+            store0.version_dir("dictionary.crash", "1.0.0").unwrap(),
+        )
+        .unwrap();
+        let v1_dir = store0.version_dir("dictionary.crash", "1.0.0").unwrap();
 
-        assert!(
-            !run_child(root, &pkg, point),
-            "{point}：子进程应当异常终止（abort）"
-        );
+        let marker = root.join(format!("crash-{point}.marker"));
+        let status = run_child(root, &pkg_v2, point, &marker);
+        assert!(!status.success(), "{point}：子进程必须被外部杀死");
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            assert_eq!(
+                status.signal(),
+                Some(libc::SIGKILL),
+                "{point}：必须是外部 SIGKILL（signal=9），实际 {status:?}"
+            );
+        }
 
         let s = store(root);
         let audit_before = s.audit().unwrap();
@@ -264,18 +309,34 @@ fn lc08_安装关键点崩溃后仓库仍可修复() {
             audit_after.summary()
         );
 
-        // 修复后必须能重新安装（或如实报"已经装好了"）
-        match s.install_from_dir(&pkg) {
+        // 旧版本：仍然是激活版本、目录还在、逐文件摘要仍然正确。
+        let inspect = s.inspect("dictionary.crash").unwrap();
+        assert_eq!(
+            inspect.active.as_deref(),
+            Some("1.0.0"),
+            "{point}：激活版本被改坏"
+        );
+        assert!(v1_dir.exists(), "{point}：旧版本目录被删");
+        translator_resource::store::verify_files(&v1_dir, &v1_manifest)
+            .unwrap_or_else(|e| panic!("{point}：旧版本内容损坏：{e}"));
+
+        // 修复后必须能重新安装 v2（after-state 时 v2 已落账，重装必须报已安装）。
+        match s.install_from_dir(&pkg_v2) {
             Ok(_) => assert_ne!(
                 point, "after-state",
                 "after-state 时状态已落盘，重装必须报已安装"
             ),
             Err(ResourceError::AlreadyInstalled { .. }) => {
-                // after-state：崩溃发生在状态写完之后，安装其实已经生效
                 assert_eq!(point, "after-state", "{point}：不该报已安装");
             }
             Err(other) => panic!("{point}：重装失败 {other:?}"),
         }
         assert!(s.audit().unwrap().is_clean(), "{point}：重装后仓库必须一致");
+        // v2 安装（或已安装）不应改变激活版本。
+        assert_eq!(
+            s.inspect("dictionary.crash").unwrap().active.as_deref(),
+            Some("1.0.0"),
+            "{point}：安装新版本不得隐式激活"
+        );
     }
 }

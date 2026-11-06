@@ -32,6 +32,7 @@
 - `30_P5-01_Android工具链与Windows验证矩阵报告.md` — NDK r30 + x86_64 AVD 打通 JNI 三段链（含 `EM_AARCH64` 负对照）、只读勘察脚本与 W1～W10 验证矩阵、D-86～D-91
 - `31_Windows验证机部署清单.md` — 实体机实测后的清单 v2（**部分建议已被 `docs/32` 取代，见文首状态块**）
 - `32_P5开发建议与实施计划（工作区与权限边界）.md` — 外部审查/计划稿归档：唯一可写工作区 `E:\augenstern\translate`、逐项审批、固定 Anaconda Python
+- `44_P7.1-P7.5_跨平台质量收口与发行候选报告.md` — **P7 收口**：G06/G08 闭合、J-07/J-10/J-15 Android 34 PASS（1 PENDING）、J-14 模拟器基线、Linux 391 tests、SBOM/工件哈希；G12/G11 仍 open，裁定 Conditional
 - `43_P7.0_基线与测试矩阵报告.md` — **本轮**：P7.0 基线/权限/依赖只读核对、五条阻断项按台账纠偏（G06=取消在途请求、G08=abort vs kill -9、D-46=许可证正文未入库）、J-07/J-10/J-14/J-15 判据冻结、D-144～D-147
 - `42_P7发行准备与跨平台质量收口开发建议.md` — 外部计划稿归档：P7.0～P7.5 分解、P7-01～P7-12 验收矩阵、权限硬约束
 - `41_P6阶段总结与验收报告.md` — P6 收口——J 矩阵最终状态（11 PASS / 4 pending）、契约增量、裁定 Conditional、5 条阻断项未动
@@ -191,10 +192,10 @@
     错误信息带平台名与原因；CLI `--diagnose` 增加"平台"一行。
   - **打包**：全部 crate `publish = false`；实测只有 `translator-types` / `translator-resource`
     能 `cargo package`（其余 12 个因 path-only 内部依赖不可打包，属设计取舍）。
-  - 实测：**365 passed / 0 failed / 41 ignored**，真实模型 **41 passed**，红线 7 项全 PASS，
-    `LICENSE-MIT`/`LICENSE-APACHE` 正文尚未入库（D-46）。
+  - 实测：**365 passed / 0 failed / 41 ignored**，真实模型 **41 passed**，红线 7 项全 PASS；
+    `LICENSE-MIT`/`LICENSE-APACHE` 正文后在 P7 补齐（D-46 已 closed）。
   - **P3 最终裁定：Conditional（有条件通过）**。功能门槛可验收；**含权重发行仍被阻断**（G12：
-    权重许可未确认），G06/G08（取消在途请求、真 `kill -9`）、G11（真实 runner）也是条件项。
+    权重许可未确认），G06/G08（P7 已闭合）、G11（真实 runner）也是条件项。
     见 `../docs/21_P3.4报告.md` §4。
 
 词库与规则都是**可选 feature**：不开 `dictionary` 时 `translator-api` 依赖树里没有 `rusqlite`；
@@ -203,7 +204,7 @@
 - **P4（进行中）**：
   - **P4-01 冻结**（`docs/24`）：`p3-frozen` 分支 + `fixtures/p3-freeze/manifest.json`（`tools/freeze-manifest.py --check`
     会因 tag 移动、`Cargo.lock`/基线 JSON 变化、台账条目被删而失败）+ `fixtures/release-blockers.json`
-    （G12/G11/G06/G08/D-46 五项 open，`check-release.py --release-mode` 直接 FAIL）。
+    （P4 时点：G12/G11/G06/G08/D-46 五项 open；P7 后 G06/G08/D-46 已闭合，G12/G11 仍 open）。
   - **P4-02 候选门禁**：`ort + opus-mt-en-zh`（Marian int8 ONNX，**许可 apache-2.0**），
     资产 111.0 MiB / 9 个文件全部锁定在 `fixtures/p4/candidate.lock.json`；能产出真实译文
     （`The cat is on the table.` → `猫在桌子上`）。
@@ -607,7 +608,7 @@ NMT_BASELINE_OUT=fixtures/nmt/baseline-p3.1b-linux-x86_64-1thread.json \
 - **模型权重再分发许可结论**：Remote Settings 记录里没有 license 字段，`mozilla/translations`
   代码是 MPL-2.0，但权重的再分发条款要模型卡/法务确认。当前结论是"不打包、不缓存、不分发"，
   所以**不存在**"开箱即用的离线翻译包"这种交付物。
-- **`LICENSE-MIT` / `LICENSE-APACHE` 正文未入库**：只声明了 SPDX（`docs/21` D-46）。
+- **`LICENSE-MIT` / `LICENSE-APACHE` 正文未入库**（历史项；P7 已补正文并关闭 D-46）。
 - **CI 未在真实 runner 上跑过**：workflow 与本地等价命令都在，但本仓库没有远端（D-47）。
 - **真实模型 job 未运行**：需要一台有权重与 native 二进制的自托管机器（D-50）。
 
@@ -644,6 +645,21 @@ NMT_BASELINE_OUT=fixtures/nmt/baseline-p3.1b-linux-x86_64-1thread.json \
 各项的具体原因与去向见 `../docs/04_P1_字典与离线查词报告.md` §8、§9
 与 `../docs/21_P3.4报告.md` §4.1。
 
+## P7 发行准备状态（2026-11-07，详见 `../docs/44`）
+
+| 平台 / 形态 | 状态 |
+|---|---|
+| Linux x86_64（SDK / CLI / Bergamot worker） | 391 tests passed；fmt/clippy/license audit 通过 |
+| Windows x86_64 | **P7 未复测**（无可用 Windows 主机）；P5/P6 历史结果不等于本轮结论 |
+| Android x86_64 模拟器（JNI v1） | 34 PASS / 0 FAIL / 1 PENDING（`.so` 重载受 ART 限制） |
+| Android ARM64 | 仅交叉编译，运行未验证 |
+| 真实 Android NMT | 未编译进 JNI 产物 |
+| 模型权重 | **不分发**（G12 许可未确认） |
+
+发行阻断台账：`G06`（取消在途请求）与 `G08`（外部 `kill -9` 恢复测试）已闭合；
+`G12`（权重许可）与 `G11`（真实 CI runner）仍 open。`tools/check-release.py --release-mode`
+因此继续 FAIL，当前裁定为 **Conditional / Internal Preview**。
+
 ## 无权重发行模式（当前唯一的合规形态）
 
 SDK 本身**不含任何模型权重**，这是有意为之，不是"还没打包"：
@@ -666,7 +682,7 @@ Bergamot 以**独立进程**按路径启动（不链接、不打包），因此 
 
 ## 许可证
 
-- 本项目源码：`Apache-2.0 OR MIT`（见各 `Cargo.toml` 的 `license` 字段；正文文件待补，`docs/21` D-46）。
-- 第三方 Cargo 依赖：见 `THIRD_PARTY_NOTICES.md` 与 `licenses/third-party.json`（53 个包，全部宽松许可）。
+- 本项目源码：`Apache-2.0 OR MIT`（见各 `Cargo.toml` 的 `license` 字段；正文见仓库根 `LICENSE-APACHE` / `LICENSE-MIT`）。
+- 第三方 Cargo 依赖：见 `THIRD_PARTY_NOTICES.md` 与 `licenses/third-party.json`（172 个包，全部通过许可策略）。
 - 模型权重：**许可未确认**，不随本仓库/发行物分发 → `licenses/model-assets.json`。
 - 词典数据：本项目自建，来源见 `../docs/02`；资源包不默认继承本仓库许可。

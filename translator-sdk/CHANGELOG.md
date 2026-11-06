@@ -19,6 +19,26 @@ tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `
 - 冻结 J-07/J-10/J-14/J-15 的注入方法与期望错误码（含 J-15c `.so` 重载标 PENDING：ART 类加载器限制）。
 - 两处待批资源（360.9 MB ORT 旧缓存、3.1 GB arm64 镜像 + AVD）**未删未移未改**。
 
+## P7-01…P7-05 — 质量收口与发行候选（报告 `docs/44`）
+
+### 新增
+
+- **G06 取消**：`CancelToken`；`Translator::translate_cancellable`；`ProcessTransport::translate_with_deadline_and_cancel`；
+  worker 等待分片观察令牌，取消时终止整个进程组；JNI 新增 `nativeCall(handle,"cancel",{"request_id":...})`。
+- **G08 外部 SIGKILL**：安装崩溃点改为写 marker 后等待外部 `SIGKILL`；测试断言 `signal=9`，recover 后旧版本逐文件校验。
+- **J-10 边界**：JNI 文本 64 KiB / payload 256 KiB / lookup limit 1000 / JSON 深度与对象形状检查；控制字符明确拒绝。
+- **J-07/J-15 Android**：坏包/穿越包、50 次句柄重建、并发 close、JNI 预取消；`PerfHarness` 采集 J-14。
+- `tools/make-sbom.py`（CycloneDX 1.5，147 组件）；`tests/android-harness/p7/make_j07_repo.py`。
+
+### 实测
+
+- Linux：`cargo test --workspace` **391 passed / 0 failed / 60 ignored**；`--all-features` 391 / 0 / 65；
+  fmt、clippy `-D warnings`、license audit（172 包）通过。
+- Android `gms2`：**34 PASS / 0 FAIL / 1 PENDING（J-15c）**；J-14 35 次样本（create p50 0.209 ms，lookup p50 0.207 ms，
+  RSS 113,964→116,632 KiB）。
+- 阻断项：**G06/G08 关闭**（证据 `out/g06-contract.log`、`out/g08-external-kill.log`）；G12/G11 仍 open，
+  `check-release.py --release-mode` 继续 FAIL；裁定 **Conditional / Internal Preview**。
+
 ## P6-01/P6-02 — JNI 绑定层与 P6 收口（tag `p6.1` / `p6.2`，报告 `docs/40` / `docs/41`）
 
 ### 新增

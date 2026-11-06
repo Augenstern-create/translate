@@ -8,8 +8,8 @@ use std::time::Instant;
 
 use translator_plugin_api::{BoxFuture, PluginRegistry};
 use translator_types::{
-    Capability, CapabilityInfo, DictionaryEntry, LookupRequest, RouteDecision, TranslateRequest,
-    TranslationError, TranslationErrorCode, TranslationPolicy, TranslationResult,
+    CancelToken, Capability, CapabilityInfo, DictionaryEntry, LookupRequest, RouteDecision,
+    TranslateRequest, TranslationError, TranslationErrorCode, TranslationPolicy, TranslationResult,
     TranslationWarning,
 };
 
@@ -234,6 +234,22 @@ impl Coordinator {
         Box::pin(async move { self.run(req).await.map(|out| out.result) })
     }
 
+    /// 可取消的译文入口。
+    ///
+    /// 取消在阶段边界检查；引擎若能中断（Bergamot worker）会在执行中返回
+    /// `Cancelled`，否则最迟在本次引擎调用返回后生效。取消不写缓存。
+    pub fn translate_cancellable<'a>(
+        &'a self,
+        req: &'a TranslateRequest,
+        cancel: &'a CancelToken,
+    ) -> BoxFuture<'a, Result<TranslationResult, TranslationError>> {
+        Box::pin(async move {
+            self.run_inner(req, Some(cancel))
+                .await
+                .map(|out| out.result)
+        })
+    }
+
     /// 返回译文 + 结构化诊断（P2.4）。
     ///
     /// 与 [`Self::translate`] 走**同一条**实现路径，只是多带出一份诊断，
@@ -243,6 +259,15 @@ impl Coordinator {
         req: &'a TranslateRequest,
     ) -> BoxFuture<'a, Result<TranslateOutput, TranslationError>> {
         Box::pin(async move { self.run(req).await })
+    }
+
+    /// 带诊断的可取消入口（与 [`Self::translate_cancellable`] 同一实现）。
+    pub fn translate_with_diagnostics_cancellable<'a>(
+        &'a self,
+        req: &'a TranslateRequest,
+        cancel: &'a CancelToken,
+    ) -> BoxFuture<'a, Result<TranslateOutput, TranslationError>> {
+        Box::pin(async move { self.run_inner(req, Some(cancel)).await })
     }
 
     pub fn lookup<'a>(
@@ -291,6 +316,15 @@ impl Coordinator {
     }
 
     async fn run(&self, req: &TranslateRequest) -> Result<TranslateOutput, TranslationError> {
+        self.run_inner(req, None).await
+    }
+
+    async fn run_inner(
+        &self,
+        req: &TranslateRequest,
+        cancel: Option<&CancelToken>,
+    ) -> Result<TranslateOutput, TranslationError> {
+        check_cancelled(cancel)?;
         // 1) 校验 + 规范化
         let normalized = text::normalize(&req.text);
         if normalized.is_empty() {
@@ -319,6 +353,7 @@ impl Coordinator {
             ));
         }
 
+        check_cancelled(cancel)?;
         // 4) 占位符保护
         let protected = text::protect(&work_text);
         let spans = text::protected_spans(&work_text);
@@ -367,17 +402,31 @@ impl Coordinator {
             ..req.clone()
         };
 
+        check_cancelled(cancel)?;
         let started = Instant::now();
-        let mut result = match outcome.engine.translate(&resolved).await {
+        let mut result = match outcome
+            .engine
+            .translate_cancellable(&resolved, cancel.unwrap_or_else(|| never_cancelled()))
+            .await
+        {
             Ok(result) => result,
             Err(err) if self.should_fallback(req, outcome.decision.capability, &err) => {
                 match routing::fallback_to_nmt(&self.registry, &source, &req.target) {
-                    Some(fallback) => fallback.engine.translate(&resolved).await?,
+                    Some(fallback) => {
+                        fallback
+                            .engine
+                            .translate_cancellable(
+                                &resolved,
+                                cancel.unwrap_or_else(|| never_cancelled()),
+                            )
+                            .await?
+                    }
                     None => return Err(err),
                 }
             }
             Err(err) => return Err(err),
         };
+        check_cancelled(cancel)?;
 
         // 8) 占位符还原；丢失必须告警，不得静默
         let (restored, missing) = text::restore(&protected, &result.text);
@@ -542,4 +591,22 @@ impl Coordinator {
                     | TranslationErrorCode::ResourceNotInstalled
             )
     }
+}
+
+/// 取消检查点。`None` 表示调用方没要求取消，零成本。
+fn check_cancelled(cancel: Option<&CancelToken>) -> Result<(), TranslationError> {
+    match cancel {
+        Some(token) if token.is_cancelled() => Err(TranslationError::cancelled()),
+        _ => Ok(()),
+    }
+}
+
+/// 未传令牌时给引擎的占位令牌（永远不取消）。
+///
+/// 用 `OnceLock` 而不是每个请求新建：它只读、无状态；真正需要取消时
+/// 调用方总会显式传入令牌。
+static NEVER: std::sync::OnceLock<CancelToken> = std::sync::OnceLock::new();
+
+fn never_cancelled() -> &'static CancelToken {
+    NEVER.get_or_init(CancelToken::new)
 }

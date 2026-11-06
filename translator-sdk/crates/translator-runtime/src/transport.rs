@@ -24,6 +24,7 @@ use crate::model::{
 use crate::protocol::{Payload, Request};
 use crate::snapshot::ModelSnapshot;
 use crate::worker::{WorkerConfig, WorkerProcess};
+use translator_types::CancelToken;
 
 /// 后端能力契约。实现方可以是进程、线程池、或未来的 FFI 边界。
 pub trait RuntimeTransport: Send + Sync {
@@ -105,6 +106,7 @@ impl ProcessTransport {
     fn guard_until(
         &self,
         deadline: Option<Instant>,
+        cancel: Option<&CancelToken>,
     ) -> Result<std::sync::MutexGuard<'_, State>, RuntimeError> {
         let started = Instant::now();
         // 退避从 20 µs 起翻倍到 500 µs 封顶：
@@ -113,6 +115,10 @@ impl ProcessTransport {
         // "排队到期返回 Timeout"的语义。
         let mut backoff = Duration::from_micros(20);
         loop {
+            // 排队中取消：**不 spawn、不 kill**，直接返回；锁从未拿到。
+            if cancel.is_some_and(CancelToken::is_cancelled) {
+                return Err(RuntimeError::Cancelled);
+            }
             match self.state.try_lock() {
                 Ok(guard) => return Ok(guard),
                 Err(std::sync::TryLockError::Poisoned(poisoned)) => {
@@ -285,7 +291,21 @@ impl ProcessTransport {
         job: &TranslationJob,
         deadline: Instant,
     ) -> Result<TranslationReply, RuntimeError> {
-        let mut state = self.guard_until(Some(deadline))?;
+        self.translate_with_deadline_and_cancel(job, deadline, None)
+    }
+
+    /// 可取消版本：排队阶段观察令牌；拿到 worker 后把令牌交给请求等待循环，
+    /// 到点终止独占 worker（含进程组），返回 `Cancelled`。
+    pub fn translate_with_deadline_and_cancel(
+        &self,
+        job: &TranslationJob,
+        deadline: Instant,
+        cancel: Option<&CancelToken>,
+    ) -> Result<TranslationReply, RuntimeError> {
+        let mut state = self.guard_until(Some(deadline), cancel)?;
+        if cancel.is_some_and(CancelToken::is_cancelled) {
+            return Err(RuntimeError::Cancelled);
+        }
         self.ensure_worker(&mut state)?;
         let Some(loaded) = state.loaded.clone() else {
             return Err(RuntimeError::InitFailed(
@@ -304,12 +324,13 @@ impl ProcessTransport {
         }
         self.active_requests.fetch_add(1, Ordering::SeqCst);
         let remaining = deadline.saturating_duration_since(Instant::now());
-        let outcome = worker.request_with_timeout(
+        let outcome = worker.request_with_timeout_and_cancel(
             Request::Translate {
                 text: job.text.clone(),
                 target: job.target.clone(),
             },
             remaining,
+            cancel,
         );
         self.active_requests.fetch_sub(1, Ordering::SeqCst);
         let payload = outcome?;

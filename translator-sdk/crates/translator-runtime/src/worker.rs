@@ -25,6 +25,7 @@ use crate::model::rss_bytes_of;
 use crate::protocol::{
     self, Payload, Request, RequestEnvelope, Response, WorkerErrorCode, PROTOCOL_VERSION,
 };
+use translator_types::CancelToken;
 
 /// worker 启动参数。
 #[derive(Clone, Debug)]
@@ -136,6 +137,13 @@ impl WorkerProcess {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        // 独立进程组：终止时能连同 worker 的 native 子进程一起收掉。
+        // 没有这一条，SIGKILL 掉 worker 会把 bergamot 留在后台（G06/G08 的"无孤儿"）。
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
         let mut child = command.spawn().map_err(|e| {
             RuntimeError::InitFailed(format!("无法启动 worker {}：{e}", config.binary.display()))
         })?;
@@ -300,6 +308,22 @@ impl WorkerProcess {
         request: Request,
         timeout: Duration,
     ) -> Result<Payload, RuntimeError> {
+        self.request_with_timeout_and_cancel(request, timeout, None)
+    }
+
+    /// 同上，但在等待响应期间观察取消令牌。
+    ///
+    /// native 推理本身不可中断，因此取消到点后**终止独占 worker**（含其进程组），
+    /// 返回 `Cancelled` 而不是伪装成超时。下一次请求需要重新 load（不静默重放）。
+    pub fn request_with_timeout_and_cancel(
+        &mut self,
+        request: Request,
+        timeout: Duration,
+        cancel: Option<&CancelToken>,
+    ) -> Result<Payload, RuntimeError> {
+        if cancel.is_some_and(CancelToken::is_cancelled) {
+            return Err(RuntimeError::Cancelled);
+        }
         if self.is_dead() {
             return Err(self.exit_error("请求发出前 worker 已退出"));
         }
@@ -326,44 +350,60 @@ impl WorkerProcess {
             return Err(self.exit_error(&format!("写入请求失败：{e}")));
         }
 
-        match receiver.recv_timeout(timeout) {
-            Ok(response) => {
-                // 世代/版本不符说明这个 worker 已经不可信（可能是别人的迟到响应，
-                // 也可能是协议实现坏了）。不做猜测：标记不可用，让上层决定要不要重来。
-                if response.epoch != self.epoch {
-                    self.terminate();
-                    return Err(RuntimeError::Protocol(format!(
-                        "响应世代不符：期望 {}，收到 {}",
-                        self.epoch, response.epoch
-                    )));
-                }
-                if response.protocol != PROTOCOL_VERSION {
-                    self.terminate();
-                    return Err(RuntimeError::Protocol(format!(
-                        "协议版本不符：期望 {PROTOCOL_VERSION}，收到 {}",
-                        response.protocol
-                    )));
-                }
-                self.payload_of(response)
+        let deadline = Instant::now() + timeout;
+        loop {
+            if cancel.is_some_and(CancelToken::is_cancelled) {
+                // 已发出请求且 worker 正忙：只能杀掉独占 worker；进程组一并收掉。
+                self.terminate();
+                return Err(RuntimeError::Cancelled);
             }
-            Err(RecvTimeoutError::Timeout) => {
-                // native 推理可能不可中断：不能假装"停下来了"，只能杀掉独占 worker
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
                 let waited = timeout.as_millis() as u64;
                 self.terminate();
-                Err(RuntimeError::Timeout {
+                return Err(RuntimeError::Timeout {
                     operation: envelope.request.op_name(),
                     waited_ms: waited,
-                })
+                });
             }
-            Err(RecvTimeoutError::Disconnected) => {
-                let detail = self
-                    .last_protocol_error
-                    .lock()
-                    .unwrap()
-                    .clone()
-                    .unwrap_or_else(|| "worker 在响应前关闭了输出".to_string());
-                self.terminate();
-                Err(self.exit_error(&detail))
+            // 分片等待：取消令牌不是 channel，只能周期性观察。
+            // 20 ms 是"取消手感"与"不烧 CPU"的折中，不影响正常响应的延迟。
+            let slice = remaining.min(Duration::from_millis(20));
+            match receiver.recv_timeout(slice) {
+                Ok(response) => {
+                    if cancel.is_some_and(CancelToken::is_cancelled) {
+                        self.terminate();
+                        return Err(RuntimeError::Cancelled);
+                    }
+                    // 世代/版本不符说明这个 worker 已经不可信（可能是别人的迟到响应，
+                    // 也可能是协议实现坏了）。不做猜测：标记不可用，让上层决定要不要重来。
+                    if response.epoch != self.epoch {
+                        self.terminate();
+                        return Err(RuntimeError::Protocol(format!(
+                            "响应世代不符：期望 {}，收到 {}",
+                            self.epoch, response.epoch
+                        )));
+                    }
+                    if response.protocol != PROTOCOL_VERSION {
+                        self.terminate();
+                        return Err(RuntimeError::Protocol(format!(
+                            "协议版本不符：期望 {PROTOCOL_VERSION}，收到 {}",
+                            response.protocol
+                        )));
+                    }
+                    return self.payload_of(response);
+                }
+                Err(RecvTimeoutError::Timeout) => continue,
+                Err(RecvTimeoutError::Disconnected) => {
+                    let detail = self
+                        .last_protocol_error
+                        .lock()
+                        .unwrap()
+                        .clone()
+                        .unwrap_or_else(|| "worker 在响应前关闭了输出".to_string());
+                    self.terminate();
+                    return Err(self.exit_error(&detail));
+                }
             }
         }
     }
@@ -416,16 +456,21 @@ impl WorkerProcess {
         // 2) SIGTERM（Unix；Windows 没有等价的"礼貌信号"，直接进 3）
         #[cfg(unix)]
         {
+            // 负 pid = 整个进程组：worker 的 native 子进程也一起收到。
             // SAFETY: 只读 pid，信号编号是常量；失败(ESRCH)说明进程已没了，下面 wait 会收尸
             unsafe {
-                libc::kill(self.pid() as libc::pid_t, libc::SIGTERM);
+                libc::kill(-(self.pid() as libc::pid_t), libc::SIGTERM);
             }
             if self.wait_for_exit(self.term_grace) {
                 self.reap_children();
                 return;
             }
         }
-        // 3) SIGKILL
+        // 3) SIGKILL（Unix 仍杀整个进程组，避免 native 孤儿）
+        #[cfg(unix)]
+        unsafe {
+            libc::kill(-(self.pid() as libc::pid_t), libc::SIGKILL);
+        }
         let _ = self.child.kill();
         self.exit = self.child.wait().ok();
         self.reap_children();

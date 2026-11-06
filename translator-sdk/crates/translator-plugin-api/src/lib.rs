@@ -12,10 +12,10 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use translator_types::{
-    BackendDescriptor, Capability, CapabilityInfo, CompatibilityReport, DictionaryEntry,
-    EngineDescriptor, LanguageTag, LookupRequest, ModelManifest, NmtInput, NmtOutput,
-    PluginApiVersion, ProviderDescriptor, ResourceLimits, TranslateRequest, TranslationError,
-    TranslationErrorCode, TranslationResult,
+    BackendDescriptor, CancelToken, Capability, CapabilityInfo, CompatibilityReport,
+    DictionaryEntry, EngineDescriptor, LanguageTag, LookupRequest, ModelManifest, NmtInput,
+    NmtOutput, PluginApiVersion, ProviderDescriptor, ResourceLimits, TranslateRequest,
+    TranslationError, TranslationErrorCode, TranslationResult,
 };
 
 /// 插件异步返回类型。
@@ -39,6 +39,19 @@ pub trait TranslationEngine: Send + Sync {
         &'a self,
         req: &'a TranslateRequest,
     ) -> BoxFuture<'a, Result<TranslationResult, TranslationError>>;
+
+    /// 可取消版本。默认实现忽略令牌并调用 [`TranslationEngine::translate`]；
+    /// 能在执行中观察令牌的后端（如进程 worker）应覆盖它。
+    ///
+    /// 契约：已在取消状态时**必须尽快**返回 `Cancelled`，不得产生新任务。
+    fn translate_cancellable<'a>(
+        &'a self,
+        req: &'a TranslateRequest,
+        cancel: &'a CancelToken,
+    ) -> BoxFuture<'a, Result<TranslationResult, TranslationError>> {
+        let _ = cancel;
+        self.translate(req)
+    }
 }
 
 /// 词典/语言学提供者。与翻译引擎分开建模，

@@ -43,7 +43,7 @@
   {
    "id": "G06",
    "title": "不支持取消在途请求",
-   "status": "open",
+   "status": "closed",
    "blocks_development": false,
    "blocks_release": true,
    "blocking_scope": "P3 总验收条件",
@@ -51,13 +51,13 @@
    "current_evidence": "只有排队绝对截止时间（Timeout{operation:\"queue\"}）与卸载等待（docs/19 LC-02/LC-04）",
    "mitigation": "宿主可用超时与 unload 控制最坏延迟",
    "opened_at": "2026-11-05",
-   "closed_at": null,
-   "closed_evidence": null
+   "closed_at": "2026-11-07",
+   "closed_evidence": "实现：translator-types::CancelToken；translator-api::translate_cancellable / translate_with_diagnostics_cancellable；translator-runtime::ProcessTransport::translate_with_deadline_and_cancel + WorkerProcess::request_with_timeout_and_cancel（取消时终止独占 worker 及其进程组）；JNI 新增 nativeCall(handle,\"cancel\",{\"request_id\":...})，translate 支持 request_id。证据：`cargo test -p translator-runtime --test cancellation` → 4 passed / 0 failed；日志 tests/android-harness/out/g06-contract.log。覆盖排队中取消（不 spawn、立即 Cancelled）、执行中取消（worker 与孙进程均在 3 s 内消失、无 zombie/孤儿、下一条请求不静默重放）、预取消（spawns=0）与进程组整组回收。JNI 预取消路径在 gms2 上由 Harness G06-JNI 断言 Cancelled。"
   },
   {
    "id": "G08",
    "title": "安装恢复测试用的是 abort() 而非外部 kill -9",
-   "status": "open",
+   "status": "closed",
    "blocks_development": false,
    "blocks_release": true,
    "blocking_scope": "P3 总验收条件",
@@ -65,8 +65,8 @@
    "current_evidence": "5 个 crash point 用 abort() 触发（docs/19 D-35）",
    "mitigation": "崩溃点覆盖相同，信号时序不同；已在 docs/21 D-53 记录",
    "opened_at": "2026-11-05",
-   "closed_at": null,
-   "closed_evidence": null
+   "closed_at": "2026-11-07",
+   "closed_evidence": "实现：crash_point 在设置 TRANSLATOR_TEST_CRASH_MARKER 时写标记后等待外部 SIGKILL，不再自己 abort()；测试用父进程 libc::kill(pid,SIGKILL)（Windows 为 TerminateProcess）并断言 signal=9。证据：`cargo test -p translator-resource --test p32_lifecycle lc08 -- --nocapture` → 1 passed；日志 tests/android-harness/out/g08-external-kill.log。5 个安装关键点（after-staging/before-rename/after-rename/before-state/after-state）均验证：recover 后 audit 干净、原激活版本 1.0.0 仍激活且逐文件 sha256 校验通过、重装行为符合该崩溃点语义。"
   },
   {
    "id": "D-46",

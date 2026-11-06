@@ -38,7 +38,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
@@ -1171,15 +1171,32 @@ impl ResourceStore {
     }
 }
 
-/// 测试用的崩溃注入点：环境变量匹配时**立即 abort**（不析构、不写日志、不 flush）。
+/// 测试用的崩溃注入点。
 ///
-/// 语义等价于 `kill -9`：进程死在这一行，磁盘上留下那一刻的半成品。
-/// 只在测试里设置，生产路径上是"读一次环境变量"的成本。
+/// 两种模式：
+/// - 只设 `TRANSLATOR_TEST_CRASH_POINT`：立即 `abort()`（兼容老测试）；
+/// - 同时设 `TRANSLATOR_TEST_CRASH_MARKER`：先写标记文件，然后**停在这里等外部
+///   `SIGKILL`**（G08 要求"外部 kill -9"，而不是进程自己 abort）。30 s 内没人杀
+///   才退化为 abort，避免测试挂死。
+///
+/// 生产路径上只是"读一次环境变量"的成本。
 fn crash_point(name: &str) {
-    if std::env::var("TRANSLATOR_TEST_CRASH_POINT").as_deref() == Ok(name) {
-        // abort 而不是 exit：给"来不及清理"的最坏情况，不留 Drop 机会
-        std::process::abort();
+    if std::env::var("TRANSLATOR_TEST_CRASH_POINT").as_deref() != Ok(name) {
+        return;
     }
+    if let Ok(marker) = std::env::var("TRANSLATOR_TEST_CRASH_MARKER") {
+        if let Ok(mut file) = fs::File::create(&marker) {
+            let _ = file.write_all(name.as_bytes());
+            let _ = file.sync_all();
+        }
+        // 等父进程从外部 SIGKILL。sleep 而不是自旋，避免测试机 CPU 飙高。
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+    // abort 而不是 exit：给"来不及清理"的最坏情况，不留 Drop 机会
+    std::process::abort();
 }
 
 /// 目录项落盘（`fsync` 目录本身）。

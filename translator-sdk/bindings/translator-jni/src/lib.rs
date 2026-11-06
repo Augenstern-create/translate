@@ -39,6 +39,15 @@ use translator_api::{LanguageTag, LookupRequest, Translator};
 /// 契约版本。任何不兼容变更都必须 +1，并让旧版本明确失败（不静默猜测）。
 const PROTOCOL_VERSION: i64 = 1;
 
+/// 输入上限（J-10）。超过就明确拒绝，不把内存交给调用方决定。
+///
+/// - 单条文本：64 KiB UTF-8。64 KiB 的中文约 2.1 万字符，远超正常句子；
+/// - 整个 payload：256 KiB。深嵌套/超大数组在解析前就被挡住；
+/// - lookup 的 `limit`：1000。防止一次查词把整本词典拉进内存。
+const MAX_TEXT_BYTES: usize = 64 * 1024;
+const MAX_PAYLOAD_BYTES: usize = 256 * 1024;
+const MAX_LOOKUP_LIMIT: u64 = 1000;
+
 // ============================================================
 // 句柄注册表
 // ============================================================
@@ -48,6 +57,11 @@ struct Entry {
     /// 创建时的原始 config：`resources` 需要 `resource_repo` 之类的路径。
     config: Value,
     closed: AtomicBool,
+    /// 在飞请求的取消令牌（key = 调用方提供的 `request_id`）。
+    ///
+    /// `nativeCall("translate")` 是同步阻塞的，另一个线程用
+    /// `nativeCall("cancel")` 把同一个 id 置为取消即可（G06）。
+    cancels: Mutex<HashMap<String, translator_api::CancelToken>>,
 }
 
 struct Registry {
@@ -196,16 +210,56 @@ fn call_capabilities(translator: &Translator) -> Value {
     }))
 }
 
+/// 解析 payload：先卡字节数，再要求是 JSON 对象。
+///
+/// `serde_json` 默认递归上限 128 层；深嵌套会在这里以 `InvalidRequest` 失败，
+/// 不需要自己写深度检查（但要保证错误信息可诊断）。
+fn parse_payload(raw: &str) -> Result<Value, Value> {
+    if raw.len() > MAX_PAYLOAD_BYTES {
+        return Err(envelope_err(
+            "InvalidRequest",
+            format!("payload 超过上限：{} 字节 > {MAX_PAYLOAD_BYTES}", raw.len()),
+        ));
+    }
+    let value: Value = serde_json::from_str(raw)
+        .map_err(|e| envelope_err("InvalidRequest", format!("payload 非法：{e}")))?;
+    if !value.is_object() {
+        return Err(envelope_err(
+            "InvalidRequest",
+            "payload 必须是 JSON 对象（数组/标量不接受）",
+        ));
+    }
+    Ok(value)
+}
+
 fn payload_text(payload: &Value) -> Result<String, Value> {
     let text = payload
         .get("text")
         .or_else(|| payload.get("term"))
         .and_then(Value::as_str)
         .ok_or_else(|| envelope_err("InvalidRequest", "payload 缺少 text 字段"))?;
+    if text.len() > MAX_TEXT_BYTES {
+        return Err(envelope_err(
+            "InvalidRequest",
+            format!("文本超过上限：{} 字节 > {MAX_TEXT_BYTES}", text.len()),
+        ));
+    }
     if text.contains('\0') {
         return Err(envelope_err(
             "InvalidRequest",
             "文本含 NUL：JNI 的 Modified UTF-8 会把它编码成 C0 80，静默接受等于悄悄改写用户文本",
+        ));
+    }
+    // 控制字符：明确拒绝 C0（保留制表/换行/回车）与 DEL。
+    // 理由：控制字符会破坏日志与终端，且没有真实的翻译语义；
+    // 换行是正常段落分隔，因此不拒绝。
+    if text
+        .chars()
+        .any(|c| (c.is_control() && !matches!(c, '\t' | '\n' | '\r')) || c == '\u{7f}')
+    {
+        return Err(envelope_err(
+            "InvalidRequest",
+            "文本含不允许的控制字符（仅允许 TAB/LF/CR）",
         ));
     }
     if text.trim().is_empty() {
@@ -242,11 +296,14 @@ fn call_lookup(translator: &Translator, payload: &Value) -> Value {
         },
         None => None,
     };
-    let limit = payload
-        .get("limit")
-        .and_then(Value::as_u64)
-        .map(|n| n as usize)
-        .unwrap_or(10);
+    let limit = payload.get("limit").and_then(Value::as_u64).unwrap_or(10);
+    if limit > MAX_LOOKUP_LIMIT {
+        return envelope_err(
+            "InvalidRequest",
+            format!("limit 超过上限：{limit} > {MAX_LOOKUP_LIMIT}"),
+        );
+    }
+    let limit = limit as usize;
 
     let req = LookupRequest {
         term,
@@ -276,7 +333,7 @@ fn call_lookup(translator: &Translator, payload: &Value) -> Value {
     }
 }
 
-fn call_translate(translator: &Translator, payload: &Value) -> Value {
+fn call_translate(entry: &Entry, payload: &Value) -> Value {
     let text = match payload_text(payload) {
         Ok(t) => t,
         Err(e) => return e,
@@ -315,7 +372,30 @@ fn call_translate(translator: &Translator, payload: &Value) -> Value {
         req.timeout_ms = Some(ms);
     }
 
-    match pollster::block_on(translator.translate(&req)) {
+    // request_id 可选；传了就可以被另一个线程 cancel。
+    let request_id = payload
+        .get("request_id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty() && id.len() <= 128)
+        .map(str::to_string);
+    let token = request_id.as_ref().map(|id| {
+        let mut cancels = entry.cancels.lock().unwrap_or_else(|e| e.into_inner());
+        cancels.entry(id.clone()).or_default().clone()
+    });
+
+    let outcome = match &token {
+        Some(token) => pollster::block_on(entry.translator.translate_cancellable(&req, token)),
+        None => pollster::block_on(entry.translator.translate(&req)),
+    };
+    if let Some(id) = &request_id {
+        entry
+            .cancels
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(id);
+    }
+
+    match outcome {
         Ok(out) => envelope_ok(json!({
             "text": out.text,
             "source": out.source.as_str(),
@@ -326,6 +406,35 @@ fn call_translate(translator: &Translator, payload: &Value) -> Value {
         })),
         Err(e) => envelope_sdk_err(&e),
     }
+}
+
+/// 取消一个在飞/尚未开始的请求。幂等；取消不存在的 id 也返回成功。
+fn call_cancel(entry: &Entry, payload: &Value) -> Value {
+    let Some(request_id) = payload
+        .get("request_id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty() && id.len() <= 128)
+    else {
+        return envelope_err("InvalidRequest", "cancel 需要 1..=128 字节的 request_id");
+    };
+    let mut cancels = entry.cancels.lock().unwrap_or_else(|e| e.into_inner());
+    let inflight = cancels.contains_key(request_id);
+    // 上限：取消一个已经结束的 id 会留下一个永远不会被消费的令牌，
+    // 不允许它无限增长。超过上限时清掉一个最旧的（HashMap 无序，仅作兜底）。
+    if !inflight && cancels.len() >= 64 {
+        if let Some(key) = cancels.keys().next().cloned() {
+            cancels.remove(&key);
+        }
+    }
+    let token = cancels.entry(request_id.to_string()).or_default().clone();
+    let already = token.is_cancelled();
+    token.cancel();
+    envelope_ok(json!({
+        "request_id": request_id,
+        "cancelled": true,
+        "already_cancelled": already,
+        "inflight": inflight,
+    }))
 }
 
 fn call_resources(config: &Value) -> Value {
@@ -449,6 +558,7 @@ pub extern "system" fn Java_ai_ridge_translator_NativeBridge_nativeCreate(
                     translator,
                     config: config.clone(),
                     closed: AtomicBool::new(false),
+                    cancels: Mutex::new(HashMap::new()),
                 }),
             );
             format!("{}:{}", reg.generation, index)
@@ -510,31 +620,28 @@ pub extern "system" fn Java_ai_ridge_translator_NativeBridge_nativeCall(
 
         match method_raw.as_str() {
             "capabilities" => call_capabilities(&entry.translator),
-            "detect" => {
-                let payload: Value = match serde_json::from_str(&payload_raw) {
-                    Ok(v) => v,
-                    Err(e) => return envelope_err("InvalidRequest", format!("payload 非法：{e}")),
-                };
-                call_detect(&entry.translator, &payload)
-            }
-            "lookup" => {
-                let payload: Value = match serde_json::from_str(&payload_raw) {
-                    Ok(v) => v,
-                    Err(e) => return envelope_err("InvalidRequest", format!("payload 非法：{e}")),
-                };
-                call_lookup(&entry.translator, &payload)
-            }
-            "translate" => {
-                let payload: Value = match serde_json::from_str(&payload_raw) {
-                    Ok(v) => v,
-                    Err(e) => return envelope_err("InvalidRequest", format!("payload 非法：{e}")),
-                };
-                call_translate(&entry.translator, &payload)
-            }
+            "detect" => match parse_payload(&payload_raw) {
+                Ok(payload) => call_detect(&entry.translator, &payload),
+                Err(e) => e,
+            },
+            "lookup" => match parse_payload(&payload_raw) {
+                Ok(payload) => call_lookup(&entry.translator, &payload),
+                Err(e) => e,
+            },
+            "translate" => match parse_payload(&payload_raw) {
+                Ok(payload) => call_translate(&entry, &payload),
+                Err(e) => e,
+            },
+            "cancel" => match parse_payload(&payload_raw) {
+                Ok(payload) => call_cancel(&entry, &payload),
+                Err(e) => e,
+            },
             "resources" => call_resources(&entry.config),
             other => envelope_err(
                 "InvalidRequest",
-                format!("未知 method：{other}（v1 支持 capabilities/detect/lookup/translate/resources）"),
+                format!(
+                    "未知 method：{other}（v1 支持 capabilities/detect/lookup/translate/cancel/resources）"
+                ),
             ),
         }
     })
@@ -614,6 +721,51 @@ mod tests {
         let v = envelope_ok(json!({ "items": [] }));
         assert_eq!(v["ok"], json!(true));
         assert_eq!(v["data"]["items"], json!([]));
+    }
+
+    #[test]
+    fn j10_超长文本与payload在上限处拒绝() {
+        let long = "a".repeat(MAX_TEXT_BYTES + 1);
+        let err = payload_text(&json!({ "text": long })).unwrap_err();
+        assert_eq!(err["error"]["code"], "InvalidRequest");
+        assert!(err["error"]["message"].as_str().unwrap().contains("上限"));
+
+        let ok = "a".repeat(MAX_TEXT_BYTES);
+        assert_eq!(
+            payload_text(&json!({ "text": ok })).unwrap().len(),
+            MAX_TEXT_BYTES
+        );
+
+        let raw = "x".repeat(MAX_PAYLOAD_BYTES + 1);
+        let err = parse_payload(&raw).unwrap_err();
+        assert!(err["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("payload 超过上限"));
+    }
+
+    #[test]
+    fn j10_控制字符明确拒绝但保留换行() {
+        for bad in ["a\u{1}b", "a\u{7f}b"] {
+            let err = payload_text(&json!({ "text": bad })).unwrap_err();
+            assert!(
+                err["error"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("控制字符"),
+                "{err}"
+            );
+        }
+        assert!(payload_text(&json!({ "text": "a\nb\tc\r" })).is_ok());
+    }
+
+    #[test]
+    fn j10_畸形json与深嵌套受控失败() {
+        assert!(parse_payload("{not json").is_err());
+        assert!(parse_payload("[1,2,3]").is_err());
+        let deep = format!("{}1{}", "[".repeat(200), "]".repeat(200));
+        let err = parse_payload(&deep).unwrap_err();
+        assert_eq!(err["error"]["code"], "InvalidRequest");
     }
 
     #[test]
