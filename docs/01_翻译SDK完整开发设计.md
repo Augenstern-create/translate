@@ -698,6 +698,14 @@ P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运
   `core.autocrlf` 只能在项目内覆盖且必须逐仓库设置。推论：Windows 侧的耗时数字**不得**与 Linux 并排算倍数
   （ADR-052 的口径纪律再加一条限定词："Defender 未排除"）。
 
+- ADR-058（Accepted，`docs/34` 已落地）：**跨平台验证用 `cfg` gate 表达"该平台不可达"，不用 `ignore` 掩盖；
+  两个平台的用例数必须同时给出并解释差值**。落地：`worker_process.rs`/`lifecycle.rs` 整目标
+  `#![cfg(target_os = "linux")]`；Bergamot 配置渲染 5 例与 transport 2 例按平台 gate；`lc08` 用
+  `cfg_attr(windows, ignore = "<原因>")` 而非静默跳过；`docs/34` §2.1 给出 Linux 372 / Windows 322 与 -50 的逐项来源。
+  理由：Windows 上 `/proc/<pid>` 判活恒为 false，会让"进程被杀后宿主仍活着"这类断言**假通过**——比失败更危险；
+  而"少了 50 个用例"若不同时解释，下一个人会误判为覆盖率下降。代价：每个平台专属用例都要写一行平台注释，
+  且同一功能可能在两个平台各有一套计数口径。
+
 > 状态含义：**Accepted** = 已决定并（如注明）已实现；**Proposed** = 已决定方向但尚未实现，写入 ADR 不等于已验证；
 > **Deferred** = 明确延后。上表未标注 Deferred 的项均须在对应阶段交付。
 
@@ -712,6 +720,7 @@ P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运
 | v1.4 | 2026-11-05 | P3.0 落地：新增 ADR-024～028（Linux 优先/参考链路先行/内容即身份/worker 独占/权重不入库）；`docs/10` 的候选 ADR 标题按内容合并进这几条，未覆盖旧编号 |
 | v1.5 | 2026-11-05 | P3.1-A 落地（`docs/13`）：ADR-027 从 Proposed 改为 Accepted，并把措辞从「worker 独占」收紧为「**进程级**故障隔离」（明确线程与 `catch_unwind` 不可用、IPC 硬约束、非 Linux 显式不可用）；ADR-026 把模型身份从「权重 + tokenizer 摘要」扩展为**权重 / Tokenizer / 短名单 / 解码参数 / runtime build** 五项，并注明当前 `content_digest` 只能诊断、不得作缓存键；新增 ADR-029（严格占位符完整性，Proposed，P3.1-C）。编号处理：`docs/12` §6 的候选 ADR 建议按内容并入 026/027/029，**未覆盖任何旧编号**；ADR-029 是当前最大号 028 之后的第一个空号 |
 | v1.6 | 2026-11-05 | P3.1-B 落地（`docs/15`）：新增 ADR-030～033（隔离快照 / 真实 Bergamot 默认单 worker / IPC 与原生版本分离 / 分阶段截止时间）；ADR-026 的现状一栏改为引用 P3.1-B 实测并再次声明「不得作缓存键」。编号处理：`docs/14` §8 的四条建议按内容顺延为 030～033（029 已被占位），**未覆盖任何旧编号** |
+| v1.20 | 2026-11-06 | P5.2–P5.3（`docs/34`）：在工作区 `E:\augenstern\translate` 内完成 Windows 构建回归与 ORT 实跑——W1–W10 全绿（`cargo test --workspace` **322 passed / 0 failed / 56 ignored**；ORT 真实模型 **24 passed**；W10 在含空格+中文的路径下构建通过）。新增 **ADR-058**（跨平台验证用 `cfg` gate 表达不可达、两平台用例数必须同时给出并解释差值）。为了让 Windows 通过而修的 7 个提交：fmt(D-108)、3 处仅 Windows 的 clippy(D-109)、Bergamot 配置夹具(D-110)、transport(D-111)、worker/lifecycle 整目标 gate(D-112)、lc08 ignore(D-113)、工具脚本两处编码(D-114)。**D-92 实测确认**：默认特征链接的是 `directml` **静态**包（`onnxruntime.lib` 343 MB + `DirectML.dll`），产物**没有** `onnxruntime.dll`，且与 Linux 的 `none` 变体不可并排比性能（D-116）。**D-115 待处置**：`ort-sys` 把 360.9 MB 缓存写到工作区外 `%LOCALAPPDATA%\ort.pyke.io`（工具默认行为，违反 ADR-057，未擅自删除）。编号处理：ADR 按最大号 057 之后顺延 058，**未覆盖任何旧编号** |
 | v1.8 | 2026-11-05 | P3.2 落地（`docs/19`）：新增 ADR-038（计划摘要作缓存键 + 四条纪律）；ADR-023 从 Proposed 改为 Accepted（真实 NMT 的缓存键已换成计划摘要）；ADR-026 增补"换 prefix 表时 `content_digest` 不变"的实测；ADR-017 增补 `recover()` 语义扩大与目录 fsync（仅 Unix）；ADR-037 增补"摘要跨卸载保留 + 空闲回收不内置线程"。编号处理：`docs/17` 未给候选编号，按当前最大号 037 之后顺延 038，**未覆盖任何旧编号** |
 | v1.11 | 2026-11-05 | P4-01/P4-02 落地（`docs/24`）：新增 ADR-044（P3 功能冻结 + 自校验冻结清单 + release-blockers 台账 + `check-release.py --release-mode`）与 ADR-045（第二后端先可行性门禁、不同模型只能 B 类比较、三个 ONNX 陷阱）；ADR-028/040 的许可状态改为显式状态机 `pending → reviewed_allowed/reviewed_denied`（解除禁发必须填审核人/时间/范围/证据）。编号处理：`docs/23` 未给候选编号，按当前最大号 043 之后顺延 044～045，**未覆盖任何旧编号** |
 | v1.10 | 2026-11-05 | P3.4 落地（`docs/21`）：新增 ADR-040～043（红线机器化 / 不以 crates.io 分发 / 平台支持是证据表且可单测 / CI 分流与快速失败）；ADR-028 增补「已由 check-release 与 CI 机器验证」；§14 记录 P3 最终裁定为 Conditional（G12 权重许可阻断，G06/G08/G11 为条件项）。编号处理：`docs/17` 未给候选编号，按当前最大号 039 之后顺延 040～043，**未覆盖任何旧编号** |

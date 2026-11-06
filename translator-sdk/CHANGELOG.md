@@ -1,10 +1,38 @@
 # 变更记录
 
 版本号策略：P3 期间一律 `0.1.0`（**不发布**，`publish = false`）；每次阶段结束打 tag，
-tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2` `p4.3` `p5.0` `p5.1` `p5.2` `p5.3` `p5.4`）。
+tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2` `p4.3` `p5.0` `p5.1` `p5.2` `p5.3` `p5.4` `p5.5`）。
 真正的语义化版本从 P7（SDK 发行）开始。
 
 每条都标注证据所在：能复现的测试或 `docs/NN` 报告。
+
+## P5-05 — Windows 构建回归与 ORT 实跑（tag `p5.5`，报告 `docs/34`）
+
+在工作区 `E:\augenstern\translate` 内按 `docs/32` 的权限边界完成 W1–W10。
+
+### 结果
+
+- `cargo fmt --check` / `clippy -D warnings`（默认 + all-features）**PASS**；
+  `cargo test --workspace` **322 passed / 0 failed / 56 ignored**（all-features 322/0/61）；
+  Linux 同口径 372/60——差值 -50 全部是**按平台语义 gate** 的 Linux 专属用例（见 `docs/34` §2.1）。
+- **ORT 真实模型 24 passed**（contract 13 + real 6 + facade 5），模型 110 MB 传入工作区，`P4_ORT_MODEL_DIR` 注入。
+- **W10 中文+空格路径**：`E:\augenstern\translate\.build\path test 中文\repo` 下 build/test 均 EXIT 0。
+- W9 Python 工具（Anaconda 3.13.5 绝对路径）：check-release PASS（9 项/1 SKIP）、license-audit PASS、
+  p4-acceptance PASS、freeze-manifest PASS（需先建本地分支 `p3-frozen`，bundle 只带 remote-tracking）。
+
+### 为通过而改的代码（7 个提交，均先在 Linux 验证）
+
+fmt 修复（D-108，两平台同时失败→不是平台问题）、3 处仅 Windows 的 clippy（D-109）、Bergamot 配置夹具 gate（D-110）、
+transport gate（D-111）、worker/lifecycle 整目标 gate（D-112，理由：/proc 判活恒 false 会**假通过**）、
+lc08 显式 ignore（D-113）、工具脚本两处编码修复（D-114，`subprocess` cp936 解码 + stdout cp936 编码）。
+
+### 新增事实
+
+- **D-92 实测确认**：默认特征链接 `directml` **静态**包（`onnxruntime.lib` 343.3 MB + `DirectML.dll` 17.7 MB），
+  产物**没有** `onnxruntime.dll`；与 Linux 的 `none`（CPU 静态）变体不可并排比性能（D-116）。
+- **D-115 待处置**：`ort-sys` 把 360.9 MB 缓存写到工作区外 `C:\Users\25026\AppData\Local\ort.pyke.io`。
+  这是工具默认行为、非我指定路径，但违反 ADR-057；**未擅自删除**，等用户决定（保留/删除/先查重定向变量）。
+- **D-117 / ADR-058**：跨平台验证用 `cfg` gate 表达"不可达"，两平台用例数必须同时给出并解释差值。
 
 ## P5-04 — 权限边界与 P5.1 只读核验（tag `p5.4`，报告 `docs/33`，审查稿 `docs/32`）
 
