@@ -1,0 +1,30 @@
+{
+  "schema": "bergamot-bench/v1",
+  "caliber": {
+    "build": "release",
+    "intra_op_threads": 1,
+    "cache": "none（每次请求都关缓存：cache_capacity=0 等价的冷请求语义）",
+    "note": "**热模型、结果缓存关闭**；文本与 p4_bench 逐字相同；进程隔离后端，内存为本进程 + 全部 nmt-worker 子进程合计"
+  },
+  "identity": {
+    "engine_id": "nmt.bergamot",
+    "model_revision": "nmt.enzh.mozilla@3.0#4e5accc141373565ddc8fa1565bceaa8",
+    "runtime": "bergamot-cli",
+    "runtime_build": "unknown",
+    "load_ms": 648
+  },
+  "memory_mib": {
+    "rss_before_load": 2.9,
+    "rss_after_load": 82.1,
+    "pss_after_load": 75.3,
+    "rss_after_bench": 359.5,
+    "pss_after_bench": 352.5,
+    "processes_after_load": 3,
+    "processes_after_bench": 3
+  },
+  "rows": [
+    {"chars": 17, "first_ms": 421, "p50_ms": 11, "reps": 10, "output": "图书馆在9点开放。"},
+    {"chars": 94, "first_ms": 44, "p50_ms": 44, "reps": 10, "output": "翻译质量取决于训练数据、令牌转换和解码参数,因此每次发布时在发货前都必须使用固定的黄金套装进行检查。"},
+    {"chars": 499, "first_ms": 260, "p50_ms": 256, "reps": 10, "output": "完全在设备上运行的翻译引擎必须平衡三件事:内存、延迟和质量。内存主要由模型权重主导,这些权重在加载时间被固定,并在发动机卸载时释放。延迟取决于解码器的步骤数量,每个步骤都会重读相同的权重,因此缓存行为很重要。质量取决于训练数据以及令牌器如何忠实地绕过源文本。当句子包含受保护的跨度(如URL或模板变量)时,引擎只能看到简单的段,每个部分需要额外一个解码器。确切地说。 "}
+  ]
+}

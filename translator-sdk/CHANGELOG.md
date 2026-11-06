@@ -1,10 +1,46 @@
 # 变更记录
 
 版本号策略：P3 期间一律 `0.1.0`（**不发布**，`publish = false`）；每次阶段结束打 tag，
-tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2`）。
+tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2` `p4.3`）。
 真正的语义化版本从 P7（SDK 发行）开始。
 
 每条都标注证据所在：能复现的测试或 `docs/NN` 报告。
+
+## P4 审查响应 — 验收口径修订与比较方法修正（tag `p4.3`，报告 `docs/28`）
+
+### 新增
+
+- `fixtures/p4/acceptance.json`（`sdk-p4-acceptance/v1`）：P4 的**有条件验收台账**——工作包交付、
+  门禁闭合（G01～G08 各自 pass/partial 与未闭合项）、8 条承接项（含 `priority/owner/exit_evidence`）、
+  以及对 `release-blockers.json` 的**只引用不改写**。
+- `tools/p4-acceptance.py --check` + `check-release.py` 的 **C9**：把验收口径做成机器可查
+  （pass 不得挂未闭合项；partial 的每项必须进台账并带退出证据；阻断项引用必须与台账一致且仍 open）。
+- `crates/translator-nmt-bergamot/examples/bergamot_bench.rs`：与 `p4_bench` **逐字同文本**的 Bergamot 基线，
+  内存按**进程树**合计（worker 是 Rust 进程，吃内存的是它拉起的 native）。
+- `fixtures/nmt/baseline-bergamot-same-texts-linux-x86_64.json`、
+  `fixtures/p4/explain-499-token-budget.json`、`fixtures/p4/acceptance.json`。
+
+### 变更
+
+- `p4_bench` 升 `p4-ort-bench/v2`：每档记录 `text_sha256` / `src_tokens` / `token_cap` /
+  `tokenizer_sha256` / `decode_policy` / `benchmark_revision`；并修正两处**测量污染**
+  （每档新建分词器使 PSS 虚高约 70 MiB；Bergamot 侧只读 `/proc/self` 少算约 280 MiB）。
+- `OrtIdentity` 增加 `decode_policy`（`DECODE_POLICY` 常量）：同一权重换解码策略就是另一个身份，
+  为 G05 的 `plan-v1` 扩展备料；`token_cap()` 公开，保证测量与被测代码同一公式。
+- `docs/25` §5：按 `fixtures/release-blockers.json` 更正 G06/G08/D-46 的含义并留勘误；
+  §2.4.1 补 499 字跨阶段口径拆解（token 预算，非性能退化）。
+- `docs/26`：A/B 表改用同文本重测数字（延迟 **10.9～15.0×**、PSS **1.63×**，旧值 15.7～26.1×/1.7× 作废）；
+  卸载措辞收紧为"释放部分内存、未回到基线"；`13/13` 拆为 PASS 11 / EXPECTED_UNSUPPORTED 1 / OPEN 1；
+  §4.4 明确"工作包交付 ≠ 门禁闭合 ≠ 候选可用"。
+- `timeout_ms` 能力披露（crate 文档 + README + 报告）：接受参数但不生效，`lc04` 是实现后会失败的钉子。
+
+### 结论
+
+- `docs/27` 的 R-01～R-08 全部落实；P4-G05/G06 的未闭合项全部进承接台账（不再只写在散文里）。
+- 候选替换 P3 的判定不变：**no-go**；默认路径不变（两个 feature 默认关闭）。
+- 五项发行阻断项仍 **open**，`--release-mode` 仍 FAIL（按设计）。
+
+---
 
 ## P4-05 / P4-06 / P4-07 — 结构回归、对比基准、结论与回退（tag `p4.2`，报告 `docs/26`）
 

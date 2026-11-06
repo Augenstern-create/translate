@@ -26,7 +26,16 @@
 //!   ORT 的失败模式与 Marian CLI 不同（它不 `abort`），但"崩溃会带走宿主"这条风险仍然存在；
 //! - 没有缓存（`PlanCache` 未接）、没有后台空闲回收、没有取消在途请求；
 //! - `ProtectionMode::Marker` 未实现，显式返回 `CapabilityUnavailable`，不假装支持；
-//! - 没有缓存、没有取消在途请求，`timeout_ms` 被忽略（超时得由宿主在外面等）。
+//! - 没有缓存、没有取消在途请求。
+//!
+//! ## `timeout_ms` 的现状（必须对宿主说清楚）
+//!
+//! `TranslateRequest.timeout_ms` 会被**接受但不生效**：本后端没有取消点（解码是串行的 FFI 调用，
+//! ORT 侧也没有可用的中断手段）。宿主若要超时，只能在外层自己 `select` 或丢弃结果——
+//! 而"宿主不再等待"并不等于"底层停止计算"，那段 CPU 仍会跑完。
+//! 因此：**不要**把 `timeout_ms=1` 仍然成功返回读成"超时已实现"；等真正实现时，
+//! `crates/translator-nmt-ort/tests/p4_contract.rs` 里的 `lc04_超时字段当前被忽略` 会故意失败，
+//! 提醒把这条文档、`docs/26` D-63 与能力声明一起改掉。
 //!
 //! ## 排障开关
 //!
@@ -79,19 +88,32 @@ const PAD_ID: i64 = 65000;
 /// 这不是"调质量"的旋钮，而是**上界约束**：greedy + 无抑制时，极短片段
 /// （受保护跨度分段后常见）会退化成 `你好 你好 你好 …` 直到撞上 token 上限，
 /// 实测（docs/24 §5）同一模型在 Python 参考实现里也是这样，属于模型行为不是解码 bug。
-#[cfg(feature = "ort-runtime")]
-const NO_REPEAT_NGRAM: usize = 3;
+pub const NO_REPEAT_NGRAM: usize = 3;
 /// 生成长度相对源 token 的上界：`src * 8 / 5 + 12`（再与 `max_new_tokens` 取小）。
 ///
 /// 系数 1.6 的来历：en→zh 的实际 token 比在实测样本上约 0.8–1.2，
 /// 但**纯贪心没有长度归一化**，短片段容易一路膨胀，所以上界不能只按源长度给；
 /// 1.6 留出余量又不至于让退化片段跑满 `max_new_tokens`。
-#[cfg(feature = "ort-runtime")]
 const LENGTH_RATIO_NUM: usize = 8;
-#[cfg(feature = "ort-runtime")]
 const LENGTH_RATIO_DEN: usize = 5;
-#[cfg(feature = "ort-runtime")]
 const LENGTH_SLACK: usize = 12;
+
+/// 解码策略标识：**换策略必须换这个串**。
+///
+/// 它是给"身份"用的（现在是 `OrtIdentity.decode_policy`，将来要进 `plan-v1` 摘要）：
+/// 同一份权重、不同解码策略会产出不同译文，只摘要权重不够（ADR-026）。
+/// 这里刻意写成"人可读 + 机器可 diff"的一行，避免用版本号掩盖到底改了什么。
+pub const DECODE_POLICY: &str =
+    "greedy;no-repeat-3gram=3;stop-on-3-run;tail-collapse(>=3 cycles,period<=4);len-cap=min(max_new_tokens,src*8/5+12)";
+
+/// 单段解码的 token 上界：`min(max_new_tokens, src_len*8/5 + 12)`。
+///
+/// 公开它是因为**测量与被测代码必须用同一套口径**：`examples/p4_bench.rs` 要把 cap
+/// 写进基线文件，如果那里自己抄一份公式，改了实现就会悄悄对不上（`docs/27` R-04）。
+pub fn token_cap(src_len: usize, max_new_tokens: usize) -> usize {
+    let ratio = src_len * LENGTH_RATIO_NUM / LENGTH_RATIO_DEN + LENGTH_SLACK;
+    max_new_tokens.min(ratio).max(1)
+}
 
 /// 内存准入估计：ORT 运行库 + int8 权重 + 激活 + 会话 arena。
 ///
@@ -158,6 +180,8 @@ pub struct OrtIdentity {
     pub runtime_build: String,
     pub threads: usize,
     pub max_new_tokens: usize,
+    /// 解码策略标识（`DECODE_POLICY`）：同一权重换策略就是另一个身份。
+    pub decode_policy: String,
 }
 
 /// ORT 引擎。
@@ -406,6 +430,7 @@ impl Loaded {
                 ),
                 threads: config.threads,
                 max_new_tokens: config.max_new_tokens,
+                decode_policy: DECODE_POLICY.to_string(),
             },
         })
     }
@@ -468,11 +493,7 @@ impl Loaded {
 
         // 长度上界：`max_new_tokens` 是绝对上限，逐段再按源长度收紧。
         // 没有这一条，一个 "Hello " 片段会一路重复到撞上 96 个 token。
-        let cap = self
-            .identity
-            .max_new_tokens
-            .min(src_len * LENGTH_RATIO_NUM / LENGTH_RATIO_DEN + LENGTH_SLACK)
-            .max(1);
+        let cap = token_cap(src_len, self.identity.max_new_tokens);
         let mut bounded = false;
 
         for step in 0..cap {

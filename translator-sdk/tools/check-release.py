@@ -330,6 +330,32 @@ def check_c8(release_mode: bool) -> None:
         )
 
 
+def check_c9() -> None:
+    """P4 有条件验收台账（`docs/27` R-02/R-06/R-07）。
+
+    为什么要进发行门禁：`docs/23` §7.3 要求 G01～08 全通过，而实际 G05/G06 只部分满足。
+    如果只在文档里写"部分满足"，下一个人很容易把它读成"通过"。这里把台账钉成机器可查：
+    `partial` 必须有承接项、承接项必须有退出证据、阻断项引用必须与 C8 的台账一致。
+    """
+
+    accept = SDK / "fixtures" / "p4" / "acceptance.json"
+    if not accept.exists():
+        record("C9 P4 验收台账", "FAIL", "缺少 fixtures/p4/acceptance.json")
+        return
+    proc = subprocess.run(
+        [sys.executable, str(SDK / "tools" / "p4-acceptance.py"), "--check"],
+        capture_output=True,
+        text=True,
+        cwd=SDK,
+    )
+    out = (proc.stdout + proc.stderr).strip().splitlines()
+    detail = (out[0] if out else "（无输出）").removeprefix("PASS ").removeprefix("FAIL ")
+    if proc.returncode == 0:
+        record("C9 P4 验收台账", "PASS", detail)
+    else:
+        record("C9 P4 验收台账", "FAIL", "；".join(line.strip("- ") for line in out[:4]))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="发行红线检查")
     ap.add_argument("--verbose", action="store_true")
@@ -349,6 +375,7 @@ def main() -> int:
     check_c6()
     check_c7(args.verbose)
     check_c8(args.release_mode)
+    check_c9()
 
     width = max(len(name) for name, _, _ in results)
     print()
