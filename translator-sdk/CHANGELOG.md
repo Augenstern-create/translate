@@ -31,6 +31,14 @@ tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `
 - Linux：**375 / 0 / 60**，fmt + clippy 通过（无回退）。
 - 差值 42 = 仍按平台 gate 的 Linux 专属用例（worker_process 17 / lifecycle 6 / Bergamot 配置 5 / transport 2 / 其余 unix）。
 
+### D-115 实测闭环（2026-11-07）
+
+`cargo clean -p ort-sys` → 设 `ORT_CACHE_DIR=$W\.build\ort-cache` → 重建：旧缓存**前后完全一致**
+（5 文件/360.9 MB/mtime 未变），新缓存出现同样 5 文件/360.9 MB，链接路径改为工作区内，
+`p4_ort` 6 passed + `p4_contract` 13 passed 用新缓存链接的二进制跑过。
+新增 `tools/p5/windows-build-env.ps1`（点源即把 CARGO_HOME/CARGO_TARGET_DIR/TEMP/ORT_CACHE_DIR/HF_HOME 指向工作区）。
+旧 360.9 MB 已可安全删除，待用户批准。
+
 ### D-115 结案（只读调查）
 
 `ort-sys` 的 `internal::dirs::cache_dir()` **优先读 `ORT_CACHE_DIR`**，其次才是平台默认目录。
