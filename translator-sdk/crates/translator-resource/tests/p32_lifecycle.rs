@@ -226,14 +226,9 @@ fn run_child(root: &Path, pkg: &Path, crash: &str) -> bool {
     status.success()
 }
 
-// Windows 上这条暂时无法通过，原因是**平台缺少存活探测**而不是仓库逻辑错：
-// 崩溃的子进程留下 state.lock，Windows 侧的 `probe()` 恒为 Unknown → 保守地"视为仍被占用"
-// → `install_from_dir` 等到 LockTimeout。Linux 靠 /proc 能判定子进程已死并回收。实现
-// Windows 存活探测（OpenProcess/GetExitCodeProcess）属于 P5.4 的工作包，实现前不许假装通过。
-#[cfg_attr(
-    windows,
-    ignore = "P5.4 待办：Windows 缺存活探测，崩溃子进程的 state.lock 保守不回收，本用例必然 LockTimeout"
-)]
+// 两个平台都跑：崩溃子进程留下的 `state.lock` 必须被判死并回收。
+// （Windows 侧靠 `OpenProcess` + `GetExitCodeProcess` + `GetProcessTimes` 创建时间，
+//  见 `leases.rs` 的 `win_probe`；P5.4 之前这里是 ignore，因为那时 probe() 恒为 Unknown。）
 #[test]
 fn lc08_安装关键点崩溃后仓库仍可修复() {
     let points = [

@@ -201,14 +201,15 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("state.lock");
         fs::write(&path, "pid=4194303\nunix=0\nholder=ghost\n").unwrap();
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", windows))]
         {
+            // 两个平台都能判定"这个 pid 不存在" → 旧的锁必须被回收，而不是让人等到超时
             let lock = acquire(tmp.path(), Duration::from_millis(200), "me").unwrap();
             assert!(lock.path().exists());
         }
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not(any(target_os = "linux", windows)))]
         {
-            // 非 Linux 无法判定存活 → 必须超时而不是猜
+            // 该平台无法判定存活 → 必须超时而不是猜
             assert!(acquire(tmp.path(), Duration::from_millis(60), "me").is_err());
         }
     }

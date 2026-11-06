@@ -80,9 +80,100 @@ pub enum ProcessLiveness {
     Unknown,
 }
 
+#[cfg(windows)]
+mod win_probe {
+    //! Windows 上的存活探测：只用 kernel32 的四个函数，**不引新依赖**。
+    //!
+    //! 为什么不加 `windows-sys`：这个文件在 P2.3 就定稿了，加一条依赖边会牵动
+    //! `Cargo.lock`、MSRV 与供应链审计（`docs/01` ADR-028 的红线要求逐包 SPDX）。
+    //! 四个裸 FFI 声明比一个 feature 组合更好审。
+
+    use super::ProcessLiveness;
+    use std::ffi::c_void;
+
+    /// 够用来查询退出码与创建时间；不含 `PROCESS_VM_*`，避免被当高危访问。
+    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    /// 仍在运行的进程，`GetExitCodeProcess` 返回这个值（Windows 的约定值）。
+    const STILL_ACTIVE: u32 = 259;
+    const ERROR_ACCESS_DENIED: u32 = 5;
+    const ERROR_INVALID_PARAMETER: u32 = 87;
+
+    #[repr(C)]
+    #[derive(Default)]
+    struct FileTime {
+        low: u32,
+        high: u32,
+    }
+
+    impl FileTime {
+        fn as_u64(&self) -> u64 {
+            ((self.high as u64) << 32) | self.low as u64
+        }
+    }
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn OpenProcess(access: u32, inherit: i32, pid: u32) -> *mut c_void;
+        fn CloseHandle(handle: *mut c_void) -> i32;
+        fn GetExitCodeProcess(handle: *mut c_void, code: *mut u32) -> i32;
+        fn GetProcessTimes(
+            handle: *mut c_void,
+            creation: *mut FileTime,
+            exit: *mut FileTime,
+            kernel: *mut FileTime,
+            user: *mut FileTime,
+        ) -> i32;
+        fn GetLastError() -> u32;
+    }
+
+    pub(super) fn probe(pid: u32) -> ProcessLiveness {
+        // SAFETY: 只传常量与 pid，不涉及指针算术；句柄在每条路径上都会关闭。
+        unsafe {
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if handle.is_null() {
+                return match GetLastError() {
+                    // pid 不存在（已被回收或从未存在）
+                    ERROR_INVALID_PARAMETER => ProcessLiveness::Dead,
+                    // 进程存在但拒绝我们的查询（系统进程、权限不足）：不猜
+                    ERROR_ACCESS_DENIED => ProcessLiveness::Unknown,
+                    _ => ProcessLiveness::Unknown,
+                };
+            }
+
+            let mut code: u32 = 0;
+            if GetExitCodeProcess(handle, &mut code) == 0 {
+                CloseHandle(handle);
+                return ProcessLiveness::Unknown;
+            }
+            if code != STILL_ACTIVE {
+                // 已退出，但句柄还被谁持有（这就是"僵尸"）：判定已死
+                CloseHandle(handle);
+                return ProcessLiveness::Dead;
+            }
+
+            let (mut creation, mut exit, mut kernel, mut user) = (
+                FileTime::default(),
+                FileTime::default(),
+                FileTime::default(),
+                FileTime::default(),
+            );
+            let times_ok =
+                GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user);
+            CloseHandle(handle);
+            if times_ok == 0 {
+                // 拿不到创建时间：仍然知道它活着，只是无法识别 pid 复用
+                return ProcessLiveness::Alive(None);
+            }
+            ProcessLiveness::Alive(Some(creation.as_u64()))
+        }
+    }
+}
+
 /// 探测某个 pid 的存活状态与启动标识。
 ///
 /// - Linux：`/proc/<pid>` 存在且可读 → `Alive(starttime)`；不存在 → `Dead`。
+/// - Windows：`OpenProcess` + `GetExitCodeProcess` 判定存活，`GetProcessTimes`
+///   的创建时间当启动标识（与 Linux 的 `starttime` 同义，可识别 pid 复用）。
 /// - 其它平台：`Unknown`（不猜）。
 pub fn probe(pid: u32) -> ProcessLiveness {
     if pid == 0 {
@@ -100,9 +191,13 @@ pub fn probe(pid: u32) -> ProcessLiveness {
             None => ProcessLiveness::Alive(None),
         }
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
     {
-        // 明确返回"不知道"：没有平台 API 就无法判定，绝不按存活/已死去猜。
+        win_probe::probe(pid)
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
+    {
+        // 明确返回"不知道"：该平台没有可用 API 时绝不按存活/已死去猜。
         let _ = pid;
         ProcessLiveness::Unknown
     }
@@ -131,8 +226,17 @@ pub fn process_start_id(pid: u32) -> Option<u64> {
     tail.split_whitespace().nth(19)?.parse().ok()
 }
 
-/// 非 Linux 平台没有可移植的启动标识 API。
-#[cfg(not(target_os = "linux"))]
+/// Windows：复用 `probe()` 的创建时间；进程不可判定或已退出时返回 `None`。
+#[cfg(windows)]
+pub fn process_start_id(pid: u32) -> Option<u64> {
+    match win_probe::probe(pid) {
+        ProcessLiveness::Alive(start) => start,
+        _ => None,
+    }
+}
+
+/// 其它非 Linux 平台没有可移植的启动标识 API。
+#[cfg(not(any(target_os = "linux", windows)))]
 pub fn process_start_id(_pid: u32) -> Option<u64> {
     None
 }
@@ -442,12 +546,12 @@ mod tests {
 
     #[test]
     fn 当前进程必然存活() {
-        // Linux 读 /proc 能给出确定答案；其它平台没有可移植 API，`probe()` 明确返回 Unknown
-        // （保守语义：租约视为仍被占用，绝不误回收）。所以这里钉的是**平台语义**而不是
-        // "进程一定活着"：Windows 的真实存活探测还没实现（P5.4 工作包），不许假装知道。
-        #[cfg(target_os = "linux")]
+        // Linux（/proc）与 Windows（OpenProcess + GetExitCodeProcess）都能给出确定答案。
+        // 其它平台没有可用 API，`probe()` 明确返回 Unknown（保守：视为仍被占用，绝不误回收），
+        // 所以那里钉的是"平台语义"而不是"进程一定活着"。
+        #[cfg(any(target_os = "linux", windows))]
         assert_eq!(process_alive(std::process::id()), Some(true));
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not(any(target_os = "linux", windows)))]
         assert_eq!(process_alive(std::process::id()), None);
     }
 
@@ -456,11 +560,79 @@ mod tests {
         assert_eq!(process_alive(0), Some(false));
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     #[test]
     fn 不存在的pid视为已死() {
-        // pid 上限通常远小于 4194304；这里取一个几乎不可能存在的值
+        // pid 上限：Linux 默认远小于 4194304；Windows 的实际上限是 2^22 级，同样到不了这个值。
+        // 这条是"绝不能把不存在的 pid 当存活"的底线——它直接决定了死锁能不能被回收。
         assert_eq!(process_alive(4_194_303), Some(false));
+    }
+
+    /// 已退出的子进程必须被判成 `Dead`：这是 `state.lock`/租约能被回收的前提。
+    #[cfg(any(target_os = "linux", windows))]
+    #[test]
+    fn 已退出的子进程被判定为已死() {
+        #[cfg(windows)]
+        let mut child = std::process::Command::new("cmd")
+            .args(["/c", "exit", "0"])
+            .spawn()
+            .expect("启动 cmd 失败");
+        #[cfg(target_os = "linux")]
+        let mut child = std::process::Command::new("true")
+            .spawn()
+            .expect("启动 true 失败");
+
+        let pid = child.id();
+        child.wait().expect("等待子进程失败");
+        assert_eq!(
+            process_alive(pid),
+            Some(false),
+            "子进程已退出，probe 必须给 Dead 而不是 Unknown"
+        );
+    }
+
+    /// 启动标识的用途是识别 pid 复用：记录里的 start_id 与当前值不同 → 视为不是同一个进程。
+    /// （不要断言"父子进程 start_id 必不同"——Linux 的 jiffies 只有 10ms 粒度，同 tick 内
+    /// 起的两个进程会拿到相同的 starttime，那是正常现象而不是缺陷。）
+    #[cfg(any(target_os = "linux", windows))]
+    #[test]
+    fn 启动标识不一致时视为不同进程() {
+        let pid = std::process::id();
+        let start = process_start_id(pid).expect("能读到当前进程的启动标识");
+        assert!(
+            record_is_live(pid, Some(start)),
+            "同一个 start_id 必须判为存活"
+        );
+        assert!(
+            !record_is_live(pid, Some(start.wrapping_add(1))),
+            "start_id 不同 → 该 pid 已被复用 → 旧记录必须判为失效"
+        );
+    }
+
+    /// 活着的子进程必须判成 `Alive`（而不是 Unknown/Dead）：租约不能把活进程误判成死。
+    #[cfg(any(target_os = "linux", windows))]
+    #[test]
+    fn 活着的子进程被判定为存活() {
+        #[cfg(windows)]
+        let mut child = std::process::Command::new("cmd")
+            .args(["/c", "ping", "-n", "30", "127.0.0.1"])
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .expect("启动 ping 失败");
+        #[cfg(target_os = "linux")]
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .expect("启动 sleep 失败");
+
+        let pid = child.id();
+        let verdict = probe(pid);
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(
+            matches!(verdict, ProcessLiveness::Alive(_)),
+            "活着的子进程应当 Alive，实际 {verdict:?}"
+        );
     }
 
     #[cfg(target_os = "linux")]
