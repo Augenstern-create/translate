@@ -16,6 +16,7 @@ members = [
     "tools/p33-bench",
     "tools/migrate-rules",
     "apps/translator-cli",
+    "bindings/translator-jni",
 ]
 
 [workspace.package]

@@ -150,10 +150,28 @@
       "checksum": ""
     },
     {
+      "name": "cesu8",
+      "version": "1.1.0",
+      "license": "Apache-2.0/MIT",
+      "license_normalized": "Apache-2.0 OR MIT",
+      "legacy_notation": true,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
       "name": "cfg-if",
       "version": "1.0.5",
       "license": "MIT OR Apache-2.0",
       "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "combine",
+      "version": "4.6.9",
+      "license": "MIT",
+      "license_normalized": "MIT",
       "legacy_notation": false,
       "source": "registry+https://github.com/rust-lang/crates.io-index",
       "checksum": ""
@@ -521,6 +539,42 @@
     {
       "name": "itoa",
       "version": "1.0.18",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "jni",
+      "version": "0.21.1",
+      "license": "MIT/Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": true,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "jni-sys",
+      "version": "0.3.1",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "jni-sys",
+      "version": "0.4.1",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "jni-sys-macros",
+      "version": "0.4.1",
       "license": "MIT OR Apache-2.0",
       "license_normalized": "MIT OR Apache-2.0",
       "legacy_notation": false,
@@ -1023,6 +1077,15 @@
       "checksum": ""
     },
     {
+      "name": "same-file",
+      "version": "1.0.6",
+      "license": "Unlicense/MIT",
+      "license_normalized": "Unlicense OR MIT",
+      "legacy_notation": true,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
       "name": "schannel",
       "version": "0.1.30",
       "license": "MIT",
@@ -1168,7 +1231,25 @@
     },
     {
       "name": "thiserror",
+      "version": "1.0.69",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "thiserror",
       "version": "2.0.21",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "thiserror-impl",
+      "version": "1.0.69",
       "license": "MIT OR Apache-2.0",
       "license_normalized": "MIT OR Apache-2.0",
       "legacy_notation": false,
@@ -1320,6 +1401,15 @@
       "checksum": ""
     },
     {
+      "name": "walkdir",
+      "version": "2.5.0",
+      "license": "Unlicense/MIT",
+      "license_normalized": "Unlicense OR MIT",
+      "legacy_notation": true,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
       "name": "wasip2",
       "version": "1.0.4+wasi-0.2.12",
       "license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
@@ -1338,6 +1428,15 @@
       "checksum": ""
     },
     {
+      "name": "winapi-util",
+      "version": "0.1.11",
+      "license": "Unlicense OR MIT",
+      "license_normalized": "Unlicense OR MIT",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
       "name": "windows-link",
       "version": "0.2.1",
       "license": "MIT OR Apache-2.0",
@@ -1348,7 +1447,88 @@
     },
     {
       "name": "windows-sys",
+      "version": "0.45.0",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "windows-sys",
       "version": "0.61.2",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "windows-targets",
+      "version": "0.42.2",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "windows_aarch64_gnullvm",
+      "version": "0.42.2",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "windows_aarch64_msvc",
+      "version": "0.42.2",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "windows_i686_gnu",
+      "version": "0.42.2",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "windows_i686_msvc",
+      "version": "0.42.2",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "windows_x86_64_gnu",
+      "version": "0.42.2",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "windows_x86_64_gnullvm",
+      "version": "0.42.2",
+      "license": "MIT OR Apache-2.0",
+      "license_normalized": "MIT OR Apache-2.0",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
+      "name": "windows_x86_64_msvc",
+      "version": "0.42.2",
       "license": "MIT OR Apache-2.0",
       "license_normalized": "MIT OR Apache-2.0",
       "legacy_notation": false,
@@ -1401,5 +1581,5 @@
       "checksum": ""
     }
   ],
-  "count": 152
+  "count": 172
 }
