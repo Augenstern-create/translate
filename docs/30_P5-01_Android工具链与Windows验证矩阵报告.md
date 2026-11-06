@@ -245,6 +245,8 @@ bash -n translator-sdk/tools/p5/windows-recon.sh                # 语法 OK
   任何"Android 端已支持"的表述都必须带上"x86_64 功能预演"这个限定词。补救路径只有两条：
   ① 接一台 ARM64 真机（`adb` 可用即可，不要求 Play 认证）；② 宿主机装 arm64 镜像 + QEMU 全模拟
   （能跑通功能，但延迟/内存数字一律不可用，只能证明"能起来"）。
+  **定稿（用户 2026-11-06 确认无真机）**：本轮按"仅编译合规"结论收口，②不做（全模拟的性能数字没有验收价值，
+  做了反而会给后续留下一个"看起来测过"的坏样本）。
 - **D-88：`d8` 的位置与 `app_process` 的正确调用姿势都踩了一次。**
   原因：本机没装 `build-tools`（`platforms/` 也是空的），但 `cmdline-tools/latest/bin` 里自带 `d8`，
   可直接用；而 `app_process` 用 `CLASSPATH` 环境变量传 dex 目录会**静默失败**（`EXIT=137`，
@@ -267,30 +269,38 @@ bash -n translator-sdk/tools/p5/windows-recon.sh                # 语法 OK
 
 ---
 
-## 4. 下一步（阻塞点只剩一个：SSH 参数）
+## 4. 下一步
 
-**要开始 Windows 真机验证，我需要你给：**
+### 4.1 口径已确认（用户 2026-11-06 追加回答）
 
-1. **`user@host`（以及端口，若不是 22）**——若 Windows 机器在 `192.168.1.0/24` 内且本机 `192.168.1.10`
-   能直连，给内网 IP 即可；若不在同一网段，给可达方式（端口映射/内网穿透/跳板）。
-2. **认证方式**：公钥（给我 `authorized_keys` 里的注释即可确认）还是密码（**不要贴密码**，
-   建议临时建一个专用账号或临时开 key）。
-3. **OpenSSH Server 是否已启用并自启**：`Get-Service sshd` 为 `Running`、`StartType=Automatic`；
-   若没开，需要你在机器上执行 `Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0`（需管理员）。
-4. **账号权限**：是否管理员（装 rustup + MSVC 生成工具需要，合计约 3–6 GB；若不希望提权，
-   我可以用 `rustup` 装到用户目录 + VS Build Tools 的"仅用户"安装，但 `link.exe` 可能仍需管理员）。
-5. **能否安装**：rustup（约 1–2 GB）、MSVC Build Tools + Windows SDK（约 2–4 GB）、
-   以及可选地下载 `ort` 的 win-x64 预编译运行时（约 100–200 MB）；**有没有不能碰的目录/服务**。
-6. **是否有外网**（`static.rust-lang.org` 与 `github.com` 可达），以及磁盘上至少 **15 GB** 空闲。
+| 事项 | 确认结论 | 对本次交付的影响 |
+|---|---|---|
+| ARM64 真机 | **没有** | "物理机基准"本轮不做；Android 结论只能写**编译合规**（D-87 定稿），P5 总结里列进"未验证项" |
+| Windows 网络 | **稍后提供** | 可达性未定（同网段/穿透），`windows-recon.sh` 的超时设 10 s，先探测再决定要不要隧道 |
+| 工具链安装 | **你自己装好 rustup + MSVC，我再连** | 我的角色收窄为"只读勘察 + 验证"：**不在那台机器上装任何系统组件**。我会跑 `cargo build/test`，这会往 `~/.cargo/registry` 和 `target/` 写东西、`ort` 的 `download-binaries` 还会下载 win-x64 预编译 DLL（约 100–200 MB）——这些都会提前说明再动 |
 
-拿到之后我的顺序是：`windows-recon.sh` 只读勘察 → 装工具链 → 按 §1.5 的 W1–W10 逐项跑并留原文证据 →
-在 `docs/31` 里给出 Windows 与 Linux 的并排对比（含 W7 的 `CapabilityUnavailable` 断言）→ ADR-054 落定。
+### 4.2 仍然需要的三件（给了就能开工）
 
-Android 侧剩下的只有"真机"这一个变量：
+1. **`user@host` + 端口**（不是 22 的话）——若与 `192.168.1.10/24` 同网段给内网 IP 即可；
+   不同网段给映射/穿透后的地址。**不要贴密码**，公钥或临时账号都行。
+2. **认证方式**：公钥（告诉我已经加进去了）／临时密码账号（用完可删）。
+3. **sshd 是否在跑**：`Get-Service sshd` 要是 `Running`、`StartType=Automatic`；
+   没开的话（需管理员）：`Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0` +
+   `Start-Service sshd` + `Set-Service sshd -StartupType Automatic`。
 
-- 你手上若有 **ARM64 手机**（Android 8+ 即可），开 USB 调试接上，`adb devices` 能看到就够了；
-  我会在它上面跑同一套 JNI 冒烟 + `translator-cli`，并补 P5 要求的物理机基准（延迟/内存按 `docs/26` 的口径）。
-- 没有的话，本轮的 ARM64 结论就停在"仅编译合规"，这条会写进 P5 总结的"未验证项"。
+另外提醒一件：**装完 rustup 请确认默认 host 是 `x86_64-pc-windows-msvc`**（`rustc -vV` 里的 `host:`）。
+本机 Linux 侧 `x86_64-pc-windows-gnu` 这个 target 是之前为交叉检查装的，**不是** Windows 上的正确组合——
+Windows 上必须用 MSVC host，否则 `link.exe` 与 `ort` 的 DLL 都会对不上。
+
+### 4.3 我拿到 SSH 之后的顺序
+
+`windows-recon.sh` 只读勘察 → 与 Linux 基线并排（`docs/31`）→ 按 §1.5 的 W1–W10 逐项跑并留原文证据 →
+写 W7 的 `CapabilityUnavailable` 显式断言 → 给出 Windows 的"能用到什么程度"结论（预计：解词、规则、CLI、
+ORT 后端可用；Bergamot 不可用）→ 需要时再谈 C 路线（CI）与 libtorch/其它后端的取舍。
+
+Android 侧本轮到此为止：**没有 ARM64 真机就不做 ARM64 运行结论**。若以后接上一台，
+在它上面跑同一套 JNI 冒烟 + `translator-cli`，并按 `docs/26` 的口径补延迟/内存即可，
+工具链这边不需要再改（`aarch64-linux-android` 产物已验证合规）。
 
 ---
 
