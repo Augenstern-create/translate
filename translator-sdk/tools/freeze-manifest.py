@@ -25,6 +25,8 @@
 注意：清单**不是**模型再分发授权，只是版本证据。
 """
 
+# Windows: 子进程输出默认按 ANSI 代码页(如 cp936)解码，cargo/git 吐 UTF-8 会直接
+# UnicodeDecodeError。所有文本模式的 subprocess 调用都必须显式指定 encoding。
 from __future__ import annotations
 
 import argparse
@@ -72,7 +74,7 @@ def git_blob_sha(commit: str, relpath: str) -> str:
 
 
 def git(*args: str) -> str:
-    out = subprocess.run(["git", *args], cwd=REPO, capture_output=True, text=True)
+    out = subprocess.run(["git", *args], cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace")
     return out.stdout.strip() if out.returncode == 0 else ""
 
 
@@ -80,7 +82,7 @@ def tool_version(cmd: list[str]) -> str:
     exe = shutil.which(cmd[0])
     if exe is None:
         return "unavailable"
-    out = subprocess.run([exe, *cmd[1:]], capture_output=True, text=True)
+    out = subprocess.run([exe, *cmd[1:]], capture_output=True, text=True, encoding="utf-8", errors="replace")
     return out.stdout.strip().splitlines()[0] if out.stdout.strip() else "unknown"
 
 

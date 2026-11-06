@@ -19,6 +19,8 @@
     python3 tools/license-audit.py --check
 """
 
+# Windows: 子进程输出默认按 ANSI 代码页(如 cp936)解码，cargo/git 吐 UTF-8 会直接
+# UnicodeDecodeError。所有文本模式的 subprocess 调用都必须显式指定 encoding。
 from __future__ import annotations
 
 import argparse
@@ -171,6 +173,8 @@ def cargo_metadata() -> dict:
         cwd=ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     if out.returncode != 0:
         sys.stderr.write(out.stderr)
@@ -203,7 +207,7 @@ def collect(meta: dict) -> list[dict]:
 
 def toolchain() -> str:
     cargo = shutil.which("cargo") or "cargo"
-    out = subprocess.run([cargo, "--version"], capture_output=True, text=True)
+    out = subprocess.run([cargo, "--version"], capture_output=True, text=True, encoding="utf-8", errors="replace")
     return out.stdout.strip() or "unknown"
 
 

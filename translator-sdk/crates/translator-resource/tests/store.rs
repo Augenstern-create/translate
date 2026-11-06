@@ -478,12 +478,34 @@ fn 重复安装同一版本被拒() {
     );
 }
 
+/// "版本号直接当目录名"这条只能在 unix 上验证：`pkg-...-../evil` 这种名字在 NTFS 上连
+/// `create_dir_all` 都过不去（`..` 会被解析成上级目录，直接 NotFound），夹具都造不出来。
+#[cfg(unix)]
 #[test]
 fn 非法版本号不能当目录名() {
     let (root, store) = store();
     let mut spec = PackageSpec::v2("dictionary.test", "../evil");
     spec.version = "../evil";
     let pkg = build_package(root.path(), spec);
+    let err = store.install_from_dir(&pkg).unwrap_err();
+    assert!(
+        matches!(err, ResourceError::InvalidVersion(_)),
+        "实际：{err}"
+    );
+}
+
+/// 与上一条同义，但不依赖"用非法名建目录"这个动作：目录名安全，非法的 version 只出现在
+/// manifest 里。这样 Windows 上也能覆盖 `InvalidVersion` 校验（跨平台口径一致）。
+#[test]
+fn manifest里的非法版本号被拒收() {
+    let (root, store) = store();
+    let pkg = build_package(root.path(), PackageSpec::v2("dictionary.test", "1.0.0"));
+    let mf = pkg.join("manifest.json");
+    let text = std::fs::read_to_string(&mf).unwrap();
+    let patched = text.replace("\"version\": \"1.0.0\"", "\"version\": \"../evil\"");
+    assert_ne!(text, patched, "夹具里必须能改到 version 字段");
+    std::fs::write(&mf, patched).unwrap();
+
     let err = store.install_from_dir(&pkg).unwrap_err();
     assert!(
         matches!(err, ResourceError::InvalidVersion(_)),

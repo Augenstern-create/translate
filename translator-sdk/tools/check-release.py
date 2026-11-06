@@ -19,6 +19,8 @@
     python3 tools/check-release.py --verbose
 """
 
+# Windows: 子进程输出默认按 ANSI 代码页(如 cp936)解码，cargo/git 吐 UTF-8 会直接
+# UnicodeDecodeError。所有文本模式的 subprocess 调用都必须显式指定 encoding。
 from __future__ import annotations
 
 import argparse
@@ -58,7 +60,7 @@ def record(name: str, status: str, detail: str) -> None:
 
 
 def git(*args: str) -> str:
-    out = subprocess.run(["git", *args], cwd=REPO, capture_output=True, text=True)
+    out = subprocess.run(["git", *args], cwd=REPO, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if out.returncode != 0:
         raise SystemExit(f"git {' '.join(args)} 失败：{out.stderr.strip()}")
     return out.stdout
@@ -93,6 +95,8 @@ def check_c2() -> None:
         cwd=SDK,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     text = (out.stdout + out.stderr).strip().splitlines()
     summary = text[-1] if text else "(无输出)"
@@ -180,6 +184,8 @@ def check_c4() -> None:
             cwd=SDK,
             capture_output=True,
             text=True,
+        encoding="utf-8",
+        errors="replace",
         )
         if out.returncode != 0:
             problems.append(f"{crate} 的文件列表都拿不到：{out.stderr.strip()[:200]}")
@@ -190,6 +196,8 @@ def check_c4() -> None:
             cwd=SDK,
             capture_output=True,
             text=True,
+        encoding="utf-8",
+        errors="replace",
         )
         if real.returncode == 0:
             packaged.append(crate)
@@ -346,6 +354,8 @@ def check_c9() -> None:
         [sys.executable, str(SDK / "tools" / "p4-acceptance.py"), "--check"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         cwd=SDK,
     )
     out = (proc.stdout + proc.stderr).strip().splitlines()
