@@ -3,6 +3,12 @@
 //! 这些用例跑 mock worker（不需要真实权重），验证的是**调度语义**：
 //! single-flight、排队 deadline、活跃请求与卸载的关系、快照不堆积。
 
+// 这些用例跑的是**进程隔离 worker 的调度语义**，而该 worker 只在 Linux 上验证过
+// （终止升级、/proc 采样、kill -9 恢复都是 Linux 语义）。Windows 上 `ensure_supported()`
+// 直接返回 CapabilityUnavailable，六个用例会在 setup 阶段就失败——那是平台门禁在按设计工作，
+// 不是调度逻辑坏了。按 ADR-055 的做法：整目标限定在 Linux，Windows 侧记为未验证。
+#![cfg(target_os = "linux")]
+
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
