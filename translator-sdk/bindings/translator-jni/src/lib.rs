@@ -373,11 +373,12 @@ fn call_translate(entry: &Entry, payload: &Value) -> Value {
     }
 
     // request_id 可选；传了就可以被另一个线程 cancel。
-    let request_id = payload
-        .get("request_id")
-        .and_then(Value::as_str)
-        .filter(|id| !id.is_empty() && id.len() <= 128)
-        .map(str::to_string);
+    // 非法值明确拒绝，而不是静默忽略（否则宿主以为能取消，实际不能）。
+    let request_id = match payload.get("request_id") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(id)) if !id.is_empty() && id.len() <= 128 => Some(id.clone()),
+        Some(_) => return envelope_err("InvalidRequest", "request_id 必须是 1..=128 字节的字符串"),
+    };
     let token = request_id.as_ref().map(|id| {
         let mut cancels = entry.cancels.lock().unwrap_or_else(|e| e.into_inner());
         cancels.entry(id.clone()).or_default().clone()

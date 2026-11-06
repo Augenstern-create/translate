@@ -4,10 +4,10 @@
 == d8 → dex
 Warning in /home/nan/deepseek-harness/translate-workspace/translator-sdk/tests/android-harness/out/classes/ai/ridge/translator/Harness.class:
 Type `java.lang.Runnable` was not found, it is required for default or static interface methods desugaring of `ai.ridge.translator.Harness$$InternalSyntheticLambda$2$7910aa972bb233b874bfa888df5da2e0f310166f6a7a7239fa08d0effeb8b0e9$0`
--rw-rw-r-- 1 nan nan 15892 11月  7 01:42 /home/nan/deepseek-harness/translate-workspace/translator-sdk/tests/android-harness/out/dex/classes.dex
+-rw-rw-r-- 1 nan nan 15892 11月  7 01:45 /home/nan/deepseek-harness/translate-workspace/translator-sdk/tests/android-harness/out/dex/classes.dex
 == adb push
-/home/nan/deepseek-harness/translate-workspace/translator-sdk/target/x86_64-linux-android/release/libtranslator_jni.so: 1 file pushed, 0 skipped. 155.2 MB/s (3233568 bytes in 0.020s)
-/home/nan/deepseek-harness/translate-workspace/translator-sdk/tests/android-harness/out/dex/classes.dex: 1 file pushed, 0 skipped. 188.9 MB/s (15892 bytes in 0.000s)
+/home/nan/deepseek-harness/translate-workspace/translator-sdk/target/x86_64-linux-android/release/libtranslator_jni.so: 1 file pushed, 0 skipped. 167.2 MB/s (3234600 bytes in 0.018s)
+/home/nan/deepseek-harness/translate-workspace/translator-sdk/tests/android-harness/out/dex/classes.dex: 1 file pushed, 0 skipped. 190.9 MB/s (15892 bytes in 0.000s)
 /tmp/dictpkg/: 4 files pushed, 0 skipped. 0.2 MB/s (9166 bytes in 0.042s)
 /tmp/p7repo/./: 5 files pushed, 0 skipped. 0.0 MB/s (1135 bytes in 0.044s)
 == run
@@ -42,8 +42,8 @@ PASS J-10h 超过 payload 上限受控失败: {"error":{"code":"InvalidRequest",
 PASS J-10i lookup limit 上限受控失败: {"error":{"code":"InvalidRequest","message":"limit 超过上限：1001 > 1000"},"ok":false,"protocol_version":1}
 PASS J-07a 仓库里激活版本可读: {"data":{"items":[{"active":"1.0.0","history":[],"id":"dictionary.p7.base","versions":[{"active":true,"id":"dictionary.p7.base","payload_schema":"dictionary.sqlite.v1","version":"1.0.0"}]}]},"ok":true,"protocol_version":1}
 PASS J-07b 坏包/穿越包没有进入仓库: {"data":{"items":[{"active":"1.0.0","history":[],"id":"dictionary.p7.base","versions":[{"active":true,"id":"dictionary.p7.base","payload_schema":"dictionary.sqlite.v1","version":"1.0.0"}]}]},"ok":true,"protocol_version":1}
-PASS J-06 并发调用与关闭无崩溃：ok=380 alreadyClosed=20 close={"data":{"closed":true,"inflight_kept":false},"ok":true,"protocol_version":1}
-PASS J-15b 并发 close 与在飞调用：ok=380 alreadyClosed=20
+PASS J-06 并发调用与关闭无崩溃：ok=242 alreadyClosed=158 close={"data":{"closed":true,"inflight_kept":true},"ok":true,"protocol_version":1}
+PASS J-15b 并发 close 与在飞调用：ok=242 alreadyClosed=158
 PENDING J-15c .so 重载：ART 类加载器不保证卸载，不可测（docs/43 D-146）
 PASS J-15a 50 次重建：代际单调、旧句柄 AlreadyClosed（last gen=52）
 PASS G06-JNI JNI 预取消返回 Cancelled: {"error":{"code":"Cancelled","message":"请求已取消"},"ok":false,"protocol_version":1}
