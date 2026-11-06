@@ -48,6 +48,12 @@ def fail(msg: str) -> None:
     sys.exit(1)
 
 
+def _open_blocker_count() -> int:
+    """引用集合里仍 open 的条数（关项不算 open，避免打印误导）。"""
+    ledger = json.loads(BLOCKERS.read_text(encoding="utf-8"))
+    return sum(1 for b in ledger.get("blockers", []) if b.get("status") == "open")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="P4 有条件验收台账校验")
     ap.add_argument("--check", action="store_true", required=True)
@@ -123,9 +129,20 @@ def main() -> int:
             problems.append(
                 f"验收文件引用的阻断项与台账不一致：{sorted(ref.get('ids', []))} vs {ledger_ids}"
             )
-        closed = [b["id"] for b in ledger.get("blockers", []) if b.get("status") != "open"]
-        if closed:
-            problems.append(f"台账里这些项已不是 open：{closed}（关项必须有证据，见 freeze-manifest --check）")
+        # 关项是允许的，但必须带证据：closed_at 与 closed_evidence 都不能为空。
+        # 规则演进（2026-11-07，D-46 关项时）：原规则"引用项必须全部 open"会让
+        # "已按证据关闭"变成不可表达的状态——门禁要么永远关不掉，要么得改台账口径。
+        # 现在改成：引用集合必须等于台账全集；其中每一项要么 open，要么已带证据关闭。
+        bad_closed = [
+            b["id"]
+            for b in ledger.get("blockers", [])
+            if b.get("status") != "open"
+            and not (b.get("closed_at") and b.get("closed_evidence"))
+        ]
+        if bad_closed:
+            problems.append(
+                f"台账里这些项已关闭但缺证据（closed_at/closed_evidence 不能为空）：{bad_closed}"
+            )
 
     if problems:
         print("FAIL P4 验收台账自相矛盾：")
@@ -136,7 +153,7 @@ def main() -> int:
     partial = [g["id"] for g in gates if g.get("status") == "partial"]
     print(
         f"PASS P4 台账一致（{len(gates)} 个门禁，部分满足 {partial or '无'}，"
-        f"{len(carry)} 条承接项，阻断项 {len(data['release_blockers_reference']['ids'])} 条仍 open）"
+        f"{len(carry)} 条承接项，阻断项 {_open_blocker_count()} 条仍 open）"
     )
     return 0
 

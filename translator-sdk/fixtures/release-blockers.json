@@ -1,83 +1,86 @@
 {
-  "schema": "sdk-release-blockers/v1",
-  "generated_at": "2026-11-05",
-  "purpose": "P3 冻结后仍未闭合的验收/发行条件。docs/23 §8 要求它们单独记账，不因开启 P4 自动放宽，也不标成已完成。",
-  "status_values": ["open", "closed"],
-  "policy": {
-    "dev_mode": "open 的条目**不阻止**继续开发（check-release.py 默认模式只提示）",
-    "release_mode": "open 且 blocks_release=true 的条目**阻止**发行（check-release.py --release-mode 直接 FAIL）",
-    "closing": "只有填了 closed_at + closed_evidence（可核对的证据路径/URL）才能改成 closed；不得只改状态"
+ "schema": "sdk-release-blockers/v1",
+ "generated_at": "2026-11-05",
+ "purpose": "P3 冻结后仍未闭合的验收/发行条件。docs/23 §8 要求它们单独记账，不因开启 P4 自动放宽，也不标成已完成。",
+ "status_values": [
+  "open",
+  "closed"
+ ],
+ "policy": {
+  "dev_mode": "open 的条目**不阻止**继续开发（check-release.py 默认模式只提示）",
+  "release_mode": "open 且 blocks_release=true 的条目**阻止**发行（check-release.py --release-mode 直接 FAIL）",
+  "closing": "只有填了 closed_at + closed_evidence（可核对的证据路径/URL）才能改成 closed；不得只改状态"
+ },
+ "blockers": [
+  {
+   "id": "G12",
+   "title": "模型权重再分发许可未确认",
+   "status": "open",
+   "blocks_development": false,
+   "blocks_release": true,
+   "blocking_scope": "含权重的任何制品（离线包、镜像、CI 缓存）",
+   "evidence_required": "具体权重的有效授权文本 + 审核记录（审核人/时间/适用范围），或改用许可明确的替代模型",
+   "current_evidence": "translator-sdk/licenses/model-assets.json（status=pending, redistribution=prohibited-until-confirmed）",
+   "mitigation": "SDK 只提供坐标与校验工具；权重由使用者自行获取",
+   "opened_at": "2026-11-05",
+   "closed_at": null,
+   "closed_evidence": null
   },
-  "blockers": [
-    {
-      "id": "G12",
-      "title": "模型权重再分发许可未确认",
-      "status": "open",
-      "blocks_development": false,
-      "blocks_release": true,
-      "blocking_scope": "含权重的任何制品（离线包、镜像、CI 缓存）",
-      "evidence_required": "具体权重的有效授权文本 + 审核记录（审核人/时间/适用范围），或改用许可明确的替代模型",
-      "current_evidence": "translator-sdk/licenses/model-assets.json（status=pending, redistribution=prohibited-until-confirmed）",
-      "mitigation": "SDK 只提供坐标与校验工具；权重由使用者自行获取",
-      "opened_at": "2026-11-05",
-      "closed_at": null,
-      "closed_evidence": null
-    },
-    {
-      "id": "G11",
-      "title": "CI 未在真实 Linux runner 上运行",
-      "status": "open",
-      "blocks_development": false,
-      "blocks_release": true,
-      "blocking_scope": "发行记录里的 CI 证据",
-      "evidence_required": "真实 runner 的 workflow run 链接 + 日志 + 产物；真实模型 job 需单独证明",
-      "current_evidence": ".github/workflows/ci.yml 与 real-model.yml 已提交，命令在本地等价执行通过（docs/21 §2.8）",
-      "mitigation": "本地等价命令作为临时证据，归档在 docs/21、docs/24",
-      "opened_at": "2026-11-05",
-      "closed_at": null,
-      "closed_evidence": null
-    },
-    {
-      "id": "G06",
-      "title": "不支持取消在途请求",
-      "status": "open",
-      "blocks_development": false,
-      "blocks_release": true,
-      "blocking_scope": "P3 总验收条件",
-      "evidence_required": "取消合同测试：单 in-flight 与排队中两种状态下取消，且不留 zombie/native 孤儿",
-      "current_evidence": "只有排队绝对截止时间（Timeout{operation:\"queue\"}）与卸载等待（docs/19 LC-02/LC-04）",
-      "mitigation": "宿主可用超时与 unload 控制最坏延迟",
-      "opened_at": "2026-11-05",
-      "closed_at": null,
-      "closed_evidence": null
-    },
-    {
-      "id": "G08",
-      "title": "安装恢复测试用的是 abort() 而非外部 kill -9",
-      "status": "open",
-      "blocks_development": false,
-      "blocks_release": true,
-      "blocking_scope": "P3 总验收条件",
-      "evidence_required": "独立进程在指定安装关键点被外部 SIGKILL，audit/recover 后状态一致、原版本不损坏",
-      "current_evidence": "5 个 crash point 用 abort() 触发（docs/19 D-35）",
-      "mitigation": "崩溃点覆盖相同，信号时序不同；已在 docs/21 D-53 记录",
-      "opened_at": "2026-11-05",
-      "closed_at": null,
-      "closed_evidence": null
-    },
-    {
-      "id": "D-46",
-      "title": "LICENSE-MIT / LICENSE-APACHE 正文未入库",
-      "status": "open",
-      "blocks_development": false,
-      "blocks_release": true,
-      "blocking_scope": "源码/二进制正式发行",
-      "evidence_required": "官方 MIT / Apache-2.0 正文文件入库，且 cargo package 清单里能看到",
-      "current_evidence": "Cargo.toml 只声明 SPDX：Apache-2.0 OR MIT",
-      "mitigation": "内部开发与本地验证不受影响",
-      "opened_at": "2026-11-05",
-      "closed_at": null,
-      "closed_evidence": null
-    }
-  ]
+  {
+   "id": "G11",
+   "title": "CI 未在真实 Linux runner 上运行",
+   "status": "open",
+   "blocks_development": false,
+   "blocks_release": true,
+   "blocking_scope": "发行记录里的 CI 证据",
+   "evidence_required": "真实 runner 的 workflow run 链接 + 日志 + 产物；真实模型 job 需单独证明",
+   "current_evidence": ".github/workflows/ci.yml 与 real-model.yml 已提交，命令在本地等价执行通过（docs/21 §2.8）",
+   "mitigation": "本地等价命令作为临时证据，归档在 docs/21、docs/24",
+   "opened_at": "2026-11-05",
+   "closed_at": null,
+   "closed_evidence": null
+  },
+  {
+   "id": "G06",
+   "title": "不支持取消在途请求",
+   "status": "open",
+   "blocks_development": false,
+   "blocks_release": true,
+   "blocking_scope": "P3 总验收条件",
+   "evidence_required": "取消合同测试：单 in-flight 与排队中两种状态下取消，且不留 zombie/native 孤儿",
+   "current_evidence": "只有排队绝对截止时间（Timeout{operation:\"queue\"}）与卸载等待（docs/19 LC-02/LC-04）",
+   "mitigation": "宿主可用超时与 unload 控制最坏延迟",
+   "opened_at": "2026-11-05",
+   "closed_at": null,
+   "closed_evidence": null
+  },
+  {
+   "id": "G08",
+   "title": "安装恢复测试用的是 abort() 而非外部 kill -9",
+   "status": "open",
+   "blocks_development": false,
+   "blocks_release": true,
+   "blocking_scope": "P3 总验收条件",
+   "evidence_required": "独立进程在指定安装关键点被外部 SIGKILL，audit/recover 后状态一致、原版本不损坏",
+   "current_evidence": "5 个 crash point 用 abort() 触发（docs/19 D-35）",
+   "mitigation": "崩溃点覆盖相同，信号时序不同；已在 docs/21 D-53 记录",
+   "opened_at": "2026-11-05",
+   "closed_at": null,
+   "closed_evidence": null
+  },
+  {
+   "id": "D-46",
+   "title": "LICENSE-MIT / LICENSE-APACHE 正文未入库",
+   "status": "closed",
+   "blocks_development": false,
+   "blocks_release": true,
+   "blocking_scope": "源码/二进制正式发行",
+   "evidence_required": "官方 MIT / Apache-2.0 正文文件入库，且 cargo package 清单里能看到",
+   "current_evidence": "Cargo.toml 只声明 SPDX：Apache-2.0 OR MIT",
+   "mitigation": "内部开发与本地验证不受影响",
+   "opened_at": "2026-11-05",
+   "closed_at": "2026-11-07",
+   "closed_evidence": "LICENSE-APACHE (11358 B, 取自系统 common-licenses 官方正文) 与 LICENSE-MIT (1088 B) 入库，并复制进两个可打包 crate；证据命令：`cargo package --list -p translator-resource|grep LICENSE` → LICENSE-APACHE/LICENSE-MIT，`-p translator-types` 同样 2 个。审核人：用户（2026-11-07 明确批准关闭）。"
+  }
+ ]
 }

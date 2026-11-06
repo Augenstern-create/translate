@@ -1,69 +1,248 @@
 {
-  "schema": "sdk-p4-acceptance/v1",
-  "generated_at": "2026-11-06",
-  "decided_in": "docs/28_P4审查响应与验收口径修订报告.md",
-  "reviewed_in": "docs/27_P4完整技术审查与P5承接建议.md",
-  "note": "本文件是 P4『有条件验收』的机器可读记录。发行阻断项的**单一事实来源**仍是 fixtures/release-blockers.json，这里只引用 id 与状态，不复制解释。",
-  "work_packages": [
-    {"id": "P4-01", "title": "固定 P3 基线与发行阻断台账", "status": "delivered", "evidence": ["docs/24 §1", "fixtures/p3-freeze/manifest.json", "fixtures/release-blockers.json"]},
-    {"id": "P4-02", "title": "候选锁定与可行性门禁", "status": "delivered", "evidence": ["docs/24 §2", "fixtures/p4/candidate.lock.json"]},
-    {"id": "P4-03", "title": "第二后端真实 CPU 翻译", "status": "delivered", "evidence": ["docs/25 §1", "crates/translator-nmt-ort", "tests: p4_ort"]},
-    {"id": "P4-04", "title": "插件替换合同", "status": "delivered", "evidence": ["docs/25 §2.3", "tests: nmt_ort_facade"]},
-    {"id": "P4-05", "title": "语义与结构回归", "status": "delivered", "evidence": ["docs/26 §2.1", "docs/28 §2.2", "tests: p4_contract"]},
-    {"id": "P4-06", "title": "对比基准", "status": "delivered", "evidence": ["docs/28 §2.3", "fixtures/nmt/baseline-p4-ort-linux-x86_64.json", "fixtures/nmt/baseline-p4-ort-soak-linux-x86_64.json", "fixtures/nmt/baseline-bergamot-same-texts-linux-x86_64.json"]},
-    {"id": "P4-07", "title": "结论及回退", "status": "delivered", "evidence": ["docs/26 §4.3", "docs/28 §4"]}
-  ],
-  "gates": [
-    {"id": "P4-G01", "title": "真实备选模型翻译", "status": "pass", "evidence": ["tests: g01_真实模型产出译文", "fixtures/p4/candidate.lock.json"]},
-    {"id": "P4-G02", "title": "插件替换证明", "status": "pass", "evidence": ["tests: g02_仅挂ort后端也能完成翻译", "tests: 路由指向ort引擎且能力可枚举"]},
-    {"id": "P4-G03", "title": "插件能力/兼容性", "status": "pass", "evidence": ["tests: 不支持的语言对明确拒绝", "tests: 重复挂载同一引擎明确拒绝", "docs/25 §1.4"]},
-    {"id": "P4-G04", "title": "结构保护", "status": "pass", "evidence": ["tests: sp01_03 / sp04_05 / sp06_07 / sp10 / sp11 / sp12", "docs/28 §2.2"],
-     "qualification": "只保证结构；语义质量单独判（B/C 类证据，不通过）"},
-    {"id": "P4-G05", "title": "模型与运行时身份", "status": "partial",
-     "evidence": ["OrtIdentity（含 model_revision / runtime_build / threads / decode_policy）"],
-     "open_items": ["g05-plan-digest", "g05-cache-isolation"]},
-    {"id": "P4-G06", "title": "资源安全", "status": "partial",
-     "evidence": ["tests: lc01 / lc02 / lc03_09 / lc06", "docs/26 §1.3"],
-     "open_items": ["g06-worker-isolation", "g06-cancel-deadline", "g06-lease", "g06-crash-recovery"],
-     "expected_unsupported": ["g06-cancel-deadline（timeout_ms 被忽略，见 R-08）"]},
-    {"id": "P4-G07", "title": "默认构建隔离", "status": "pass", "evidence": ["cargo tree 19 行 vs 165 行、ort 0 次", "默认 CLI ldd 无 libonnxruntime.so"]},
-    {"id": "P4-G08", "title": "对比与报告", "status": "pass", "evidence": ["docs/28 §2.3（同文本同口径 A/B 表）", "fixtures/nmt/baseline-bergamot-same-texts-linux-x86_64.json"]}
-  ],
-  "verdict": {
-    "overall": "conditional-go",
-    "plugin_replacement": "go",
-    "replace_p3_baseline": "no-go",
-    "statement": "P4 工作包交付完成；P4-G01/G02/G03/G04/G07/G08 接受，G05/G06 部分满足并转入承接台账；当前候选不替换 P3 默认后端。"
+ "schema": "sdk-p4-acceptance/v1",
+ "generated_at": "2026-11-06",
+ "decided_in": "docs/28_P4审查响应与验收口径修订报告.md",
+ "reviewed_in": "docs/27_P4完整技术审查与P5承接建议.md",
+ "note": "本文件是 P4『有条件验收』的机器可读记录。发行阻断项的**单一事实来源**仍是 fixtures/release-blockers.json，这里只引用 id 与状态，不复制解释。",
+ "work_packages": [
+  {
+   "id": "P4-01",
+   "title": "固定 P3 基线与发行阻断台账",
+   "status": "delivered",
+   "evidence": [
+    "docs/24 §1",
+    "fixtures/p3-freeze/manifest.json",
+    "fixtures/release-blockers.json"
+   ]
   },
-  "carry_over": [
-    {"id": "g05-plan-digest", "priority": "P1", "owner": "P5 前置设计", "from_gate": "P4-G05",
-     "title": "执行计划身份覆盖第二 runtime 与解码策略（必要时 plan-v2）",
-     "exit_evidence": "新旧计划版本兼容说明 + 跨后端/跨 tokenizer/跨解码配置的缓存身份测试；短摘要不得替代完整摘要"},
-    {"id": "g05-cache-isolation", "priority": "P1", "owner": "P5", "from_gate": "P4-G05",
-     "title": "启用 ORT 结果缓存前，先关闭跨后端缓存隔离合同",
-     "exit_evidence": "同文本跨 backend 必须得到不同缓存键；命中仅发生在完整执行计划一致时"},
-    {"id": "g06-worker-isolation", "priority": "P1", "owner": "P5", "from_gate": "P4-G06",
-     "title": "统一 RuntimeTransport：in-process 与 worker 的故障边界",
-     "exit_evidence": "Transport/错误分类/取消合同；不破坏 P3 默认路径"},
-    {"id": "g06-cancel-deadline", "priority": "P1", "owner": "P5 / 发行专项", "from_gate": "P4-G06",
-     "title": "取消在途请求与 deadline（当前 timeout_ms 被忽略）",
-     "exit_evidence": "正向 deadline 合同测试替换 lc04；宿主停止等待 ≠ 底层停止计算，需分别说明"},
-    {"id": "g06-lease", "priority": "P2", "owner": "P5", "from_gate": "P4-G06",
-     "title": "资源仓库租约语义对齐（ORT 目前不接租约）",
-     "exit_evidence": "LC-07 在 ORT 后端的对等用例"},
-    {"id": "g06-crash-recovery", "priority": "P2", "owner": "P5 / 发行专项", "from_gate": "P4-G06",
-     "title": "外部 kill -9 下的恢复合同（G08 台账项的一部分）",
-     "exit_evidence": "与 G08 台账项合并提供证据，不重复关闭"},
-    {"id": "perf-soak-rig", "priority": "P1", "owner": "P5", "from_gate": "P4-06",
-     "title": "多并发、卸载竞争、长时间与内存压力台架",
-     "exit_evidence": "固定机器/输入/时长的 RSS/PSS 曲线与失败注入日志"},
-    {"id": "quality-golden", "priority": "P2", "owner": "P6", "from_gate": "P4-05",
-     "title": "固定金样本与人工评分口径（当前质量结论是 C 类）",
-     "exit_evidence": "错误分型 + 评分标准 + 与模型版本绑定的基准"}
-  ],
-  "release_blockers_reference": {
-    "source": "fixtures/release-blockers.json",
-    "ids": ["G12", "G11", "G06", "G08", "D-46"],
-    "note": "五项在本阶段结束时仍全部 open；本文件不重新解释其含义，避免与台账再次分叉（docs/27 R-01）"
+  {
+   "id": "P4-02",
+   "title": "候选锁定与可行性门禁",
+   "status": "delivered",
+   "evidence": [
+    "docs/24 §2",
+    "fixtures/p4/candidate.lock.json"
+   ]
+  },
+  {
+   "id": "P4-03",
+   "title": "第二后端真实 CPU 翻译",
+   "status": "delivered",
+   "evidence": [
+    "docs/25 §1",
+    "crates/translator-nmt-ort",
+    "tests: p4_ort"
+   ]
+  },
+  {
+   "id": "P4-04",
+   "title": "插件替换合同",
+   "status": "delivered",
+   "evidence": [
+    "docs/25 §2.3",
+    "tests: nmt_ort_facade"
+   ]
+  },
+  {
+   "id": "P4-05",
+   "title": "语义与结构回归",
+   "status": "delivered",
+   "evidence": [
+    "docs/26 §2.1",
+    "docs/28 §2.2",
+    "tests: p4_contract"
+   ]
+  },
+  {
+   "id": "P4-06",
+   "title": "对比基准",
+   "status": "delivered",
+   "evidence": [
+    "docs/28 §2.3",
+    "fixtures/nmt/baseline-p4-ort-linux-x86_64.json",
+    "fixtures/nmt/baseline-p4-ort-soak-linux-x86_64.json",
+    "fixtures/nmt/baseline-bergamot-same-texts-linux-x86_64.json"
+   ]
+  },
+  {
+   "id": "P4-07",
+   "title": "结论及回退",
+   "status": "delivered",
+   "evidence": [
+    "docs/26 §4.3",
+    "docs/28 §4"
+   ]
   }
+ ],
+ "gates": [
+  {
+   "id": "P4-G01",
+   "title": "真实备选模型翻译",
+   "status": "pass",
+   "evidence": [
+    "tests: g01_真实模型产出译文",
+    "fixtures/p4/candidate.lock.json"
+   ]
+  },
+  {
+   "id": "P4-G02",
+   "title": "插件替换证明",
+   "status": "pass",
+   "evidence": [
+    "tests: g02_仅挂ort后端也能完成翻译",
+    "tests: 路由指向ort引擎且能力可枚举"
+   ]
+  },
+  {
+   "id": "P4-G03",
+   "title": "插件能力/兼容性",
+   "status": "pass",
+   "evidence": [
+    "tests: 不支持的语言对明确拒绝",
+    "tests: 重复挂载同一引擎明确拒绝",
+    "docs/25 §1.4"
+   ]
+  },
+  {
+   "id": "P4-G04",
+   "title": "结构保护",
+   "status": "pass",
+   "evidence": [
+    "tests: sp01_03 / sp04_05 / sp06_07 / sp10 / sp11 / sp12",
+    "docs/28 §2.2"
+   ],
+   "qualification": "只保证结构；语义质量单独判（B/C 类证据，不通过）"
+  },
+  {
+   "id": "P4-G05",
+   "title": "模型与运行时身份",
+   "status": "partial",
+   "evidence": [
+    "OrtIdentity（含 model_revision / runtime_build / threads / decode_policy）"
+   ],
+   "open_items": [
+    "g05-plan-digest",
+    "g05-cache-isolation"
+   ]
+  },
+  {
+   "id": "P4-G06",
+   "title": "资源安全",
+   "status": "partial",
+   "evidence": [
+    "tests: lc01 / lc02 / lc03_09 / lc06",
+    "docs/26 §1.3"
+   ],
+   "open_items": [
+    "g06-worker-isolation",
+    "g06-cancel-deadline",
+    "g06-lease",
+    "g06-crash-recovery"
+   ],
+   "expected_unsupported": [
+    "g06-cancel-deadline（timeout_ms 被忽略，见 R-08）"
+   ]
+  },
+  {
+   "id": "P4-G07",
+   "title": "默认构建隔离",
+   "status": "pass",
+   "evidence": [
+    "cargo tree 19 行 vs 165 行、ort 0 次",
+    "默认 CLI ldd 无 libonnxruntime.so"
+   ]
+  },
+  {
+   "id": "P4-G08",
+   "title": "对比与报告",
+   "status": "pass",
+   "evidence": [
+    "docs/28 §2.3（同文本同口径 A/B 表）",
+    "fixtures/nmt/baseline-bergamot-same-texts-linux-x86_64.json"
+   ]
+  }
+ ],
+ "verdict": {
+  "overall": "conditional-go",
+  "plugin_replacement": "go",
+  "replace_p3_baseline": "no-go",
+  "statement": "P4 工作包交付完成；P4-G01/G02/G03/G04/G07/G08 接受，G05/G06 部分满足并转入承接台账；当前候选不替换 P3 默认后端。"
+ },
+ "carry_over": [
+  {
+   "id": "g05-plan-digest",
+   "priority": "P1",
+   "owner": "P5 前置设计",
+   "from_gate": "P4-G05",
+   "title": "执行计划身份覆盖第二 runtime 与解码策略（必要时 plan-v2）",
+   "exit_evidence": "新旧计划版本兼容说明 + 跨后端/跨 tokenizer/跨解码配置的缓存身份测试；短摘要不得替代完整摘要"
+  },
+  {
+   "id": "g05-cache-isolation",
+   "priority": "P1",
+   "owner": "P5",
+   "from_gate": "P4-G05",
+   "title": "启用 ORT 结果缓存前，先关闭跨后端缓存隔离合同",
+   "exit_evidence": "同文本跨 backend 必须得到不同缓存键；命中仅发生在完整执行计划一致时"
+  },
+  {
+   "id": "g06-worker-isolation",
+   "priority": "P1",
+   "owner": "P5",
+   "from_gate": "P4-G06",
+   "title": "统一 RuntimeTransport：in-process 与 worker 的故障边界",
+   "exit_evidence": "Transport/错误分类/取消合同；不破坏 P3 默认路径"
+  },
+  {
+   "id": "g06-cancel-deadline",
+   "priority": "P1",
+   "owner": "P5 / 发行专项",
+   "from_gate": "P4-G06",
+   "title": "取消在途请求与 deadline（当前 timeout_ms 被忽略）",
+   "exit_evidence": "正向 deadline 合同测试替换 lc04；宿主停止等待 ≠ 底层停止计算，需分别说明"
+  },
+  {
+   "id": "g06-lease",
+   "priority": "P2",
+   "owner": "P5",
+   "from_gate": "P4-G06",
+   "title": "资源仓库租约语义对齐（ORT 目前不接租约）",
+   "exit_evidence": "LC-07 在 ORT 后端的对等用例"
+  },
+  {
+   "id": "g06-crash-recovery",
+   "priority": "P2",
+   "owner": "P5 / 发行专项",
+   "from_gate": "P4-G06",
+   "title": "外部 kill -9 下的恢复合同（G08 台账项的一部分）",
+   "exit_evidence": "与 G08 台账项合并提供证据，不重复关闭"
+  },
+  {
+   "id": "perf-soak-rig",
+   "priority": "P1",
+   "owner": "P5",
+   "from_gate": "P4-06",
+   "title": "多并发、卸载竞争、长时间与内存压力台架",
+   "exit_evidence": "固定机器/输入/时长的 RSS/PSS 曲线与失败注入日志"
+  },
+  {
+   "id": "quality-golden",
+   "priority": "P2",
+   "owner": "P6",
+   "from_gate": "P4-05",
+   "title": "固定金样本与人工评分口径（当前质量结论是 C 类）",
+   "exit_evidence": "错误分型 + 评分标准 + 与模型版本绑定的基准"
+  }
+ ],
+ "release_blockers_reference": {
+  "source": "fixtures/release-blockers.json",
+  "ids": [
+   "G12",
+   "G11",
+   "G06",
+   "G08",
+   "D-46"
+  ],
+  "note": "含义只以 fixtures/release-blockers.json 为准（docs/27 R-01）。引用集合 = 台账里的**全部**阻断项；其中 D-46 已于 2026-11-07 关项（许可证正文入库），C9 的规则随之改为\"引用的项必须 open 或已带证据关闭\"。"
+ }
 }
