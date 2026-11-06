@@ -391,10 +391,12 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let manifest = manifest(src.path());
         let snapshot = ModelSnapshot::materialize(&manifest, root.path(), 1, 1).unwrap();
-        let path = snapshot.spec().path_of(FileRole::TargetVocab).unwrap();
 
+        // 只读位是 Unix 的权限位语义；Windows 没有等价物（DOS 只读属性不是同一件事），
+        // 所以路径取值也放进 cfg 块里，避免非 unix 构建上出现未使用变量。
         #[cfg(unix)]
         {
+            let path = snapshot.spec().path_of(FileRole::TargetVocab).unwrap();
             use std::os::unix::fs::PermissionsExt;
             let mode = std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
             assert_eq!(mode, 0o400, "快照文件应只读，实际 {mode:o}");

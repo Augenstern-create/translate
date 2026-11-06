@@ -119,6 +119,10 @@ pub struct WorkerProcess {
     load_timeout: Duration,
     translate_timeout: Duration,
     shutdown_grace: Duration,
+    /// SIGTERM 之后的宽限期。读写都在 `#[cfg(unix)]` 分支里（Windows 没有等价信号，
+    /// 直接进 SIGKILL），所以非 unix 构建上它是只写字段——保留它是为了让 `WorkerConfig`
+    /// 在两个平台上形状一致，不让平台差异漏进公开配置。
+    #[cfg_attr(not(unix), allow(dead_code))]
     term_grace: Duration,
     exit: Option<ExitStatus>,
 }

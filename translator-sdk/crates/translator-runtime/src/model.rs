@@ -649,9 +649,8 @@ mod tests {
         match process_rss_bytes() {
             Some(bytes) => assert!(bytes > 1024 * 1024, "RSS 至少几 MB：{bytes}"),
             None => {
-                // 非 Linux：必须返回 None，不能编一个 0
-                #[cfg(not(target_os = "linux"))]
-                assert!(true);
+                // 非 Linux：必须返回 None，不能编一个 0。这里不需要断言——
+                // 走到这个分支本身就是被验证的行为（`assert!(true)` 只会惹 clippy）。
                 #[cfg(target_os = "linux")]
                 panic!("Linux 上应当能读到 /proc/self/status");
             }
