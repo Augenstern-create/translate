@@ -1,10 +1,30 @@
 # 变更记录
 
 版本号策略：P3 期间一律 `0.1.0`（**不发布**，`publish = false`）；每次阶段结束打 tag，
-tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2` `p4.3` `p5.0` `p5.1` `p5.2` `p5.3` `p5.4` `p5.5` `p5.6`）。
+tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2` `p4.3` `p5.0` `p5.1` `p5.2` `p5.3` `p5.4` `p5.5` `p5.6` `p5.7`）。
 真正的语义化版本从 P7（SDK 发行）开始。
 
 每条都标注证据所在：能复现的测试或 `docs/NN` 报告。
+
+## P5-07 — Android 模拟器验证 + P5 收口（tag `p5.7`，报告 `docs/36` / `docs/37`）
+
+### Android（`docs/36`）
+
+- **真 SDK 跑在模拟器上**：交叉编译 `translator-cli`（x86_64 58.4 s / aarch64 43.0 s，含 `rusqlite` bundled
+  的 SQLite C 编译），推到 AVD（android-34 / x86_64）后：
+  `capabilities`（3 个 mock 引擎）、`detect 你好世界`（zh-Hans 0.60）、`translate`（路由到 mock.nmt）、
+  `--dict` **真词典 lookup**（FST+SQLite，来源 cc-cedict）、`resource install/list/inspect/audit`
+  三方一致、**卸载激活版本被正确拒绝**。
+- **ARM64 只到编译合规**：ELF64 AArch64 / `LOAD` 对齐 `0x4000` / `NEEDED` 仅 libdl·libm·libc / SQLite 静态链接。
+- **ARM64 运行被证伪**：装 `system-images;android-24;default;arm64-v8a`（3.1 GB）建 AVD 后启动 →
+  `FATAL | QEMU2 emulator does not support arm64 CPU architecture`（新版模拟器只支持同架构镜像）。
+- 物理设备性能（速度/耗电/温度/峰值内存）**未验证**；JNI 承载真 SDK（`translator-jni`）列入 P6。
+
+### P5 收口（`docs/37`）
+
+- 三分口径：工作包**完成** / 门禁**未闭合**（5 条阻断项仍 open，`--release-mode` 继续 FAIL）/ 候选**条件性可用**。
+- 平台证据表：九项能力 × Linux / Windows / Android x86_64 / Android ARM64，凡未验证一律标 ❔，不因"能编译"算通过。
+- 新增 **ADR-060**（Android = 模拟器功能 + 交叉编译合规；物理性能单列未验证）。
 
 ## P5-06 — P5.4 Windows 存活探测与跨进程资源验证（tag `p5.6`，报告 `docs/35`）
 

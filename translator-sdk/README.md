@@ -32,13 +32,15 @@
 - `30_P5-01_Android工具链与Windows验证矩阵报告.md` — NDK r30 + x86_64 AVD 打通 JNI 三段链（含 `EM_AARCH64` 负对照）、只读勘察脚本与 W1～W10 验证矩阵、D-86～D-91
 - `31_Windows验证机部署清单.md` — 实体机实测后的清单 v2（**部分建议已被 `docs/32` 取代，见文首状态块**）
 - `32_P5开发建议与实施计划（工作区与权限边界）.md` — 外部审查/计划稿归档：唯一可写工作区 `E:\augenstern\translate`、逐项审批、固定 Anaconda Python
-- `35_P5.4_Windows进程存活探测与跨进程资源验证报告.md` — **本轮**：Windows 存活探测（kernel32 裸 FFI，零新依赖）、lc08 与 cross_process 解 gate、Windows 333/0/60 vs Linux 375/0/60、D-115 结案（`ORT_CACHE_DIR`）
+- `37_P5阶段总结与验收报告.md` — **本轮**：P5 收口——三分口径裁定 **Conditional**、平台证据表（九项能力 × 四平台）、工作包索引、未验证项清单
+- `36_P5.5_Android模拟器验证报告.md` — **本轮**：真 SDK 跑在 x86_64 AVD（词典/资源/CLI/识别/翻译）、ARM64 仅编译合规（运行被模拟器证伪）、物理性能未验证
+- `35_P5.4_Windows进程存活探测与跨进程资源验证报告.md` — Windows 存活探测（kernel32 裸 FFI，零新依赖）、lc08 与 cross_process 解 gate、Windows 333/0/60 vs Linux 375/0/60、D-115 结案（`ORT_CACHE_DIR`）
 - `34_P5.2-P5.3_Windows构建回归与ORT实跑报告.md` — W1–W10 全绿（322 passed/0 failed/56 ignored；ORT 真实模型 24 passed；中文+空格路径构建通过）、7 个跨平台修复提交、D-108～D-117、D-92 实测确认 directml 静态包、D-115 待处置（工作区外 360.9 MB 缓存）
 - `33_P5.1_工作区与环境只读核验报告.md` — P5.1 只读预检（Rust 1.99.1 / Anaconda 3.13.5 / VC 17.14 / 工作区空且 E: 133.7 GiB）、`dsh-win-env/v1` 采集脚本、D-101～D-107
 
 ---
 
-## 当前状态：P0～P3 完成并**已冻结**（`p3.4` / 分支 `p3-frozen`），**P3 = Conditional**：功能可验收，含权重的发行被 release-blockers（G12 等五项）阻断。P4 工作包全部交付（P4-01～P4-07，`p4.3`），裁定 **`conditional-go`**：插件替换可行 = go，替换 P3 后端 = **no-go**；**门禁闭合情况是 6 项通过 + G05/G06 部分满足**（未闭合项已进机器可查台账 `fixtures/p4/acceptance.json`，由 `check-release.py` 的 C9 盯）。**P5 进行中**（`p5.6`）：Windows 侧 W1–W10 全绿并完成 P5.4——新增 Windows 存活探测（kernel32 裸 FFI），`cargo test --workspace` **333 passed / 0 failed / 60 ignored**（含 6 条跨进程不变量、5 个崩溃注入点），Linux 375/0/60 无回退；Android 改为模拟器验证（ARM64 物理性能标记未验证）——见 `docs/35`
+## 当前状态：P0～P3 完成并**已冻结**（`p3.4` / 分支 `p3-frozen`），**P3 = Conditional**：功能可验收，含权重的发行被 release-blockers（G12 等五项）阻断。P4 工作包全部交付（P4-01～P4-07，`p4.3`），裁定 **`conditional-go`**：插件替换可行 = go，替换 P3 后端 = **no-go**；**门禁闭合情况是 6 项通过 + G05/G06 部分满足**（未闭合项已进机器可查台账 `fixtures/p4/acceptance.json`，由 `check-release.py` 的 C9 盯）。**P5 已收口**（`p5.7`）：裁定 **Conditional**——Windows 实体机 W1–W10 全绿（333 passed / 0 failed / 60 ignored，含 ORT 24 条真实模型、6 条跨进程不变量、5 个崩溃注入点），Linux 375/0/60 无回退；Android x86_64 模拟器上真 SDK 跑通（词典/资源/CLI），ARM64 仅编译合规、运行不可得、物理性能**未验证**；5 条发行阻断项仍 open。见 `docs/37`
 
 - **P0**：workspace 结构、核心类型、插件契约、协调器与路由、缓存、门面 API、Mock 插件、CLI。
   **不接任何真实模型、不装任何 native 库**，整条链路即可运行 —— 这是设计文档规定的交付判据。
