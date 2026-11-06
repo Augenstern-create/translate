@@ -1,10 +1,38 @@
 # 变更记录
 
 版本号策略：P3 期间一律 `0.1.0`（**不发布**，`publish = false`）；每次阶段结束打 tag，
-tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2` `p4.3` `p5.0`）。
+tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2` `p4.3` `p5.0` `p5.1`）。
 真正的语义化版本从 P7（SDK 发行）开始。
 
 每条都标注证据所在：能复现的测试或 `docs/NN` 报告。
+
+## P5-01 — Android 工具链就位与 Windows 验证矩阵（tag `p5.1`，报告 `docs/30`）
+
+不改任何 crate（`Cargo.lock` 不变），只加验证脚手架：`tools/p5/windows-recon.ps1`、`tools/p5/windows-recon.sh`。
+
+### 已完成
+
+- **NDK r30（`ndk;30.0.16248370`，2.3 GB）** 装好；`rustup target add x86_64-linux-android`
+  （`aarch64-linux-android` 原已有）。
+- **JNI 三段链在 AVD 上打通**：零依赖 Rust `cdylib`（手写 `Java_HelloJNI_*` 符号）→ `d8` 出 dex →
+  `app_process` 在 android-34 x86_64 AVD 上 `System.loadLibrary` 成功并取回返回值：
+  `SMOKE arch=x86_64 abi_fn=1 add=42 / SMOKE OK`。
+- **ARM64 产物合规**：符号正确、`LOAD` 段 16 KiB 对齐（`0x4000`）、`NEEDED` 只有 `libdl/libc`。
+- **负对照（最重要的一条）**：同一份源码的 `aarch64` 产物在 x86_64 设备上被拒——
+  `dlopen failed: ... is for EM_AARCH64 (183) instead of EM_X86_64 (62)`。
+  即：现有 AVD 在 ARM64 上的证据力为 **0**，`docs/29` D-83 从推断升级为实测。
+- **Windows 侧只读勘察**：`dsh-win-recon/v1` JSON（OS/build/提权/`LongPathsEnabled`/代码页/CPU/卷/VS/SDK/
+  rust target/sshd 状态/Defender/WSL/IPv4 等），脚本全 ASCII、纯 getter；Linux 侧一条命令拉取，
+  按 `utf-8→cp936→cp1252` 解码兜底（中文版 Windows 控制台吐 CP936）。已用假 `ssh` + CP936 载荷验证解析链。
+- **W1～W10 验证矩阵**（`docs/30` §1.5）：含 **W7 = Windows 上 Bergamot 必须返回
+  `CapabilityUnavailable`**（预期不支持，不是失败）。
+
+### 未完成（外部依赖）
+
+- Windows 实体机：**SSH 参数未到**，W1～W10 全为空表；`windows-recon.ps1` 只做过 pwsh 7.4.6 AST 解析，
+  未在 PowerShell 5.1 真机执行（D-89）。
+- ARM64：无真机 → "物理机基准"这一格仍空（D-87）。
+- CI 未动（用户只选 B 路线），G11 继续 open（D-90）。
 
 ## P5 前置 — 环境勘察与 Windows 验证方案对比（tag `p5.0`，报告 `docs/29`）
 
