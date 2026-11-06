@@ -723,6 +723,17 @@ P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运
   把两者混在一个"通过"里，就会有人拿模拟器数字去答移动端能效问题（ADR-052 同源）。
   代价：移动端结论永远带一个"未验证"尾巴，直到有 aarch64 宿主或真机。
 
+- ADR-061（Accepted，`docs/39` 已冻结）：**JNI 契约 v1 = 4 个 native 入口 + 字符串代际句柄 + JSON DTO**。
+  入口只有 `nativeProtocolVersion` / `nativeCreate` / `nativeCall(handle, method, payload)` / `nativeClose`；
+  方法级能力（`capabilities`/`detect`/`lookup`/`resources`，P6.2 加 `translate`）走 `nativeCall`，**新增能力不改 ABI**。
+  句柄是 `"generation:index"` 字符串而非 `jlong`：强制走注册表查表 + 代际校验，过期返回 `AlreadyClosed`，
+  不可能把宿主传错的值解引用成段错误。输出用 `NewString(UTF-16)` 而非 `NewStringUTF`（后者期待 Modified UTF-8，
+  含 Emoji 时会与 Rust 的标准 UTF-8 冲突）；输入含 `U+0000` 一律 `InvalidRequest`，不静默改写。
+  业务失败一律走结构化 JSON（沿用 `TranslationErrorCode` 的 12 个码，不新增），只有契约级错误才抛
+  `IllegalArgumentException`；`panic` 在 FFI 边界 `catch_unwind` 后转 `BackendFailed`。
+  理由：JNI 是唯一"错误会变成崩溃"的边界，把它收敛成 4 个字符串入口后，**ABI 稳定与错误可诊断**同时成立。
+  代价：多一层 JSON 分发与解析（微秒级）；字符串句柄不能当指针用（这正是目的）。
+
 > 状态含义：**Accepted** = 已决定并（如注明）已实现；**Proposed** = 已决定方向但尚未实现，写入 ADR 不等于已验证；
 > **Deferred** = 明确延后。上表未标注 Deferred 的项均须在对应阶段交付。
 
@@ -737,6 +748,7 @@ P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运
 | v1.4 | 2026-11-05 | P3.0 落地：新增 ADR-024～028（Linux 优先/参考链路先行/内容即身份/worker 独占/权重不入库）；`docs/10` 的候选 ADR 标题按内容合并进这几条，未覆盖旧编号 |
 | v1.5 | 2026-11-05 | P3.1-A 落地（`docs/13`）：ADR-027 从 Proposed 改为 Accepted，并把措辞从「worker 独占」收紧为「**进程级**故障隔离」（明确线程与 `catch_unwind` 不可用、IPC 硬约束、非 Linux 显式不可用）；ADR-026 把模型身份从「权重 + tokenizer 摘要」扩展为**权重 / Tokenizer / 短名单 / 解码参数 / runtime build** 五项，并注明当前 `content_digest` 只能诊断、不得作缓存键；新增 ADR-029（严格占位符完整性，Proposed，P3.1-C）。编号处理：`docs/12` §6 的候选 ADR 建议按内容并入 026/027/029，**未覆盖任何旧编号**；ADR-029 是当前最大号 028 之后的第一个空号 |
 | v1.6 | 2026-11-05 | P3.1-B 落地（`docs/15`）：新增 ADR-030～033（隔离快照 / 真实 Bergamot 默认单 worker / IPC 与原生版本分离 / 分阶段截止时间）；ADR-026 的现状一栏改为引用 P3.1-B 实测并再次声明「不得作缓存键」。编号处理：`docs/14` §8 的四条建议按内容顺延为 030～033（029 已被占位），**未覆盖任何旧编号** |
+| v1.23 | 2026-11-07 | P6.0（`docs/39`，计划稿归档 `docs/38`）：冻结 **JNI 契约 v1**（4 个 native 入口 / 字符串代际句柄 / JSON `protocol_version=1` / UTF-16 输出 / NUL 拒绝 / 12 个错误码透传），新增 **ADR-061**。只读预检确认：Rust 1.99.1、NDK r30、两个 Android target 就位；`translator-api` 默认 feature 下不依赖 HTTP/Tauri（P6.0 门禁 PASS）；仓库无任何 JNI crate（P6.1 需新建 `bindings/translator-jni`）。记录 6 条决策偏差 D-130～D-135（句柄形态、入口收敛、UTF-16、NUL、验证载体选 `d8+app_process` 而非 Gradle、JNI 开发在 Linux 侧）。本阶段未建 crate、未跑 Android 构建、未动台账。编号处理：ADR 按最大号 060 之后顺延 061，**未覆盖任何旧编号** |
 | v1.22 | 2026-11-07 | P5.5 + P5.6（`docs/36`/`docs/37`，**P5 收口**）：Android 改为模拟器验证——x86_64 AVD 上跑**真 SDK**（`translator-cli` 交叉编译含 bundled SQLite，能力表/识别/翻译/词典 lookup/资源 install·list·inspect·audit·拒绝卸载激活版本 全过）；ARM64 只到**编译合规**（ELF64 AArch64 / `LOAD 0x4000` / 仅 libdl·libm·libc），**运行验证被证伪**（`QEMU2 emulator does not support arm64 CPU architecture`）；移动端物理性能单列"未验证"。新增 **ADR-060**。P5 裁定 **Conditional**：工作包交付完成，5 条发行阻断项仍 open，`--release-mode` 必须继续 FAIL；平台证据表（Linux/Windows/Android x86_64/Android ARM64 × 九项能力）见 `docs/37` §2。编号处理：ADR 按最大号 059 之后顺延 060，**未覆盖任何旧编号** |
 | v1.21 | 2026-11-06 | P5.4（`docs/35`）：实现 Windows 进程存活探测（`OpenProcess`/`GetExitCodeProcess`/`GetProcessTimes`，**不引新依赖**），新增 **ADR-059**；解 gate `lc08` 与 `cross_process.rs`，`store` 的租约回收断言跟上新语义，新增 3 条探测用例。Windows `cargo test --workspace` **333 passed / 0 failed / 60 ignored**（`translator-resource` 80 passed，含 6 条跨进程不变量与 5 个崩溃注入点）；Linux **375 / 0 / 60** 无回退。删掉一条自己写的错误断言（父子 start_id 必不同——Linux jiffies 10ms 会撞，D-118）。**D-115 结案**：`ort-sys` 的 `cache_dir()` 优先读 `ORT_CACHE_DIR`，后续构建用进程级环境变量即可把缓存落到 `.build\ort-cache`，旧 360.9 MB 保留待决（D-121）。计数口径更新为 375 vs 333（差 42，D-122）。编号处理：ADR 按最大号 058 之后顺延 059，**未覆盖任何旧编号** |
 | v1.20 | 2026-11-06 | P5.2–P5.3（`docs/34`）：在工作区 `E:\augenstern\translate` 内完成 Windows 构建回归与 ORT 实跑——W1–W10 全绿（`cargo test --workspace` **322 passed / 0 failed / 56 ignored**；ORT 真实模型 **24 passed**；W10 在含空格+中文的路径下构建通过）。新增 **ADR-058**（跨平台验证用 `cfg` gate 表达不可达、两平台用例数必须同时给出并解释差值）。为了让 Windows 通过而修的 7 个提交：fmt(D-108)、3 处仅 Windows 的 clippy(D-109)、Bergamot 配置夹具(D-110)、transport(D-111)、worker/lifecycle 整目标 gate(D-112)、lc08 ignore(D-113)、工具脚本两处编码(D-114)。**D-92 实测确认**：默认特征链接的是 `directml` **静态**包（`onnxruntime.lib` 343 MB + `DirectML.dll`），产物**没有** `onnxruntime.dll`，且与 Linux 的 `none` 变体不可并排比性能（D-116）。**D-115 待处置**：`ort-sys` 把 360.9 MB 缓存写到工作区外 `%LOCALAPPDATA%\ort.pyke.io`（工具默认行为，违反 ADR-057，未擅自删除）。编号处理：ADR 按最大号 057 之后顺延 058，**未覆盖任何旧编号** |

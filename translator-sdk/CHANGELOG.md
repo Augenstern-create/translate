@@ -1,10 +1,36 @@
 # 变更记录
 
 版本号策略：P3 期间一律 `0.1.0`（**不发布**，`publish = false`）；每次阶段结束打 tag，
-tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2` `p4.3` `p5.0` `p5.1` `p5.2` `p5.3` `p5.4` `p5.5` `p5.6` `p5.7`）。
+tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2` `p4.3` `p5.0` `p5.1` `p5.2` `p5.3` `p5.4` `p5.5` `p5.6` `p5.7` `p6.0`）。
 真正的语义化版本从 P7（SDK 发行）开始。
 
 每条都标注证据所在：能复现的测试或 `docs/NN` 报告。
+
+## P6-00 — JNI 契约冻结与只读预检（tag `p6.0`，报告 `docs/39`，计划稿 `docs/38`）
+
+不新增 crate、不改 `Cargo.lock`、不跑 Android 构建。只冻结契约 + 核对现状。
+
+### 冻结的契约 v1（ADR-061）
+
+- 4 个 native 入口：`nativeProtocolVersion` / `nativeCreate(configJson)` / `nativeCall(handle, method, payloadJson)` / `nativeClose(handle)`。
+  方法级能力走 `nativeCall`（v1 四个 method：`capabilities` / `detect` / `lookup` / `resources`；`translate` 在 P6.2 加），**新增能力不改 ABI**。
+- 句柄 = 字符串 `"generation:index"`（不是 `jlong`）：注册表查表 + 代际校验，过期返回 `AlreadyClosed`，不可能误当指针。
+- 输出 `NewString(UTF-16)`，不用 `NewStringUTF`（Modified UTF-8 遇 Emoji 会与 Rust 的 UTF-8 冲突）。
+- 输入含 `U+0000` → `InvalidRequest("文本含 NUL")`，不静默改写。
+- 业务失败走结构化 JSON（沿用 12 个 `TranslationErrorCode`）；只有契约级错误抛 `IllegalArgumentException`；`panic` 在边界 `catch_unwind` → `BackendFailed`。
+
+### 只读预检结论
+
+- `rustc 1.99.1`、NDK `30.0.16248370`、`x86_64-linux-android` + `aarch64-linux-android` 均已就位；
+  AVD `gms2`（android-34/x86_64）可作运行载体。
+- `translator-api` 默认 feature 下 `cargo tree` 不命中 `http/tauri/reqwest/hyper` → P6.0 门禁 PASS。
+- 仓库当前**没有任何 JNI crate / bindings 目录** → P6.1 需新建 `bindings/translator-jni`。
+- 5 条发行阻断项仍 open，本阶段未动台账。
+
+### 待批准（P6.1 开工前）
+
+A 新建 `bindings/translator-jni`（改 workspace members + `Cargo.lock`）；B 新建 `tests/android-harness/`；
+C 首次 Android 构建（启 AVD + `adb push` 到模拟器内）；D 若引入新依赖则增补 `licenses/`。
 
 ## P5-07 — Android 模拟器验证 + P5 收口（tag `p5.7`，报告 `docs/36` / `docs/37`）
 

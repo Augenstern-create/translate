@@ -32,7 +32,9 @@
 - `30_P5-01_Android工具链与Windows验证矩阵报告.md` — NDK r30 + x86_64 AVD 打通 JNI 三段链（含 `EM_AARCH64` 负对照）、只读勘察脚本与 W1～W10 验证矩阵、D-86～D-91
 - `31_Windows验证机部署清单.md` — 实体机实测后的清单 v2（**部分建议已被 `docs/32` 取代，见文首状态块**）
 - `32_P5开发建议与实施计划（工作区与权限边界）.md` — 外部审查/计划稿归档：唯一可写工作区 `E:\augenstern\translate`、逐项审批、固定 Anaconda Python
-- `37_P5阶段总结与验收报告.md` — **本轮**：P5 收口——三分口径裁定 **Conditional**、平台证据表（九项能力 × 四平台）、工作包索引、未验证项清单
+- `39_P6.0_契约冻结与只读预检报告.md` — **本轮**：JNI 契约 v1 冻结（4 入口/字符串代际句柄/JSON DTO/UTF-16/NUL 拒绝）、只读预检（无 JNI crate、默认 feature 无 HTTP）、D-130～D-135
+- `38_P6跨平台绑定与Android_JNI开发建议与验收计划.md` — 外部计划稿归档：P6.0～P6.5 分解、J-01～J-15 测试矩阵、权限边界
+- `37_P5阶段总结与验收报告.md` — P5 收口——三分口径裁定 **Conditional**、平台证据表（九项能力 × 四平台）、工作包索引、未验证项清单
 - `36_P5.5_Android模拟器验证报告.md` — **本轮**：真 SDK 跑在 x86_64 AVD（词典/资源/CLI/识别/翻译）、ARM64 仅编译合规（运行被模拟器证伪）、物理性能未验证
 - `35_P5.4_Windows进程存活探测与跨进程资源验证报告.md` — Windows 存活探测（kernel32 裸 FFI，零新依赖）、lc08 与 cross_process 解 gate、Windows 333/0/60 vs Linux 375/0/60、D-115 结案（`ORT_CACHE_DIR`）
 - `34_P5.2-P5.3_Windows构建回归与ORT实跑报告.md` — W1–W10 全绿（322 passed/0 failed/56 ignored；ORT 真实模型 24 passed；中文+空格路径构建通过）、7 个跨平台修复提交、D-108～D-117、D-92 实测确认 directml 静态包、D-115 待处置（工作区外 360.9 MB 缓存）
