@@ -1,0 +1,30 @@
+﻿cargo :    Compiling translator-plugin-api v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-plugin-api)
+所在位置 E:\augenstern\translate\.build\staging\p7-check.ps1:38 字符: 31
++ ... contract' { cargo test -p translator-nmt-ort --features ort-runtime - ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling tr...tor-plugin-api):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+   Compiling translator-core v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-core)
+   Compiling translator-nmt-ort v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-nmt-ort)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.71s
+     Running tests\p4_contract.rs (E:\augenstern\translate\.build\target\debug\deps\p4_contract-76d0fae46a12af24.exe)
+
+running 13 tests
+test sp08_09_鏍囪妯″紡鏄惧紡涓嶆敮鎸佽€屼笉鏄亣瑁呴€氳繃 ... ok
+test lc01_骞跺彂鍔犺浇鍙湁涓€浠戒細璇?... ok
+test lc04_瓒呮椂瀛楁褰撳墠琚拷鐣?... ok
+test d71_璇嶈〃澶栧瓧绗︿笉淇濊瘉淇濈暀 ... ok
+test lc02_缈昏瘧涓嵏杞戒笉姝婚攣 ... ok
+test sp10_鍚玡moji涓庝腑鏃ラ煩娣锋帓涓嶅穿涓旂粨鏋勫畬濂?... ok
+test sp12_鍏ㄤ繚鎶や笌绌虹櫧杈撳叆涓嶅穿婧?... ok
+test sp11_澶氳闀挎枃鏈崲琛屼笌椤哄簭淇濈暀 ... ok
+test sp06_07_鍙嶅紩鍙蜂唬鐮佹暣浣撲繚鐣欎笖鍐呭祵url涓嶉噸澶?... ok
+test sp01_03_妯℃澘鍙橀噺鍗曚釜澶氱閲嶅閮藉畬鏁?... ok
+test sp04_05_url_email_鏌ヨ涓茬簿纭繚鐣?... ok
+test lc03_09_鍐呭涓嶅悓鍒欒韩浠戒笉鍚?... ok
+test lc06_鍙嶅鍔犺浇鍗歌浇涓嶆棤闄愬爢绉?has been running for over 60 seconds
+test lc06_鍙嶅鍔犺浇鍗歌浇涓嶆棤闄愬爢绉?... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 77.02s
+

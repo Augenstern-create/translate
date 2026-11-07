@@ -1,0 +1,21 @@
+﻿cargo :    Compiling translator-nmt-ort v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-nmt-ort)
+所在位置 E:\augenstern\translate\.build\staging\p7-check.ps1:40 字符: 29
++ ... t-facade' { cargo test -p translator-api --features nmt-ort-runtime - ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling tr...slator-nmt-ort):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+   Compiling translator-api v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-api)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.94s
+     Running tests\nmt_ort_facade.rs (E:\augenstern\translate\.build\target\debug\deps\nmt_ort_facade-fe5a25be8a6ef2e0.
+exe)
+
+running 5 tests
+test 閲嶅鎸傝浇鍚屼竴寮曟搸鏄庣‘鎷掔粷 ... ok
+test 璺敱鎸囧悜ort寮曟搸涓旇兘鍔涘彲鏋氫妇 ... ok
+test g02_浠呮寕ort鍚庣涔熻兘瀹屾垚缈昏瘧 ... ok
+test 瀹夸富鍙娴嬪苟鍙嵏杞?... ok
+test 鏌ヨ瘝涓庣炕璇戜簰涓嶅奖鍝?... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.00s
+

@@ -1,0 +1,90 @@
+=== fmt -> E:\augenstern\translate\.build\reports\P7-fmt.txt
+=== clippy-default -> E:\augenstern\translate\.build\reports\P7-clippy-default.txt
+    Checking pack-dictionary v0.1.0 (E:\augenstern\translate\translator-sdk\tools\pack-dictionary)
+    Checking translator-api v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-api)
+    Checking p33-bench v0.1.0 (E:\augenstern\translate\translator-sdk\tools\p33-bench)
+    Checking translator-cli v0.1.0 (E:\augenstern\translate\translator-sdk\apps\translator-cli)
+    Checking translator-jni v0.1.0 (E:\augenstern\translate\translator-sdk\bindings\translator-jni)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 11.90s
+=== test-default -> E:\augenstern\translate\.build\reports\P7-test-default.txt
+   Doc-tests translator_types
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+=== test-all-features -> E:\augenstern\translate\.build\reports\P7-test-all.txt
+   Doc-tests translator_types
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+=== g06-cancellation -> E:\augenstern\translate\.build\reports\P7-g06.txt
+     Running tests\cancellation.rs (E:\augenstern\translate\.build\target\debug\deps\cancellation-d0cb6b07794f3235.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+=== g08-lc08 -> E:\augenstern\translate\.build\reports\P7-g08.txt
+
+running 1 test
+after-staging: 崩溃�?1 �?staging 残留；recover=RecoverReport { removed_staging: 1, reclaimed_leases: 0, removed_temp_files: 0, removed_orphans: 0, dropped_records: 0 }；修复后 仓库状态一致：state / installed / staging 三方无差�?before-rename: 崩溃�?1 �?staging 残留；recover=RecoverReport { removed_staging: 1, reclaimed_leases: 0, removed_temp_files: 0, removed_orphans: 0, dropped_records: 0 }；修复后 仓库状态一致：state / installed / staging 三方无差�?after-rename: 崩溃�?1 个目录无记录（孤儿）；recover=RecoverReport { removed_staging: 0, reclaimed_leases: 0, removed_temp_files: 0, removed_orphans: 1, dropped_records: 0 }；修复后 仓库状态一致：state / installed / staging 三方无差�?before-state: 崩溃�?1 个目录无记录（孤儿）；recover=RecoverReport { removed_staging: 0, reclaimed_leases: 0, removed_temp_files: 0, removed_orphans: 1, dropped_records: 0 }；修复后 仓库状态一致：state / installed / staging 三方无差�?after-state: 崩溃�?仓库状态一致：state / installed / staging 三方无差异；recover=RecoverReport { removed_staging: 0, reclaimed_leases: 0, removed_temp_files: 0, removed_orphans: 0, dropped_records: 0 }；修复后 仓库状态一致：state / installed / staging 三方无差�?test lc08_安装关键点被外部sigkill杀死后仓库仍可修复且旧版本不损�?... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.70s
+
+=== ort-contract -> E:\augenstern\translate\.build\reports\P7-ort-contract.txt
+test lc03_09_内容不同则身份不�?... ok
+test lc06_反复加载卸载不无限堆�?has been running for over 60 seconds
+test lc06_反复加载卸载不无限堆�?... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 77.02s
+
+=== ort-real -> E:\augenstern\translate\.build\reports\P7-ort-real.txt
+test g01_真实模型产出译文 ... ok
+test g04_受保护跨度逐字节保�?... ok
+test 同一输入输出稳定 ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.18s
+
+=== ort-facade -> E:\augenstern\translate\.build\reports\P7-ort-facade.txt
+test g02_仅挂ort后端也能完成翻译 ... ok
+test 宿主可观测并可卸�?... ok
+test 查词与翻译互不影�?... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.00s
+
+=== license-audit -> E:\augenstern\translate\.build\reports\P7-license.txt
+PASS 第三方许可清单与依赖树一致（172 个包，全部通过策略�?
+=== release-gate -> E:\augenstern\translate\.build\reports\P7-release-gate.txt
+C6 红线文案        PASS  清单与文档中的红线表述存�?
+C7 权重哈希        SKIP  未设�?NMT_MODEL_DIR
+C8 发行阻断台账      FAIL  --release-mode 下仍�?open 且阻断发行的项：['G12', 'G11']
+C9 P4 验收台账     PASS  P4 台账一致（8 个门禁，部分满足 ['P4-G05', 'P4-G06']�? 条承接项，阻断项 2 条仍 open�?
+
+结论：FAIL�? 项）—�?发行红线未满�?
+=== cache dirs ===
+P7 Windows check 2026-11-08 00:31:43
+commit=3cecd27
+status=
+rustc=rustc 1.99.1 (58cf8f9c3 2026-10-13)
+python=Python 3.13.5
+CARGO_HOME=E:\augenstern\translate\.cargo
+CARGO_TARGET_DIR=E:\augenstern\translate\.build\target
+ORT_CACHE_DIR=E:\augenstern\translate\.build\ort-cache
+P4_ORT_MODEL_DIR=E:\augenstern\translate\.build\model-cache\ort-model
+fmt EXIT=0 LOG=P7-fmt.txt
+clippy-default EXIT=0 LOG=P7-clippy-default.txt
+test-default EXIT=0 LOG=P7-test-default.txt
+test-all-features EXIT=0 LOG=P7-test-all.txt
+g06-cancellation EXIT=0 LOG=P7-g06.txt
+g08-lc08 EXIT=0 LOG=P7-g08.txt
+ort-contract EXIT=0 LOG=P7-ort-contract.txt
+ort-real EXIT=0 LOG=P7-ort-real.txt
+ort-facade EXIT=0 LOG=P7-ort-facade.txt
+license-audit EXIT=0 LOG=P7-license.txt
+release-gate EXIT=1 LOG=P7-release-gate.txt
+ORT_CACHE_ENTRIES=dfbin
+LOCALAPPDATA_ORT_LASTWRITE=2026-11-06 17:23:54
+tests=0 all=0 fmt=0 clippy=0 g06=0 g08=0 ort=0/0/0 license=0 gate=1
