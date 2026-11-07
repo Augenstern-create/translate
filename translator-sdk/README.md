@@ -677,7 +677,7 @@ Linux 404/0/60（all 407/0/65）、Windows 357/0/60（all 360/0/65）；Android 
 
 **P9.2/P9.3-A 已完成 PoC（`docs/54`）**：`FastTextIdentifier`（fasttext-pure-rs，MIT）与启发式同集 40 条对照；
 英语 `EnglishLemmatizer` 规则/例外词表 8 tests。均尚未接入 Translator 路由（P9.4）。
-Linux 410/413。G11/G12 仍 open。
+Linux 410/413、Windows 363/366。G11/G12 仍 open。
 
 **P9.1-S 已完成（`docs/53`）**：v3 `postings` 多值索引修复 はし→橋/箸/端/梯/愛し/波斯；DI-09～13 通过。
 额外 30 MiB 分段采样仍未命中 bank/spring 等，目标词覆盖 2/10；100 条人工评审为 **PENDING_HUMAN**，

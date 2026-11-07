@@ -24,7 +24,7 @@ tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `
 - 新增可选 `translator-analysis/fasttext`（`fasttext-pure-rs` 0.1.0，MIT，纯 Rust）：`FastTextIdentifier`，
   40 条同集对照 accuracy/Macro-F1 均 0.975/0.9749；冷加载 44.9 ms、热 p50 0.0041 ms、加载 RSS +2.8 MiB。
 - 新增 `EnglishLemmatizer` + `MorphologyAnalyzer`：规则 + 例外词表，8 tests；未接入词典查询（P9.4）。
-- 未下载 Lindera；许可证审查仅到 crate MIT/词典另审。Linux 410/0/60（all 413/0/66）。
+- 未下载 Lindera；许可证审查仅到 crate MIT/词典另审。Linux 410/0/60（all 413/0/66）、Windows 363/0/60（all 366/0/66）。
 
 ## P9.1-S — 定向覆盖与同音索引修复（报告 `docs/53`）
 

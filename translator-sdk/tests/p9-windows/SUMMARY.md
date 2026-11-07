@@ -1,14 +1,14 @@
-# P9.1-S Windows 回归（commit `d70f53e`）
+# P9.2/P9.3-A Windows 回归（commit `0f86676`）
 
 | 项 | 结果 |
 |---|---|
 | fmt | PASS |
 | clippy 默认 / 全 feature | PASS / PASS |
-| `cargo test --workspace` | **362 passed / 0 failed / 60 ignored** |
-| `cargo test --workspace --all-features` | **365 passed / 0 failed / 65 ignored** |
-| ORT contract / real / facade | 13 / 6 / 5 passed（facade `--test-threads=1`） |
+| `cargo test --workspace` | **363 passed / 0 failed / 60 ignored** |
+| `cargo test --workspace --all-features` | **366 passed / 0 failed / 66 ignored** |
+| ORT contract / real / facade | 13 / 6 / 5 passed |
 | G08 | 1 passed |
 | G06 | 0 tests（N/A，Linux 专属） |
 | release gate | FAIL（仅 G12/G11） |
 
-P9.1-S 的词库 v3/定向样本只在 Linux 生成；Windows 验证 v3 代码回归、多来源/多值单测与 ORT。
+P9.2 的 fastText 模型对照与 P9.3-A lemmatizer 只在 Linux 运行；Windows 验证可选 feature 编译、回归与 ORT。
