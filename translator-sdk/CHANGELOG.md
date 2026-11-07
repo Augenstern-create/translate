@@ -19,6 +19,15 @@ tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `
 - 冻结 J-07/J-10/J-14/J-15 的注入方法与期望错误码（含 J-15c `.so` 重载标 PENDING：ART 类加载器限制）。
 - 两处待批资源（360.9 MB ORT 旧缓存、3.1 GB arm64 镜像 + AVD）**未删未移未改**。
 
+## P7 验收与 P8 启动（报告 `docs/45` / `docs/46`）
+
+- **P7 条件性验收通过**（Conditional / Internal Preview）；G12 方案①（暂不分发权重）、G11 两步走（仅本地准备）。
+- **Windows P7.3 复测完成**：`344 passed / 0 failed / 60 ignored`（all-features 65 ignored）；ORT 24 用例通过；
+  fmt/clippy 默认+全 feature 通过；G08 外部强制终止 1 passed；G06 在 Windows 为 N/A（Linux 进程组语义）。
+- **G11 准备**：新增 `tools/ci-preflight.py`（250 文件 / 2.79 MB，无权重/凭据/大文件）并加入 `ci.yml`；
+  未 push、未触发远程 CI，G11 保持 open。
+- **P8 P0**：ADR-063（Proposed）——JNI 多实例改为 per-entry generation/closed，handle 格式与入口不变。
+
 ## P7-01…P7-05 — 质量收口与发行候选（报告 `docs/44`）
 
 ### 新增

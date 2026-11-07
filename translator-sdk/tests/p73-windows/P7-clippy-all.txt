@@ -1,0 +1,24 @@
+﻿cargo.exe :    Compiling windows-sys v0.61.2
+所在位置 E:\augenstern\translate\.build\staging\win-clippy-all.ps1:4 字符: 1
++ & cargo clippy --workspace --all-targets --all-features -- -D warning ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling windows-sys v0.61.2:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+    Checking translator-dictionary v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-dictionary)
+    Checking translator-nmt-bergamot v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-nmt-bergamot)
+    Checking translator-resource v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-resource)
+    Checking translator-rules v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-rules)
+    Checking translator-runtime v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-runtime)
+    Checking pack-dictionary v0.1.0 (E:\augenstern\translate\translator-sdk\tools\pack-dictionary)
+   Compiling schannel v0.1.30
+   Compiling native-tls v0.2.18
+   Compiling ureq v3.5.1
+   Compiling ort-sys v2.0.0-rc.15
+    Checking ort v2.0.0-rc.15
+    Checking translator-nmt-ort v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-nmt-ort)
+    Checking translator-api v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-api)
+    Checking translator-cli v0.1.0 (E:\augenstern\translate\translator-sdk\apps\translator-cli)
+    Checking translator-jni v0.1.0 (E:\augenstern\translate\translator-sdk\bindings\translator-jni)
+    Checking p33-bench v0.1.0 (E:\augenstern\translate\translator-sdk\tools\p33-bench)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 8.80s

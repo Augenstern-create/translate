@@ -1,0 +1,46 @@
+﻿cargo :     Updating crates.io index
+所在位置 E:\augenstern\translate\.build\staging\p7-check.ps1:33 字符: 35
++ ... -default' { cargo clippy --workspace --all-targets -- -D warnings } ' ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (    Updating crates.io index:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ Downloading crates ...
+  Downloaded cesu8 v1.1.0
+  Downloaded combine v4.6.9
+  Downloaded jni-sys v0.4.1
+  Downloaded jni-sys v0.3.1
+  Downloaded jni-sys-macros v0.4.1
+  Downloaded jni v0.21.1
+  Downloaded windows-targets v0.42.2
+  Downloaded windows_x86_64_msvc v0.42.2
+  Downloaded windows-sys v0.45.0
+    Checking translator-types v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-types)
+    Checking translator-plugin-api v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-plugin-api)
+    Checking translator-analysis v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-analysis)
+   Compiling windows_x86_64_msvc v0.42.2
+    Checking translator-core v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-core)
+    Checking translator-runtime v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-runtime)
+    Checking translator-resource v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-resource)
+   Compiling jni-sys-macros v0.4.1
+   Compiling jni-sys v0.3.1
+   Compiling thiserror v1.0.69
+    Checking translator-dictionary v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-dictionary)
+   Compiling thiserror-impl v1.0.69
+    Checking bytes v1.12.1
+    Checking cesu8 v1.1.0
+    Checking translator-rules v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-rules)
+    Checking translator-nmt-ort v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-nmt-ort)
+    Checking combine v4.6.9
+    Checking pack-dictionary v0.1.0 (E:\augenstern\translate\translator-sdk\tools\pack-dictionary)
+    Checking translator-nmt-bergamot v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-nmt-bergamot)
+    Checking migrate-rules v0.1.0 (E:\augenstern\translate\translator-sdk\tools\migrate-rules)
+    Checking translator-api v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-api)
+    Checking p33-bench v0.1.0 (E:\augenstern\translate\translator-sdk\tools\p33-bench)
+    Checking translator-cli v0.1.0 (E:\augenstern\translate\translator-sdk\apps\translator-cli)
+    Checking jni-sys v0.4.1
+    Checking windows-targets v0.42.2
+    Checking windows-sys v0.45.0
+    Checking jni v0.21.1
+    Checking translator-jni v0.1.0 (E:\augenstern\translate\translator-sdk\bindings\translator-jni)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 17.89s

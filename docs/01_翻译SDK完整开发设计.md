@@ -742,6 +742,17 @@ P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运
   而把 `AlreadyClosed` 混进 12 个业务错误码里，会让下游误以为它是可重试的业务失败。
   代价：Kotlin 侧要同时处理 12 个 SDK 码 + 1 个绑定码；契约文档必须写明这一点。
 
+- ADR-063（Proposed，P8 P0）：**JNI 多实例的有效性由每个 entry 自己承担，而不是由全局 generation 一票否决**。
+  现状（P6 冻结）：`Registry.generation` 全局自增，`nativeCall` / `nativeClose` 要求 handle 的 gen 等于当前
+  generation；因此 `nativeCreate` B 会让 `nativeCreate` A 的 handle 立即 `AlreadyClosed`（`docs/44` D-156）。
+  决定方向：handle 仍为 `"gen:index"`，`index` 单调、永不复用；`Entry` 保存自己的 generation 与 closed；
+  `nativeCall` 校验 `entry.generation == handle.gen && !closed`，不再比较全局 generation；`nativeClose`
+  只关闭 index 对应的 entry；已关闭/伪造的 handle 仍返回 `AlreadyClosed`。
+  向后兼容：四个导出入口、handle 格式、JSON DTO、12 个业务错误码均不变；`capabilities` 增加
+  `binding.multi_instance=true` 供宿主探测；`protocol_version` 保持 1（这是放宽而不是收紧）。
+  代价：宿主必须负责 `close`，多个实例同时存活会各自占内存/句柄；测试必须覆盖并发 create/call/close、
+  index 不复用、旧 handle 不误伤新实例。状态 **Proposed**，本轮只写 ADR，未改代码。
+
 > 状态含义：**Accepted** = 已决定并（如注明）已实现；**Proposed** = 已决定方向但尚未实现，写入 ADR 不等于已验证；
 > **Deferred** = 明确延后。上表未标注 Deferred 的项均须在对应阶段交付。
 
@@ -756,6 +767,7 @@ P2.3 实现的预算机制（ADR-013）刻意只做"装配期准入"，不做运
 | v1.4 | 2026-11-05 | P3.0 落地：新增 ADR-024～028（Linux 优先/参考链路先行/内容即身份/worker 独占/权重不入库）；`docs/10` 的候选 ADR 标题按内容合并进这几条，未覆盖旧编号 |
 | v1.5 | 2026-11-05 | P3.1-A 落地（`docs/13`）：ADR-027 从 Proposed 改为 Accepted，并把措辞从「worker 独占」收紧为「**进程级**故障隔离」（明确线程与 `catch_unwind` 不可用、IPC 硬约束、非 Linux 显式不可用）；ADR-026 把模型身份从「权重 + tokenizer 摘要」扩展为**权重 / Tokenizer / 短名单 / 解码参数 / runtime build** 五项，并注明当前 `content_digest` 只能诊断、不得作缓存键；新增 ADR-029（严格占位符完整性，Proposed，P3.1-C）。编号处理：`docs/12` §6 的候选 ADR 建议按内容并入 026/027/029，**未覆盖任何旧编号**；ADR-029 是当前最大号 028 之后的第一个空号 |
 | v1.6 | 2026-11-05 | P3.1-B 落地（`docs/15`）：新增 ADR-030～033（隔离快照 / 真实 Bergamot 默认单 worker / IPC 与原生版本分离 / 分阶段截止时间）；ADR-026 的现状一栏改为引用 P3.1-B 实测并再次声明「不得作缓存键」。编号处理：`docs/14` §8 的四条建议按内容顺延为 030～033（029 已被占位），**未覆盖任何旧编号** |
+| v1.25 | 2026-11-07 | P7.1–P7.5 收口（`docs/44`）与用户验收决策（`docs/46`）：G06 取消合同、G08 外部 SIGKILL 闭合；Android 34 PASS / 1 PENDING；Linux 391 passed；J-14 模拟器基线；**Windows P7.3 复测由 `docs/45` 补记（344 passed / ORT 24 passed）**。新增 **ADR-063（Proposed）**：JNI 多实例改为 per-entry generation/closed，handle 格式与入口不变，`capabilities` 增 `binding.multi_instance=true`。G12/G11 仍 open，P7 裁定 **Conditional / Internal Preview**。编号处理：ADR 按最大号 062 之后顺延 063，**未覆盖任何旧编号** |
 | v1.24 | 2026-11-07 | P6.1–P6.5（`docs/40`/`docs/41`，**P6 收口**）：新增 `bindings/translator-jni`（cdylib，4 个导出符号）与 `tests/android-harness`；Android x86_64 模拟器上**完整 SDK 经 JNI 23/23 断言 PASS**（真词典/识别/翻译路由/资源/编码/并发关闭/错误映射）；J-11 `cargo tree` 命中 0、J-13 ARM64 cdylib 合规、J-12 Windows 337 passed；Linux 379 passed。新增 **ADR-062**（关闭语义 + `AlreadyClosed` 属绑定层码）。P6 裁定 **Conditional**：J-07/J-14/J-15、APK 载体、真实 Android NMT、ARM64 运行仍 pending；5 条发行阻断项**仍 open**，`--release-mode` 继续 FAIL。偏差 D-136～D-143。编号处理：ADR 按最大号 061 之后顺延 062，**未覆盖任何旧编号** |
 | v1.23 | 2026-11-07 | P6.0（`docs/39`，计划稿归档 `docs/38`）：冻结 **JNI 契约 v1**（4 个 native 入口 / 字符串代际句柄 / JSON `protocol_version=1` / UTF-16 输出 / NUL 拒绝 / 12 个错误码透传），新增 **ADR-061**。只读预检确认：Rust 1.99.1、NDK r30、两个 Android target 就位；`translator-api` 默认 feature 下不依赖 HTTP/Tauri（P6.0 门禁 PASS）；仓库无任何 JNI crate（P6.1 需新建 `bindings/translator-jni`）。记录 6 条决策偏差 D-130～D-135（句柄形态、入口收敛、UTF-16、NUL、验证载体选 `d8+app_process` 而非 Gradle、JNI 开发在 Linux 侧）。本阶段未建 crate、未跑 Android 构建、未动台账。编号处理：ADR 按最大号 060 之后顺延 061，**未覆盖任何旧编号** |
 | v1.22 | 2026-11-07 | P5.5 + P5.6（`docs/36`/`docs/37`，**P5 收口**）：Android 改为模拟器验证——x86_64 AVD 上跑**真 SDK**（`translator-cli` 交叉编译含 bundled SQLite，能力表/识别/翻译/词典 lookup/资源 install·list·inspect·audit·拒绝卸载激活版本 全过）；ARM64 只到**编译合规**（ELF64 AArch64 / `LOAD 0x4000` / 仅 libdl·libm·libc），**运行验证被证伪**（`QEMU2 emulator does not support arm64 CPU architecture`）；移动端物理性能单列"未验证"。新增 **ADR-060**。P5 裁定 **Conditional**：工作包交付完成，5 条发行阻断项仍 open，`--release-mode` 必须继续 FAIL；平台证据表（Linux/Windows/Android x86_64/Android ARM64 × 九项能力）见 `docs/37` §2。编号处理：ADR 按最大号 059 之后顺延 060，**未覆盖任何旧编号** |

@@ -20,8 +20,8 @@
    "blocks_release": true,
    "blocking_scope": "含权重的任何制品（离线包、镜像、CI 缓存）",
    "evidence_required": "具体权重的有效授权文本 + 审核记录（审核人/时间/适用范围），或改用许可明确的替代模型",
-   "current_evidence": "translator-sdk/licenses/model-assets.json（status=pending, redistribution=prohibited-until-confirmed）",
-   "mitigation": "SDK 只提供坐标与校验工具；权重由使用者自行获取",
+   "current_evidence": "translator-sdk/licenses/model-assets.json（status=pending, redistribution=prohibited-until-confirmed）。2026-11-07 用户决策方案①：暂不更换 Mozilla Marian 模型、暂不分发权重，保留来源/版本/SHA-256/许可状态；G12 保持 open，禁止通过修改门禁绕过。",
+   "mitigation": "SDK 只提供坐标与校验工具；权重由使用者自行获取，且使用者仍需遵守模型及下载来源的使用条款。",
    "opened_at": "2026-11-05",
    "closed_at": null,
    "closed_evidence": null
@@ -34,8 +34,8 @@
    "blocks_release": true,
    "blocking_scope": "发行记录里的 CI 证据",
    "evidence_required": "真实 runner 的 workflow run 链接 + 日志 + 产物；真实模型 job 需单独证明",
-   "current_evidence": ".github/workflows/ci.yml 与 real-model.yml 已提交，命令在本地等价执行通过（docs/21 §2.8）",
-   "mitigation": "本地等价命令作为临时证据，归档在 docs/21、docs/24",
+   "current_evidence": ".github/workflows/ci.yml 与 real-model.yml 已提交；2026-11-07 用户批准两步走（先工作区准备，实际 push/触发远程 CI 另行授权）。工作区预检：tools/ci-preflight.py --check 通过（250 跟踪文件 / 2,789,463 B，无权重/凭据/大文件；workflow 均 contents: read，无 secrets.*/pull_request_target）；ci.yml 已加预检步骤。尚未在真实 Linux runner 运行。",
+   "mitigation": "本地等价命令（fmt/clippy/391 tests/all-features/license）作为临时证据；取得真实 runner 日志后再关闭。",
    "opened_at": "2026-11-05",
    "closed_at": null,
    "closed_evidence": null

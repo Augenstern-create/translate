@@ -32,6 +32,8 @@
 - `30_P5-01_Android工具链与Windows验证矩阵报告.md` — NDK r30 + x86_64 AVD 打通 JNI 三段链（含 `EM_AARCH64` 负对照）、只读勘察脚本与 W1～W10 验证矩阵、D-86～D-91
 - `31_Windows验证机部署清单.md` — 实体机实测后的清单 v2（**部分建议已被 `docs/32` 取代，见文首状态块**）
 - `32_P5开发建议与实施计划（工作区与权限边界）.md` — 外部审查/计划稿归档：唯一可写工作区 `E:\augenstern\translate`、逐项审批、固定 Anaconda Python
+- `45_P7.3_Windows复测报告.md` — 既有 NAN-WINDOWS 复测：344 tests、ORT 24 用例、缓存隔离、G06 N/A / G08 PASS
+- `46_P7验收决策_G11准备与P8启动记录.md` — G12 方案①、G11 两步走与上传范围预检、ADR-063（JNI 多实例）
 - `44_P7.1-P7.5_跨平台质量收口与发行候选报告.md` — **P7 收口**：G06/G08 闭合、J-07/J-10/J-15 Android 34 PASS（1 PENDING）、J-14 模拟器基线、Linux 391 tests、SBOM/工件哈希；G12/G11 仍 open，裁定 Conditional
 - `43_P7.0_基线与测试矩阵报告.md` — **本轮**：P7.0 基线/权限/依赖只读核对、五条阻断项按台账纠偏（G06=取消在途请求、G08=abort vs kill -9、D-46=许可证正文未入库）、J-07/J-10/J-14/J-15 判据冻结、D-144～D-147
 - `42_P7发行准备与跨平台质量收口开发建议.md` — 外部计划稿归档：P7.0～P7.5 分解、P7-01～P7-12 验收矩阵、权限硬约束
@@ -650,7 +652,7 @@ NMT_BASELINE_OUT=fixtures/nmt/baseline-p3.1b-linux-x86_64-1thread.json \
 | 平台 / 形态 | 状态 |
 |---|---|
 | Linux x86_64（SDK / CLI / Bergamot worker） | 391 tests passed；fmt/clippy/license audit 通过 |
-| Windows x86_64 | **P7 未复测**（无可用 Windows 主机）；P5/P6 历史结果不等于本轮结论 |
+| Windows x86_64 | **P7.3 已复测**（`docs/45`）：344 passed / 0 failed / 60 ignored；ORT 24 passed；fmt/clippy 通过 |
 | Android x86_64 模拟器（JNI v1） | 34 PASS / 0 FAIL / 1 PENDING（`.so` 重载受 ART 限制） |
 | Android ARM64 | 仅交叉编译，运行未验证 |
 | 真实 Android NMT | 未编译进 JNI 产物 |

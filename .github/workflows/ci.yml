@@ -40,9 +40,12 @@ jobs:
             translator-sdk/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('translator-sdk/Cargo.lock') }}
 
+      - name: 上传范围预检（G11）
+        run: python3 translator-sdk/tools/ci-preflight.py --check
+
       - name: 格式
         working-directory: translator-sdk
-        run: cargo fmt --all --check
+        run: cargo fmt --all -- --check
 
       - name: Clippy（全 target、全 feature、warnings 即错误）
         working-directory: translator-sdk

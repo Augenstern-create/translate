@@ -1,0 +1,14 @@
+﻿cargo :    Compiling translator-runtime v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-runtime)
+所在位置 E:\augenstern\translate\.build\staging\p7-check.ps1:36 字符: 34
++ ... ellation' { cargo test -p translator-runtime --test cancellation -- - ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling tr...slator-runtime):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.92s
+     Running tests\cancellation.rs (E:\augenstern\translate\.build\target\debug\deps\cancellation-d0cb6b07794f3235.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
