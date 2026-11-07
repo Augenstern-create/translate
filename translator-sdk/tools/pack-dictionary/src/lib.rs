@@ -326,6 +326,10 @@ pub fn pack(
     let out_dir = out_dir.as_ref();
     std::fs::create_dir_all(out_dir)?;
 
+    if opts.payload == PayloadKind::V3 {
+        return pack_v3(entries, out_dir, opts);
+    }
+
     // 1) 建索引：键 → record id。同一词条的多条释义合并。
     let mut keys: BTreeMap<String, u64> = BTreeMap::new();
     let mut records: Vec<(RawEntry, Vec<String>)> = Vec::new();
@@ -412,7 +416,7 @@ pub fn pack(
                      PRIMARY KEY (entry_id, idx)
                  );",
             )?,
-            PayloadKind::V2 => tx.execute_batch(
+            PayloadKind::V2 | PayloadKind::V3 => tx.execute_batch(
                 "CREATE TABLE entries (
                      id INTEGER PRIMARY KEY,
                      headword TEXT NOT NULL,
@@ -442,7 +446,7 @@ pub fn pack(
             };
             match opts.payload {
                 PayloadKind::V1 => insert_record(&tx, row)?,
-                PayloadKind::V2 => insert_record_v2(&tx, row)?,
+                PayloadKind::V2 | PayloadKind::V3 => insert_record_v2(&tx, row)?,
             };
         }
 
@@ -465,7 +469,7 @@ pub fn pack(
 
     let (schema_version, manifest_schema_version, payload_schema_version) = match opts.payload {
         PayloadKind::V1 => (Some(SCHEMA_VERSION), None, None),
-        PayloadKind::V2 => (
+        PayloadKind::V2 | PayloadKind::V3 => (
             None,
             Some(MANIFEST_SCHEMA_V2),
             Some(opts.payload.as_str().to_string()),
@@ -501,6 +505,152 @@ pub fn pack(
         serde_json::to_string_pretty(&manifest)?,
     )?;
 
+    Ok(PackStats {
+        records: records.len() as u64,
+        keys: keys.len() as u64,
+        index_bytes,
+        db_bytes,
+    })
+}
+
+/// v3：一个键可对应多个 entry_id（`postings` 表）。FST 仍存首个 id 用于存在性检查，
+/// 真正查询走 `postings(key, rank, entry_id)`。
+fn pack_v3(
+    entries: Vec<RawEntry>,
+    out_dir: &Path,
+    opts: &PackOptions,
+) -> Result<PackStats, PackError> {
+    let mut records: Vec<(RawEntry, Vec<String>)> = Vec::new();
+    let mut by_headword: std::collections::BTreeMap<String, u64> =
+        std::collections::BTreeMap::new();
+    let mut keys: std::collections::BTreeMap<String, Vec<u64>> = std::collections::BTreeMap::new();
+
+    for entry in entries {
+        if let Some(&id) = by_headword.get(&entry.headword) {
+            let merged = &mut records[(id - 1) as usize].1;
+            for d in &entry.definitions {
+                if !merged.contains(d) {
+                    merged.push(d.clone());
+                }
+            }
+            continue;
+        }
+        let id = records.len() as u64 + 1;
+        by_headword.insert(entry.headword.clone(), id);
+        keys.entry(entry.headword.clone()).or_default().push(id);
+        if let Some(trad) = &entry.traditional {
+            keys.entry(trad.clone()).or_default().push(id);
+        }
+        let definitions = entry.definitions.clone();
+        records.push((entry, definitions));
+    }
+
+    let fst_path = out_dir.join("index.fst");
+    {
+        let file = std::fs::File::create(&fst_path)?;
+        let mut writer = std::io::BufWriter::new(file);
+        let mut builder = fst::MapBuilder::new(&mut writer)?;
+        for (key, ids) in &keys {
+            builder.insert(key.as_bytes(), *ids.first().unwrap_or(&1))?;
+        }
+        builder.finish()?;
+        std::io::Write::flush(&mut writer)?;
+    }
+
+    let db_path = out_dir.join("entries.sqlite");
+    if db_path.exists() {
+        std::fs::remove_file(&db_path)?;
+    }
+    {
+        let mut conn = rusqlite::Connection::open(&db_path)?;
+        conn.execute_batch(
+            "PRAGMA journal_mode = OFF;
+             PRAGMA synchronous = OFF;",
+        )?;
+        let tx = conn.transaction()?;
+        tx.execute_batch(
+            "CREATE TABLE entries (
+                 id INTEGER PRIMARY KEY,
+                 headword TEXT NOT NULL,
+                 normalized TEXT NOT NULL,
+                 traditional TEXT,
+                 pinyin TEXT,
+                 pos TEXT,
+                 source_id TEXT NOT NULL,
+                 source_license TEXT NOT NULL,
+                 confidence REAL NOT NULL,
+                 senses TEXT NOT NULL
+             );
+             CREATE TABLE postings (
+                 key TEXT NOT NULL,
+                 rank INTEGER NOT NULL,
+                 entry_id INTEGER NOT NULL,
+                 PRIMARY KEY (key, rank)
+             );
+             CREATE INDEX postings_entry ON postings(entry_id);",
+        )?;
+        let source_id = opts.provenance.name.to_lowercase().replace(' ', "-");
+        for (idx, (entry, definitions)) in records.iter().enumerate() {
+            insert_record_v2(
+                &tx,
+                RecordRow {
+                    id: idx as u64 + 1,
+                    headword: &entry.headword,
+                    traditional: entry.traditional.as_deref(),
+                    pinyin: entry.pinyin.as_deref(),
+                    pos: entry.pos.as_deref(),
+                    definitions,
+                    source_id: &source_id,
+                    source_license: &opts.provenance.license_spdx,
+                },
+            )?;
+        }
+        for (key, ids) in &keys {
+            for (rank, id) in ids.iter().enumerate() {
+                tx.execute(
+                    "INSERT INTO postings (key, rank, entry_id) VALUES (?1, ?2, ?3)",
+                    rusqlite::params![key, rank as i64, *id as i64],
+                )?;
+            }
+        }
+        tx.commit()?;
+        conn.execute_batch("PRAGMA user_version = 3;")?;
+        conn.execute_batch("VACUUM;")?;
+    }
+
+    let license_path = out_dir.join("LICENSE.txt");
+    std::fs::write(&license_path, &opts.license_text)?;
+    let index_bytes = std::fs::metadata(&fst_path)?.len();
+    let db_bytes = std::fs::metadata(&db_path)?.len();
+    let manifest = DictionaryManifest {
+        schema_version: None,
+        manifest_schema_version: Some(MANIFEST_SCHEMA_V2),
+        payload_schema_version: Some(PayloadKind::V3.as_str().to_string()),
+        id: opts.id.clone(),
+        version: opts.version.clone(),
+        kind: "dictionary".to_string(),
+        language: opts.language.clone(),
+        target_languages: opts.target_languages.clone(),
+        entry_count: records.len() as u64,
+        provenance: opts.provenance.clone(),
+        files: vec![
+            PackageFile {
+                path: "index.fst".to_string(),
+                sha256: sha256_file(&fst_path)?,
+                bytes: index_bytes,
+            },
+            PackageFile {
+                path: "entries.sqlite".to_string(),
+                sha256: sha256_file(&db_path)?,
+                bytes: db_bytes,
+            },
+        ],
+    };
+    manifest.validate()?;
+    std::fs::write(
+        out_dir.join("manifest.json"),
+        serde_json::to_string_pretty(&manifest)?,
+    )?;
     Ok(PackStats {
         records: records.len() as u64,
         keys: keys.len() as u64,
@@ -658,6 +808,36 @@ mod tests {
         // 单值读音索引只能指向其中一条，但绝不能把两条词义混在一起
         let hashi = pkg.lookup_exact("はし").unwrap().unwrap();
         assert!(hashi.senses.len() == 1, "同音词不得被合并：{hashi:?}");
+    }
+
+    #[test]
+    fn v3_同读音多值索引可返回全部词条() {
+        let jsonl = concat!(
+            "{\"headword\":\"橋\",\"traditional\":\"はし\",\"definitions\":[\"bridge\"]}\n",
+            "{\"headword\":\"箸\",\"traditional\":\"はし\",\"definitions\":[\"chopsticks\"]}\n",
+            "{\"headword\":\"端\",\"traditional\":\"はし\",\"definitions\":[\"edge\"]}\n",
+        );
+        let entries = parse_jsonl(std::io::Cursor::new(jsonl), None).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let mut o = opts();
+        o.id = "dictionary.test.ja-en.v3".into();
+        o.language = "ja".into();
+        o.target_languages = vec!["en".into()];
+        o.payload = PayloadKind::V3;
+        let stats = pack(entries, dir.path(), &o).unwrap();
+        assert_eq!(stats.records, 3);
+        let pkg = translator_dictionary::DictionaryPackage::open(dir.path(), true).unwrap();
+        let all = pkg.lookup_exact_all("はし").unwrap();
+        assert_eq!(all.len(), 3, "同音键应返回全部词条：{all:?}");
+        let defs: Vec<_> = all
+            .iter()
+            .map(|e| e.senses[0].definition.as_str())
+            .collect();
+        assert!(defs.contains(&"bridge"));
+        assert!(defs.contains(&"chopsticks"));
+        assert!(defs.contains(&"edge"));
+        // v2 兼容读取仍由现有测试覆盖；v3 的首条稳定为 rank 0（橋）
+        assert_eq!(pkg.lookup_exact("はし").unwrap().unwrap().headword, "橋");
     }
 
     #[test]

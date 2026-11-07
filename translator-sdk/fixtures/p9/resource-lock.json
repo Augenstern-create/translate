@@ -49,7 +49,7 @@
       "redistribution_status": "pending-review",
       "converter_version": "p9-v1",
       "status": "sample-acquired",
-      "notes": "中文 Wiktionary 提取的前 16 MiB（HTTP Range 0-16777215，Last-Modified 2026-10-30）；仅内部评估，不随 SDK 分发；Wiktionary 条目另有 GFDL/逐条署名要求。",
+      "notes": "中文 Wiktionary 提取的前 16 MiB（HTTP Range 0-16777215，Last-Modified 2026-10-30）；仅内部评估，不随 SDK 分发；Wiktionary 条目另有 GFDL/逐条署名要求。（P9.1-S 追加 6 段 × 5 MiB 定向采样，合计额外 31,457,280 B；目标词仍未命中，停止扩大。）",
       "local_path": ".build/p9-data/kaikki-zh-16m.jsonl",
       "downloaded_at": "2026-11-08",
       "artifact": {
@@ -59,7 +59,41 @@
         "index_fst_sha256": "fac2dc979379492476e23f75baad68754dae0f7a52730164cd3ef3ff0f2841ad",
         "entries_sqlite_sha256": "727ab15aff75d415cd68c75bc6352d064e1e451dc054537e7203a12428ec9fb9",
         "manifest_sha256": "0546b02448ce4430c72a2da131c821ba1b53d59830f6fa9c390be2e1c1f4f26c"
-      }
+      },
+      "extra_segments": [
+        {
+          "offset": 104857600,
+          "bytes": 5242880,
+          "sha256": "62790d32a380b266c0334ce906e98033eb2679cee9de9aa4377a03f116608680"
+        },
+        {
+          "offset": 314572800,
+          "bytes": 5242880,
+          "sha256": "936b25fb435672b671185d49a1c6cb7bbc5f0945b410e3a5d0f24f5905d01afd"
+        },
+        {
+          "offset": 629145600,
+          "bytes": 5242880,
+          "sha256": "712a6939270751e15475c93b0c86d13c3070c372859d0019493e7e09851c54d7"
+        },
+        {
+          "offset": 943718400,
+          "bytes": 5242880,
+          "sha256": "9833d86bb90e094aece9c73d56bcaf7ecc7dc1b9be68b755957ce6081e6e560f"
+        },
+        {
+          "offset": 1258291200,
+          "bytes": 5242880,
+          "sha256": "364677abcbe4072fa2ed357386df820ac13a4d5732781c100e45fadd308385ca"
+        },
+        {
+          "offset": 1677721600,
+          "bytes": 5242880,
+          "sha256": "57b58bc3e65d12ced9235e5ca9e8dd5305588a217498b349cdeed6ca44eba279"
+        }
+      ],
+      "extra_download_bytes": 31457280,
+      "total_download_bytes": 48234496
     },
     {
       "id": "dictionary.jmdict.ja-en",

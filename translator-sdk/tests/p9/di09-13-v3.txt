@@ -1,0 +1,61 @@
+== はし (v3, limit 100)
+[1] 橋 (ja)  置信度 1.00
+    - bridge   [来源: jmdict]
+    许可: CC-BY-SA-4.0
+[2] 箸 (ja)  置信度 1.00
+    - chopsticks   [来源: jmdict]
+    许可: CC-BY-SA-4.0
+[3] 端 (ja)  置信度 1.00
+    - end (e.g. of street)   [来源: jmdict]
+    - tip   [来源: jmdict]
+    - point   [来源: jmdict]
+    - edge   [来源: jmdict]
+    - margin   [来源: jmdict]
+    - beginning   [来源: jmdict]
+    - start   [来源: jmdict]
+    - first   [来源: jmdict]
+    - odds and ends   [来源: jmdict]
+    - scrap   [来源: jmdict]
+    - odd bit   [来源: jmdict]
+    - least   [来源: jmdict]
+    许可: CC-BY-SA-4.0
+[4] 梯 (ja)  置信度 1.00
+    - ladder   [来源: jmdict]
+    许可: CC-BY-SA-4.0
+[5] 愛し (ja)  置信度 1.00
+    - lovely   [来源: jmdict]
+    - beloved   [来源: jmdict]
+    - sweet   [来源: jmdict]
+    - adorable   [来源: jmdict]
+    许可: CC-BY-SA-4.0
+[6] 波斯 (ja)  置信度 1.00
+    - Sasanian Empire   [来源: jmdict]
+    - Persia   [来源: jmdict]
+    许可: CC-BY-SA-4.0
+== 橋
+[1] 橋 (ja)  置信度 1.00
+    - bridge   [来源: jmdict]
+    许可: CC-BY-SA-4.0
+== 箸
+[1] 箸 (ja)  置信度 1.00
+    - chopsticks   [来源: jmdict]
+    许可: CC-BY-SA-4.0
+== 端
+[1] 端 (ja)  置信度 1.00
+    - end (e.g. of street)   [来源: jmdict]
+    - tip   [来源: jmdict]
+    - point   [来源: jmdict]
+    - edge   [来源: jmdict]
+    - margin   [来源: jmdict]
+    - beginning   [来源: jmdict]
+    - start   [来源: jmdict]
+    - first   [来源: jmdict]
+    - odds and ends   [来源: jmdict]
+    - scrap   [来源: jmdict]
+    - odd bit   [来源: jmdict]
+    - least   [来源: jmdict]
+    许可: CC-BY-SA-4.0
+== v2 はし
+[1] 橋 (ja)  置信度 1.00
+    - bridge   [来源: jmdict]
+    许可: CC-BY-SA-4.0

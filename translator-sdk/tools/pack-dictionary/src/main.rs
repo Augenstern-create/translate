@@ -31,7 +31,7 @@ pack-dictionary —— 把 CC-CEDICT 或规范化 JSONL 词表编译为词典包
   --license <SPDX>      许可证（默认 CC-BY-SA-4.0）
   --license-file <PATH> LICENSE.txt 的原文（JSONL 输入建议显式提供）
   --revision <REV>      数据 revision（默认取源文件 #! version=，否则用当天日期）
-  --payload-schema <S>  释义库格式：dictionary.sqlite.v1 | dictionary.sqlite.v2（默认 v2）
+  --payload-schema <S>  释义库格式：dictionary.sqlite.v1 | v2 | v3（默认 v2；v3 支持多值索引）
   -h, --help            显示本帮助
 
 输出:
@@ -98,9 +98,10 @@ fn main() -> ExitCode {
                 match args.get(i).map(String::as_str) {
                     Some("dictionary.sqlite.v1") => payload = PayloadKind::V1,
                     Some("dictionary.sqlite.v2") => payload = PayloadKind::V2,
+                    Some("dictionary.sqlite.v3") => payload = PayloadKind::V3,
                     other => {
                         eprintln!(
-                            "--payload-schema 只能是 dictionary.sqlite.v1 | dictionary.sqlite.v2：{}",
+                            "--payload-schema 只能是 dictionary.sqlite.v1 | v2 | v3：{}",
                             other.unwrap_or("（缺失）")
                         );
                         return ExitCode::from(2);

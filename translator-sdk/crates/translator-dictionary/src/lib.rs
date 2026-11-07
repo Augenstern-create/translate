@@ -51,6 +51,8 @@ pub const MANIFEST_SCHEMA_V2: u32 = 2;
 pub enum PayloadKind {
     V1,
     V2,
+    /// 多值索引：FST 仍存首个 id，SQLite `postings` 表按键保存全部 entry_id。
+    V3,
 }
 
 impl PayloadKind {
@@ -58,14 +60,16 @@ impl PayloadKind {
         match self {
             Self::V1 => "dictionary.sqlite.v1",
             Self::V2 => "dictionary.sqlite.v2",
+            Self::V3 => "dictionary.sqlite.v3",
         }
     }
 
-    /// v2 库文件的 `PRAGMA user_version`。v1 保持 0（历史包没有写过这个值）。
+    /// 库文件的 `PRAGMA user_version`。v1 保持 0（历史包没有写过这个值）。
     pub const fn user_version(self) -> i64 {
         match self {
             Self::V1 => 0,
             Self::V2 => 2,
+            Self::V3 => 3,
         }
     }
 
@@ -73,6 +77,7 @@ impl PayloadKind {
         match raw {
             "dictionary.sqlite.v1" => Some(Self::V1),
             "dictionary.sqlite.v2" => Some(Self::V2),
+            "dictionary.sqlite.v3" => Some(Self::V3),
             _ => None,
         }
     }
@@ -489,10 +494,41 @@ impl DictionaryPackage {
 
     /// 精确匹配。
     pub fn lookup_exact(&self, term: &str) -> Result<Option<DictionaryEntry>, DictionaryError> {
-        let Some(id) = self.index.get(term.as_bytes()) else {
-            return Ok(None);
+        Ok(self.lookup_exact_all(term)?.into_iter().next())
+    }
+
+    /// 精确匹配的全部词条。
+    ///
+    /// v1/v2 一个键最多一条；v3 通过 `postings(key, rank, entry_id)` 返回同音/同形
+    /// 的全部词条（例如 はし → 橋/箸/端）。排序由 `rank` 保证稳定。
+    pub fn lookup_exact_all(&self, term: &str) -> Result<Vec<DictionaryEntry>, DictionaryError> {
+        let Some(_first) = self.index.get(term.as_bytes()) else {
+            return Ok(Vec::new());
         };
-        Ok(Some(self.load_entry(id)?))
+        let ids = self.entry_ids_for_key(term)?;
+        let mut out = Vec::with_capacity(ids.len());
+        for id in ids {
+            out.push(self.load_entry(id)?);
+        }
+        Ok(out)
+    }
+
+    fn entry_ids_for_key(&self, key: &str) -> Result<Vec<u64>, DictionaryError> {
+        if self.payload != PayloadKind::V3 {
+            return Ok(self.index.get(key.as_bytes()).into_iter().collect());
+        }
+        let conn = self
+            .db
+            .lock()
+            .map_err(|_| DictionaryError::InvalidPackage("数据库连接锁被污染".to_string()))?;
+        let mut stmt =
+            conn.prepare("SELECT entry_id FROM postings WHERE key = ?1 ORDER BY rank ASC")?;
+        let rows = stmt.query_map([key], |row| row.get::<_, i64>(0))?;
+        let mut ids = Vec::new();
+        for id in rows {
+            ids.push(id? as u64);
+        }
+        Ok(ids)
     }
 
     /// 精确匹配 + 前缀补全，最多返回 `limit` 条。
@@ -509,23 +545,32 @@ impl DictionaryPackage {
         // 同一词条可能同时以简体键与繁体键存在，必须按 record id 去重
         let mut seen: std::collections::HashSet<u64> = std::collections::HashSet::new();
 
-        if let Some(id) = self.index.get(term.as_bytes()) {
-            seen.insert(id);
-            out.push(self.load_entry(id)?);
-            if out.len() >= limit {
-                return Ok(out);
-            }
+        let mut push_ids =
+            |ids: Vec<u64>, out: &mut Vec<DictionaryEntry>| -> Result<bool, DictionaryError> {
+                for id in ids {
+                    if !seen.insert(id) {
+                        continue;
+                    }
+                    out.push(self.load_entry(id)?);
+                    if out.len() >= limit {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            };
+
+        if self.index.get(term.as_bytes()).is_some()
+            && push_ids(self.entry_ids_for_key(term)?, &mut out)?
+        {
+            return Ok(out);
         }
 
-        // 前缀检索：仅在精确命中不足时补充
+        // 前缀检索：仅在精确命中不足时补充。v3 的每个键可能对应多条记录。
         let prefix = fst::automaton::Str::new(term).starts_with();
         let mut stream = self.index.search(prefix).into_stream();
-        while let Some((_, id)) = stream.next() {
-            if !seen.insert(id) {
-                continue; // 该 record 已出现过
-            }
-            out.push(self.load_entry(id)?);
-            if out.len() >= limit {
+        while let Some((key, _)) = stream.next() {
+            let key = String::from_utf8_lossy(key).to_string();
+            if push_ids(self.entry_ids_for_key(&key)?, &mut out)? {
                 break;
             }
         }
@@ -537,7 +582,7 @@ impl DictionaryPackage {
     fn load_entry(&self, id: u64) -> Result<DictionaryEntry, DictionaryError> {
         match self.payload {
             PayloadKind::V1 => self.load_entry_v1(id),
-            PayloadKind::V2 => self.load_entry_v2(id),
+            PayloadKind::V2 | PayloadKind::V3 => self.load_entry_v2(id),
         }
     }
 

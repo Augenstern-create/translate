@@ -41,6 +41,8 @@ pub enum PayloadSchema {
     DictionarySqliteV1,
     /// `entries.sqlite` 释义内联进 `entries.senses`（P2.5）。
     DictionarySqliteV2,
+    /// `entries.sqlite` + `postings` 多值索引（P9.1-S）。
+    DictionarySqliteV3,
     /// 规则包 JSON（`translator-rules` 的 schema_version=1）。
     RulesJsonV1,
     Unknown(String),
@@ -51,6 +53,7 @@ impl PayloadSchema {
         match raw {
             "dictionary.sqlite.v1" => Self::DictionarySqliteV1,
             "dictionary.sqlite.v2" => Self::DictionarySqliteV2,
+            "dictionary.sqlite.v3" => Self::DictionarySqliteV3,
             "rules.json.v1" => Self::RulesJsonV1,
             other => Self::Unknown(other.to_string()),
         }
@@ -60,6 +63,7 @@ impl PayloadSchema {
         match self {
             Self::DictionarySqliteV1 => "dictionary.sqlite.v1",
             Self::DictionarySqliteV2 => "dictionary.sqlite.v2",
+            Self::DictionarySqliteV3 => "dictionary.sqlite.v3",
             Self::RulesJsonV1 => "rules.json.v1",
             Self::Unknown(raw) => raw,
         }
@@ -69,7 +73,10 @@ impl PayloadSchema {
     pub fn is_supported(&self) -> bool {
         matches!(
             self,
-            Self::DictionarySqliteV1 | Self::DictionarySqliteV2 | Self::RulesJsonV1
+            Self::DictionarySqliteV1
+                | Self::DictionarySqliteV2
+                | Self::DictionarySqliteV3
+                | Self::RulesJsonV1
         )
     }
 }
@@ -304,7 +311,9 @@ impl ResourceManifest {
             let expected = self.payload_schema.as_str();
             let is_dictionary = matches!(
                 self.payload_schema,
-                PayloadSchema::DictionarySqliteV1 | PayloadSchema::DictionarySqliteV2
+                PayloadSchema::DictionarySqliteV1
+                    | PayloadSchema::DictionarySqliteV2
+                    | PayloadSchema::DictionarySqliteV3
             );
             let has = self.files.iter().any(|f| {
                 (is_dictionary && f.path == "entries.sqlite")

@@ -1,0 +1,34 @@
+{
+  "caliber": "词典包 .build/p9-data/packages/jmdict-ja-en-v3；init 含打开索引与数据库；lookup_facade = 经 Translator 路由一次，lookup_crate = DictionaryPackage::lookup_exact；两者单位均为毫秒（n=200，热页缓存）",
+  "case": "dictionary_ready",
+  "init_ms": 0.34,
+  "lookup_crate_ms": {
+    "max": 0.13,
+    "mean": 0.08,
+    "min": 0.07,
+    "n": 200,
+    "p50": 0.07,
+    "p95": 0.09,
+    "p99": 0.12,
+    "unit": "ms"
+  },
+  "lookup_facade_ms": {
+    "max": 0.18,
+    "mean": 0.09,
+    "min": 0.09,
+    "n": 200,
+    "p50": 0.09,
+    "p95": 0.1,
+    "p99": 0.13,
+    "unit": "ms"
+  },
+  "note": "P2.5 报告的 8.98 µs 是 crate 级口径；门面级多出来的是路由/规范化/语言校验的成本",
+  "processes": 1,
+  "self": {
+    "hwm_mib": 5.27,
+    "note": "RSS 含共享页，多进程不能直接相加；PSS 才是跨进程可加的近似",
+    "pss_available": true,
+    "pss_mib": 3.17,
+    "rss_mib": 5.27
+  }
+}
