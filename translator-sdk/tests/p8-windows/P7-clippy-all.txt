@@ -1,17 +1,12 @@
-﻿cargo.exe :     Checking translator-dictionary v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-diction
-ary)
+﻿cargo.exe :     Checking translator-nmt-ort v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-nmt-ort)
 所在位置 E:\augenstern\translate\.build\staging\win-clippy-all.ps1:4 字符: 1
 + & cargo clippy --workspace --all-targets --all-features -- -D warning ...
 + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (    Checking tr...tor-dictionary):String) [], RemoteException
+    + CategoryInfo          : NotSpecified: (    Checking tr...slator-nmt-ort):String) [], RemoteException
     + FullyQualifiedErrorId : NativeCommandError
  
-    Checking translator-nmt-bergamot v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-nmt-bergamot)
-    Checking translator-nmt-ort v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-nmt-ort)
-    Checking translator-rules v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-rules)
-    Checking pack-dictionary v0.1.0 (E:\augenstern\translate\translator-sdk\tools\pack-dictionary)
     Checking translator-api v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-api)
+    Checking translator-jni v0.1.0 (E:\augenstern\translate\translator-sdk\bindings\translator-jni)
     Checking p33-bench v0.1.0 (E:\augenstern\translate\translator-sdk\tools\p33-bench)
     Checking translator-cli v0.1.0 (E:\augenstern\translate\translator-sdk\apps\translator-cli)
-    Checking translator-jni v0.1.0 (E:\augenstern\translate\translator-sdk\bindings\translator-jni)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.11s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.36s

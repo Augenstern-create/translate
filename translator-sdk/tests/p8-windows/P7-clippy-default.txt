@@ -1,19 +1,12 @@
-﻿cargo :     Checking translator-plugin-api v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-plugin-api)
+﻿cargo :     Checking translator-api v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-api)
 所在位置 E:\augenstern\translate\.build\staging\p7-check.ps1:33 字符: 35
 + ... -default' { cargo clippy --workspace --all-targets -- -D warnings } ' ...
 +                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (    Checking tr...tor-plugin-api):String) [], RemoteException
+    + CategoryInfo          : NotSpecified: (    Checking tr...translator-api):String) [], RemoteException
     + FullyQualifiedErrorId : NativeCommandError
  
-    Checking translator-core v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-core)
-    Checking translator-dictionary v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-dictionary)
-    Checking translator-nmt-bergamot v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-nmt-bergamot)
-    Checking translator-rules v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-rules)
     Checking translator-nmt-ort v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-nmt-ort)
-    Checking migrate-rules v0.1.0 (E:\augenstern\translate\translator-sdk\tools\migrate-rules)
-    Checking pack-dictionary v0.1.0 (E:\augenstern\translate\translator-sdk\tools\pack-dictionary)
-    Checking translator-api v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-api)
-    Checking p33-bench v0.1.0 (E:\augenstern\translate\translator-sdk\tools\p33-bench)
     Checking translator-cli v0.1.0 (E:\augenstern\translate\translator-sdk\apps\translator-cli)
     Checking translator-jni v0.1.0 (E:\augenstern\translate\translator-sdk\bindings\translator-jni)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 11.90s
+    Checking p33-bench v0.1.0 (E:\augenstern\translate\translator-sdk\tools\p33-bench)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.67s

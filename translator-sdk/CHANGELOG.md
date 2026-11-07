@@ -28,7 +28,7 @@ tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `
   键覆盖模型文件 role+sha256 与配置；相同模型/配置的多个 `Translator` 共享 engine/worker 或 ORT 会话；7 条 shared 测试通过。
 - **P8.3 缓存一致性**：`TranslationEngine::cache_identity` + `CacheKey.engine_cache_identity`；
   Bergamot 用 plan digest、ORT 用文件内容哈希、词典用 `content_digest`；RemoteOnly/本地缓存域隔离。
-- Linux **401 passed / 0 failed / 60 ignored**（all-features 404 / 65 ignored）；Windows **354 / 0 / 60**（all-features 65）；
+- Linux **401 passed / 0 failed / 60 ignored**（all-features 404 / 65 ignored）；Windows **354 / 0 / 60**（all-features 357 / 0 / 65）；
   fmt/clippy（默认+全 feature）通过。G12/G11 仍 open。
 
 ## P8-AUDIT（报告 `docs/48`，计划 `docs/47`）

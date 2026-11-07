@@ -230,6 +230,9 @@ impl BergamotNmtEngine {
     ///
     /// 池里只存 `Weak`：最后一个 `Translator` 释放后引擎自然 drop，worker 也随之终止，
     /// 不会出现"池子把模型永久钉住"。不同模型 digest/配置不会误共享。
+    ///
+    /// ⚠️ 共享引擎是共享故障/生命周期域：任一实例 `unload`、空闲回收或取消导致 worker
+    /// 终止，会影响所有共享者。需要故障隔离的宿主请用 [`BergamotNmtEngine::new`] 构造独立实例。
     pub fn shared(config: BergamotNmtConfig) -> Result<Arc<Self>, TranslationError> {
         let manifest = build_manifest(&config.model_dir)?;
         let key = pool_key(&config, &manifest);
