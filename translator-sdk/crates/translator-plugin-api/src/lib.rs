@@ -52,6 +52,15 @@ pub trait TranslationEngine: Send + Sync {
         let _ = cancel;
         self.translate(req)
     }
+
+    /// 影响译文的执行身份（模型/词表/解码/保护策略的稳定摘要）。
+    ///
+    /// 默认 `None`：协调器只用 engine_id + 资源指纹。能提供
+    /// `ResolvedExecutionPlan` 的后端应覆盖它，避免"同 engine_id 不同模型内容"
+    /// 命中旧缓存（P8.3 / EP-01）。
+    fn cache_identity(&self) -> Option<String> {
+        None
+    }
 }
 
 /// 词典/语言学提供者。与翻译引擎分开建模，

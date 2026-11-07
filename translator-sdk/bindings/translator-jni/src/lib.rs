@@ -56,6 +56,8 @@ struct Entry {
     translator: Arc<Translator>,
     /// 创建时的原始 config：`resources` 需要 `resource_repo` 之类的路径。
     config: Value,
+    /// 这个 Entry 自己的代际。句柄里的 gen 必须与它一致，而不是与全局最新代际一致。
+    generation: u64,
     closed: AtomicBool,
     /// 在飞请求的取消令牌（key = 调用方提供的 `request_id`）。
     ///
@@ -65,10 +67,82 @@ struct Entry {
 }
 
 struct Registry {
-    /// 每次 `create` 自增；句柄里带上它，旧代句柄一律 `AlreadyClosed`。
+    /// 只用于生成唯一的句柄号；**不再**用它淘汰其它存活实例。
     generation: u64,
     next_index: u64,
     entries: HashMap<u64, Arc<Entry>>,
+}
+
+/// 同时存活的实例上限。句柄泄漏最终会耗尽内存，因此有一个明确的硬上限。
+const MAX_ENTRIES: usize = 1024;
+
+#[derive(Debug, PartialEq, Eq)]
+enum HandleError {
+    Invalid,
+    Stale,
+    Closed,
+}
+
+impl Registry {
+    /// 新建一个 entry，返回 `"generation:index"`。`index` 单调、永不复用。
+    fn insert(
+        &mut self,
+        translator: Arc<Translator>,
+        config: Value,
+    ) -> Result<String, HandleError> {
+        if self.entries.len() >= MAX_ENTRIES {
+            return Err(HandleError::Invalid);
+        }
+        self.generation += 1;
+        let generation = self.generation;
+        let index = self.next_index;
+        self.next_index += 1;
+        self.entries.insert(
+            index,
+            Arc::new(Entry {
+                translator,
+                config,
+                generation,
+                closed: AtomicBool::new(false),
+                cancels: Mutex::new(HashMap::new()),
+            }),
+        );
+        Ok(format!("{generation}:{index}"))
+    }
+
+    /// 按 handle 查 entry：先校验格式，再校验**该 entry 自己的** generation，
+    /// 最后看 closed。旧实例不会因为新实例创建而失效。
+    fn resolve(&self, raw: &str) -> Result<Arc<Entry>, HandleError> {
+        let Some((gen, index)) = parse_handle(raw) else {
+            return Err(HandleError::Invalid);
+        };
+        let Some(entry) = self.entries.get(&index) else {
+            return Err(HandleError::Closed);
+        };
+        if entry.generation != gen {
+            return Err(HandleError::Stale);
+        }
+        if entry.closed.load(Ordering::SeqCst) {
+            return Err(HandleError::Closed);
+        }
+        Ok(Arc::clone(entry))
+    }
+
+    /// 只关闭 handle 指向的那个 entry；gen 不匹配时不误伤别人。
+    fn close(&mut self, raw: &str) -> Option<Arc<Entry>> {
+        let (gen, index) = parse_handle(raw)?;
+        let matches = self
+            .entries
+            .get(&index)
+            .map(|e| e.generation == gen)
+            .unwrap_or(false);
+        if !matches {
+            return None;
+        }
+        self.entries.remove(&index).inspect(|entry| {
+            entry.closed.store(true, Ordering::SeqCst);
+        })
+    }
 }
 
 fn registry() -> &'static Mutex<Registry> {
@@ -205,6 +279,7 @@ fn call_capabilities(translator: &Translator) -> Value {
 
     envelope_ok(json!({
         "platform": platform_name(),
+        "binding": { "multi_instance": true, "max_instances": MAX_ENTRIES },
         "engines": engines,
         "runtimes": runtimes,
     }))
@@ -550,19 +625,12 @@ pub extern "system" fn Java_ai_ridge_translator_NativeBridge_nativeCreate(
                 Ok(g) => g,
                 Err(poisoned) => poisoned.into_inner(),
             };
-            reg.generation += 1;
-            let index = reg.next_index;
-            reg.next_index += 1;
-            reg.entries.insert(
-                index,
-                Arc::new(Entry {
-                    translator,
-                    config: config.clone(),
-                    closed: AtomicBool::new(false),
-                    cancels: Mutex::new(HashMap::new()),
-                }),
-            );
-            format!("{}:{}", reg.generation, index)
+            match reg.insert(translator, config.clone()) {
+                Ok(handle) => handle,
+                Err(_) => {
+                    return envelope_err("OutOfBudget", "同时存活的 Translator 实例已达到上限")
+                }
+            }
         };
 
         json!({
@@ -596,9 +664,9 @@ pub extern "system" fn Java_ai_ridge_translator_NativeBridge_nativeCall(
             Err(e) => return envelope_err("InvalidRequest", format!("读 payload 失败：{e}")),
         };
 
-        let Some((gen, index)) = parse_handle(&handle_raw) else {
+        if parse_handle(&handle_raw).is_none() {
             return envelope_err("InvalidRequest", "handle 格式非法（应为 generation:index）");
-        };
+        }
 
         // 只在锁内做查表与 Arc::clone；SDK 调用一律在锁外（docs/38 §4）。
         let entry = {
@@ -606,18 +674,20 @@ pub extern "system" fn Java_ai_ridge_translator_NativeBridge_nativeCall(
                 Ok(g) => g,
                 Err(poisoned) => poisoned.into_inner(),
             };
-            if reg.generation != gen {
-                return envelope_err("AlreadyClosed", "句柄代际已过期（已关闭或已重建）");
-            }
-            match reg.entries.get(&index) {
-                Some(e) => Arc::clone(e),
-                None => return envelope_err("AlreadyClosed", "句柄已关闭"),
+            match reg.resolve(&handle_raw) {
+                Ok(entry) => entry,
+                Err(HandleError::Invalid) => {
+                    return envelope_err(
+                        "InvalidRequest",
+                        "handle 格式非法（应为 generation:index）",
+                    )
+                }
+                Err(HandleError::Stale) => {
+                    return envelope_err("AlreadyClosed", "句柄代际与实例不匹配（已关闭或伪造）")
+                }
+                Err(HandleError::Closed) => return envelope_err("AlreadyClosed", "句柄已关闭"),
             }
         };
-
-        if entry.closed.load(Ordering::SeqCst) {
-            return envelope_err("AlreadyClosed", "句柄已关闭，拒绝新请求");
-        }
 
         match method_raw.as_str() {
             "capabilities" => call_capabilities(&entry.translator),
@@ -660,20 +730,16 @@ pub extern "system" fn Java_ai_ridge_translator_NativeBridge_nativeClose(
             Ok(s) => s.into(),
             Err(e) => return envelope_err("InvalidRequest", format!("读 handle 失败：{e}")),
         };
-        let Some((gen, index)) = parse_handle(&handle_raw) else {
+        if parse_handle(&handle_raw).is_none() {
             return envelope_err("InvalidRequest", "handle 格式非法（应为 generation:index）");
-        };
+        }
 
         let removed = {
             let mut reg = match registry().lock() {
                 Ok(g) => g,
                 Err(poisoned) => poisoned.into_inner(),
             };
-            if reg.generation != gen {
-                None
-            } else {
-                reg.entries.remove(&index)
-            }
+            reg.close(&handle_raw)
         };
 
         match removed {
@@ -767,6 +833,65 @@ mod tests {
         let deep = format!("{}1{}", "[".repeat(200), "]".repeat(200));
         let err = parse_payload(&deep).unwrap_err();
         assert_eq!(err["error"]["code"], "InvalidRequest");
+    }
+
+    fn empty_registry() -> Registry {
+        Registry {
+            generation: 0,
+            next_index: 0,
+            entries: HashMap::new(),
+        }
+    }
+
+    fn dummy_translator() -> Translator {
+        Translator::builder()
+            .build()
+            .expect("空 Translator 应能构建")
+    }
+
+    #[test]
+    fn m01_两个实例可以同时存活() {
+        let mut reg = empty_registry();
+        let a = reg.insert(Arc::new(dummy_translator()), json!({ "name": "a" }));
+        let b = reg.insert(Arc::new(dummy_translator()), json!({ "name": "b" }));
+        let a = a.unwrap();
+        let b = b.unwrap();
+        assert_eq!(a, "1:0");
+        assert_eq!(b, "2:1");
+        assert!(reg.resolve(&a).is_ok(), "创建 B 不得让 A 失效");
+        assert!(reg.resolve(&b).is_ok());
+    }
+
+    #[test]
+    fn m03_m04_关闭只影响目标实例且索引不复用() {
+        let mut reg = empty_registry();
+        let a = reg.insert(Arc::new(dummy_translator()), json!({})).unwrap();
+        let b = reg.insert(Arc::new(dummy_translator()), json!({})).unwrap();
+        let closed = reg.close(&a).expect("A 应被关闭");
+        assert!(closed.closed.load(Ordering::SeqCst));
+        assert_eq!(reg.resolve(&a).err().unwrap(), HandleError::Closed);
+        assert!(reg.resolve(&b).is_ok(), "关闭 A 不得影响 B");
+
+        let c = reg.insert(Arc::new(dummy_translator()), json!({})).unwrap();
+        assert_eq!(c, "3:2", "index 单调、不复用");
+        assert_eq!(reg.resolve(&a).err().unwrap(), HandleError::Closed);
+        assert!(reg.resolve(&b).is_ok());
+        assert!(reg.resolve(&c).is_ok());
+    }
+
+    #[test]
+    fn m06_伪造或错代句柄受控拒绝() {
+        let mut reg = empty_registry();
+        let a = reg.insert(Arc::new(dummy_translator()), json!({})).unwrap();
+        assert_eq!(
+            reg.resolve("not-a-handle").err().unwrap(),
+            HandleError::Invalid
+        );
+        assert_eq!(reg.resolve("9999:0").err().unwrap(), HandleError::Stale);
+        // 用错误的 gen 关闭不得误伤真实 entry
+        assert!(reg.close("9999:0").is_none());
+        assert!(reg.resolve(&a).is_ok());
+        assert_eq!(reg.resolve("1:9999").err().unwrap(), HandleError::Closed);
     }
 
     #[test]

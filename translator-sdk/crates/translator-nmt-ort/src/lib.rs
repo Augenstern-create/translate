@@ -189,6 +189,9 @@ pub struct OrtNmtEngine {
     config: OrtNmtConfig,
     identity: Mutex<Option<OrtIdentity>>,
     loaded: Mutex<Option<Loaded>>,
+    /// 构造/首次查询时算出的执行身份（文件内容 + 解码策略），供协调器缓存键使用。
+    #[cfg_attr(not(feature = "ort-runtime"), allow(dead_code))]
+    cache_identity: Mutex<Option<String>>,
     /// 退化片段计数：截断/重复抑制触发的次数（可观测，但不改公开警告枚举）。
     degeneracy: AtomicU64,
 }
@@ -226,6 +229,7 @@ impl OrtNmtEngine {
             config,
             identity: Mutex::new(None),
             loaded: Mutex::new(None),
+            cache_identity: Mutex::new(None),
             degeneracy: AtomicU64::new(0),
         })
     }
@@ -385,6 +389,34 @@ impl TranslationEngine for OrtNmtEngine {
         req: &'a TranslateRequest,
     ) -> BoxFuture<'a, Result<TranslationResult, TranslationError>> {
         Box::pin(async move { self.translate_blocking(req) })
+    }
+
+    #[cfg(feature = "ort-runtime")]
+    fn cache_identity(&self) -> Option<String> {
+        if let Some(id) = self
+            .cache_identity
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+        {
+            return Some(id);
+        }
+        let revision = revision_of(&self.config).ok()?;
+        let identity = format!(
+            "{}|{}|{}|{}|{}|{}|{}",
+            ENGINE_ID,
+            revision,
+            RUNTIME,
+            self.config.threads,
+            self.config.max_new_tokens,
+            self.config.protection.as_str(),
+            DECODE_POLICY,
+        );
+        *self
+            .cache_identity
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(identity.clone());
+        Some(identity)
     }
 }
 

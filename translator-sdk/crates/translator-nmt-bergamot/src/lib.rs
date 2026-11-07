@@ -17,8 +17,9 @@
 //! 2. **不静默坏文本**：受保护片段丢失/重复 → `IntegrityFailure`，不返回"看起来正常"的译文；
 //! 3. **不在 API 里泄漏实现**：不出现 pid、socket、C++ 类型；只暴露 `ModelIdentity`。
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::{Duration, Instant};
 
 use translator_core::plan::ResolvedExecutionPlan;
@@ -179,6 +180,8 @@ pub struct BergamotNmtEngine {
     cache: PlanCache,
     /// 加载时算好的执行计划摘要：让缓存键在 unload 之后仍然可用（不必为了查缓存而重载模型）。
     plan_digest: Mutex<Option<String>>,
+    /// 构造期就能确定的执行身份（模型五文件 + 配置）；供协调器缓存键使用（P8.3）。
+    cache_identity: String,
     /// 最近一次翻译/加载的时刻，供空闲回收判断。
     last_used: Mutex<Instant>,
     /// 加载完成时刻（`ModelIdentity` 存在时才有意义）。
@@ -189,6 +192,11 @@ impl BergamotNmtEngine {
     /// 构造引擎（**不加载模型**；第一次 `translate` 或显式 `load()` 才加载）。
     pub fn new(config: BergamotNmtConfig) -> Result<Self, TranslationError> {
         let manifest = build_manifest(&config.model_dir)?;
+        Ok(Self::from_manifest(config, manifest))
+    }
+
+    /// 从已校验的清单构造；调用方必须保证 `manifest` 与 `config.model_dir` 一致。
+    fn from_manifest(config: BergamotNmtConfig, manifest: ModelManifest) -> Self {
         let transport = ProcessTransport::new(
             WorkerConfig::new(&config.worker_binary)
                 .with_args([
@@ -202,7 +210,8 @@ impl BergamotNmtEngine {
                 .with_load_timeout(Duration::from_secs(30)),
             1,
         );
-        Ok(Self {
+        let cache_identity = static_cache_identity(&config, &manifest);
+        Self {
             config: config.clone(),
             transport,
             manifest,
@@ -210,9 +219,37 @@ impl BergamotNmtEngine {
             load_gate: Mutex::new(()),
             cache: PlanCache::new(config.cache_capacity),
             plan_digest: Mutex::new(None),
+            cache_identity,
             last_used: Mutex::new(Instant::now()),
             loaded_at: Mutex::new(None),
-        })
+        }
+    }
+
+    /// 进程内共享构造：相同 `(runtime, 模型内容, tokenizer/词表, 解码参数, 设备/线程)` 的
+    /// 调用方拿到同一个 `Arc`，从而共享一个 worker 与一份 native 模型。
+    ///
+    /// 池里只存 `Weak`：最后一个 `Translator` 释放后引擎自然 drop，worker 也随之终止，
+    /// 不会出现"池子把模型永久钉住"。不同模型 digest/配置不会误共享。
+    pub fn shared(config: BergamotNmtConfig) -> Result<Arc<Self>, TranslationError> {
+        let manifest = build_manifest(&config.model_dir)?;
+        let key = pool_key(&config, &manifest);
+        let pool = pool();
+        let mut map = pool.lock().unwrap_or_else(|e| e.into_inner());
+        map.retain(|_, weak| weak.strong_count() > 0);
+        if let Some(existing) = map.get(&key).and_then(Weak::upgrade) {
+            return Ok(existing);
+        }
+        let engine = Arc::new(Self::from_manifest(config, manifest));
+        map.insert(key, Arc::downgrade(&engine));
+        Ok(engine)
+    }
+
+    /// 当前池里仍存活的引擎数（诊断/测试用）。
+    pub fn shared_engine_count() -> usize {
+        let pool = pool();
+        let mut map = pool.lock().unwrap_or_else(|e| e.into_inner());
+        map.retain(|_, weak| weak.strong_count() > 0);
+        map.len()
     }
 
     /// 显式加载（幂等）。CLI 的 `--warmup` 与首次翻译都会走到这里。
@@ -528,6 +565,10 @@ impl TranslationEngine for BergamotNmtEngine {
     ) -> BoxFuture<'a, Result<TranslationResult, TranslationError>> {
         Box::pin(async move { self.translate_blocking(req, Some(cancel)) })
     }
+
+    fn cache_identity(&self) -> Option<String> {
+        Some(self.cache_identity.clone())
+    }
 }
 
 fn job_of(text: &str, target: &LanguageTag) -> TranslationJob {
@@ -553,6 +594,83 @@ fn to_translation_error(err: translator_runtime::RuntimeError) -> TranslationErr
 }
 
 /// 构造模型清单：文件必须齐全（`ModelManifest::verify` 在加载时再核一次摘要）。
+type EnginePool = Mutex<HashMap<String, Weak<BergamotNmtEngine>>>;
+
+static POOL: OnceLock<EnginePool> = OnceLock::new();
+
+fn pool() -> &'static EnginePool {
+    POOL.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn canonical(path: &Path) -> String {
+    path.canonicalize()
+        .unwrap_or_else(|_| path.to_path_buf())
+        .display()
+        .to_string()
+}
+
+/// 共享键必须覆盖所有会改变"同一份模型/同一个 worker"语义的字段。
+/// 不包含 request_id、用户文本或随机值。
+fn pool_key(config: &BergamotNmtConfig, manifest: &ModelManifest) -> String {
+    // 不能只用 content_digest（它只覆盖主权重）：tokenizer/词表/短名单变化同样
+    // 会让旧引擎的 manifest 过期。把所有文件 role+sha256 排序后一起进键。
+    let mut files: Vec<_> = manifest.files.iter().collect();
+    files.sort_by(|a, b| a.0.as_str().cmp(b.0.as_str()));
+    let file_digest = files
+        .iter()
+        .map(|(role, spec)| format!("{}={}", role.as_str(), spec.sha256))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        canonical(&config.worker_binary),
+        canonical(&config.native_binary),
+        canonical(&config.model_dir),
+        file_digest,
+        canonical(&config.snapshot_root),
+        config.source.as_str(),
+        config.target.as_str(),
+        config.cpu_threads,
+        config.beam_size,
+        config.protection.as_str(),
+        config.runtime_build,
+        config.request_timeout.as_millis(),
+        config.cache_capacity,
+    ) + &format!(
+        "|{}",
+        config
+            .idle_ttl
+            .map(|ttl| ttl.as_millis().to_string())
+            .unwrap_or_else(|| "none".into())
+    )
+}
+
+/// 构造期可确定的执行身份：与 `plan()` 同字段，但 runtime 用配置里的构建标识，
+/// 不依赖 worker 尚未返回的 identity。模型五文件摘要来自 manifest。
+fn static_cache_identity(config: &BergamotNmtConfig, manifest: &ModelManifest) -> String {
+    let mut file_digests = std::collections::BTreeMap::new();
+    for (role, spec) in &manifest.files {
+        file_digests.insert(role.as_str().to_string(), spec.sha256.clone());
+    }
+    ResolvedExecutionPlan {
+        engine_id: ENGINE_ID.to_string(),
+        runtime: "bergamot-cli".to_string(),
+        runtime_build: config.runtime_build.clone(),
+        model_revision: manifest.content_digest(),
+        file_digests,
+        source: config.source.as_str().to_string(),
+        target: config.target.as_str().to_string(),
+        beam_size: config.beam_size,
+        cpu_threads: config.cpu_threads,
+        protection: config.protection.as_str().to_string(),
+        rules_version: None,
+        glossary_digest: None,
+        pipeline_version: 2,
+        privacy_domain: "local".to_string(),
+    }
+    .digest()
+}
+
 pub fn build_manifest(model_dir: &Path) -> Result<ModelManifest, TranslationError> {
     let mut files = std::collections::BTreeMap::new();
     for (role, name) in MODEL_FILES {
@@ -603,16 +721,19 @@ mod tests {
     fn stub_engine(protection: ProtectionMode) -> BergamotNmtEngine {
         let mut config = BergamotNmtConfig::new("/bin/true", "/bin/true", "/tmp/does-not-matter");
         config.protection = protection;
+        let manifest = ModelManifest {
+            package_id: "x".into(),
+            version: "1".into(),
+            files: Default::default(),
+        };
+        let cache_identity = static_cache_identity(&config, &manifest);
         BergamotNmtEngine {
             cache: PlanCache::new(config.cache_capacity),
             plan_digest: Mutex::new(None),
+            cache_identity,
             config,
             transport: ProcessTransport::new(WorkerConfig::new("/bin/true"), 1),
-            manifest: ModelManifest {
-                package_id: "x".into(),
-                version: "1".into(),
-                files: Default::default(),
-            },
+            manifest,
             identity: Mutex::new(None),
             load_gate: Mutex::new(()),
             last_used: Mutex::new(Instant::now()),

@@ -349,9 +349,9 @@ impl TranslatorBuilder {
     /// 构造失败计入构建错误，`build()` 时返回，不会带病运行。
     #[cfg(feature = "nmt-bergamot")]
     pub fn nmt_bergamot(mut self, config: translator_nmt_bergamot::BergamotNmtConfig) -> Self {
-        match translator_nmt_bergamot::BergamotNmtEngine::new(config) {
+        // P8.2：相同模型内容/配置的宿主共享同一个 engine/worker（池里只存 Weak）。
+        match translator_nmt_bergamot::BergamotNmtEngine::shared(config) {
             Ok(engine) => {
-                let engine = Arc::new(engine);
                 // 句柄要留一份给 `Translator`：加载/卸载/缓存统计得能被观测（docs/17 §5）
                 self.nmt_engines.push(engine.clone());
                 self.engine(engine)
@@ -584,7 +584,13 @@ impl TranslatorBuilder {
                         // 指纹取自清单（只读 manifest.json，不重复打开索引/数据库）
                         match translator_dictionary::read_manifest(&root) {
                             Ok(manifest) => {
-                                fingerprint.push(format!("{}@{}", manifest.id, manifest.version));
+                                // P8.3：同 id@version 重打包成不同内容也必须换指纹。
+                                fingerprint.push(format!(
+                                    "{}@{}#{}",
+                                    manifest.id,
+                                    manifest.version,
+                                    manifest.content_digest()
+                                ));
                             }
                             Err(e) => self.errors.push(TranslationError::from(e)),
                         }

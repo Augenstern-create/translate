@@ -269,6 +269,78 @@ public final class Harness {
                 "JNI 预取消返回 Cancelled: " + trim(cancelled));
         NativeBridge.nativeClose(h4);
 
+        // ---------- P8 / M-01～M-06：per-entry generation 多实例 ----------
+        String ma = extract(NativeBridge.nativeCreate(config2), "\"handle\":\"", "\"");
+        String mb = extract(NativeBridge.nativeCreate(config2), "\"handle\":\"", "\"");
+        String maCall = NativeBridge.nativeCall(ma, "lookup", "{\"term\":\"你好\"}");
+        String mbCall = NativeBridge.nativeCall(mb, "lookup", "{\"term\":\"翻译\"}");
+        check("M-01", maCall.contains("\"ok\":true") && mbCall.contains("\"ok\":true"),
+                "两个实例同时可用: A=" + trim(maCall) + " B=" + trim(mbCall));
+
+        String ma2 = NativeBridge.nativeCall(ma, "lookup", "{\"term\":\"翻译\"}");
+        String mb2 = NativeBridge.nativeCall(mb, "lookup", "{\"term\":\"你好\"}");
+        check("M-02", ma2.contains("to translate") && mb2.contains("hello"),
+                "交替调用不串实例: A=" + trim(ma2) + " B=" + trim(mb2));
+
+        NativeBridge.nativeClose(ma);
+        String maClosed = NativeBridge.nativeCall(ma, "lookup", "{\"term\":\"你好\"}");
+        String mbAlive = NativeBridge.nativeCall(mb, "lookup", "{\"term\":\"你好\"}");
+        check("M-03", maClosed.contains("AlreadyClosed") && mbAlive.contains("\"ok\":true"),
+                "关 A 不影响 B: A=" + trim(maClosed) + " B=" + trim(mbAlive));
+
+        String mc = extract(NativeBridge.nativeCreate(config2), "\"handle\":\"", "\"");
+        String maAgain = NativeBridge.nativeCall(ma, "capabilities", "{}");
+        String mbAgain = NativeBridge.nativeCall(mb, "capabilities", "{}");
+        String mcCall = NativeBridge.nativeCall(mc, "lookup", "{\"term\":\"你好\"}");
+        check("M-04", maAgain.contains("AlreadyClosed") && mbAgain.contains("\"ok\":true")
+                        && mcCall.contains("\"ok\":true"),
+                "关 A 建 C：A 不复活，B/C 正常");
+
+        // M-05：8 线程各自 create → lookup → close
+        final java.util.concurrent.atomic.AtomicInteger mOk =
+                new java.util.concurrent.atomic.AtomicInteger();
+        final java.util.concurrent.atomic.AtomicInteger mClosed =
+                new java.util.concurrent.atomic.AtomicInteger();
+        final boolean[] mCrash = { false };
+        Thread[] threads = new Thread[8];
+        for (int t = 0; t < threads.length; t++) {
+            threads[t] = new Thread(() -> {
+                try {
+                    String h = extract(NativeBridge.nativeCreate(config2), "\"handle\":\"", "\"");
+                    if (h == null) {
+                        mCrash[0] = true;
+                        return;
+                    }
+                    String r = NativeBridge.nativeCall(h, "lookup", "{\"term\":\"你好\"}");
+                    if (r.contains("\"ok\":true")) {
+                        mOk.incrementAndGet();
+                    } else {
+                        mClosed.incrementAndGet();
+                    }
+                    NativeBridge.nativeClose(h);
+                } catch (Throwable ex) {
+                    mCrash[0] = true;
+                    System.out.println("M-05 thread threw: " + ex);
+                }
+            });
+            threads[t].start();
+        }
+        for (Thread t : threads) {
+            t.join(30000);
+        }
+        check("M-05", !mCrash[0] && mOk.get() == 8,
+                "8 线程 create/call/close：ok=" + mOk.get() + " closed=" + mClosed.get());
+
+        // M-06：伪造/错代句柄受控拒绝，且不影响真实实例
+        String badFmt = NativeBridge.nativeCall("not-a-handle", "capabilities", "{}");
+        String badGen = NativeBridge.nativeCall("9999:0", "capabilities", "{}");
+        String mcAlive = NativeBridge.nativeCall(mc, "lookup", "{\"term\":\"你好\"}");
+        check("M-06", badFmt.contains("InvalidRequest") && badGen.contains("AlreadyClosed")
+                        && mcAlive.contains("\"ok\":true"),
+                "伪造句柄受控拒绝: fmt=" + trim(badFmt) + " gen=" + trim(badGen));
+        NativeBridge.nativeClose(mb);
+        NativeBridge.nativeClose(mc);
+
 
         // ---------- 收尾 ----------
         System.out.println("SUMMARY pass=" + pass + " fail=" + fail);

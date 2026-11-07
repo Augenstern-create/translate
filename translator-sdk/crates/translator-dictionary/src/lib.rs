@@ -295,6 +295,28 @@ impl DictionaryManifest {
         }
         Ok(())
     }
+
+    /// 资源内容摘要：`id@version` 之外再带上逐文件 sha256。
+    ///
+    /// 用途是缓存隔离（ADR-011 / P8.3 EP-01）：同一个 `id@version` 被重打包成
+    /// 不同内容时，不能让旧译文命中。摘要不包含绝对路径，跨机器稳定。
+    pub fn content_digest(&self) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(self.id.as_bytes());
+        hasher.update(b"@");
+        hasher.update(self.version.as_bytes());
+        let mut files: Vec<_> = self.files.iter().collect();
+        files.sort_by(|a, b| a.path.cmp(&b.path));
+        for file in files {
+            hasher.update(b"\n");
+            hasher.update(file.path.as_bytes());
+            hasher.update(b"\0");
+            hasher.update(file.sha256.as_bytes());
+        }
+        let digest = format!("{:x}", hasher.finalize());
+        digest[..16].to_string()
+    }
 }
 
 // ============================================================
@@ -723,4 +745,52 @@ pub fn open_as_plugins(
         std::sync::Arc::new(DictionaryEngine::new(std::sync::Arc::clone(&package))),
         std::sync::Arc::new(DictionaryProviderImpl::new(package)),
     ))
+}
+
+#[cfg(test)]
+mod p83_tests {
+    use super::*;
+
+    fn manifest(sha: &str) -> DictionaryManifest {
+        DictionaryManifest {
+            schema_version: None,
+            manifest_schema_version: Some(MANIFEST_SCHEMA_V2),
+            payload_schema_version: Some("dictionary.sqlite.v1".into()),
+            id: "dictionary.test.zh-en".into(),
+            version: "1.0.0".into(),
+            kind: "dictionary".into(),
+            language: "zh-Hans".into(),
+            target_languages: vec!["en".into()],
+            entry_count: 1,
+            provenance: Provenance {
+                name: "TEST".into(),
+                source_url: "https://example.invalid".into(),
+                revision: "r1".into(),
+                license_spdx: "CC0-1.0".into(),
+                license_file: "LICENSE.txt".into(),
+                retrieved_at: "2026-11-07".into(),
+            },
+            files: vec![
+                PackageFile {
+                    path: "entries.sqlite".into(),
+                    sha256: sha.into(),
+                    bytes: 1,
+                },
+                PackageFile {
+                    path: "index.fst".into(),
+                    sha256: sha.into(),
+                    bytes: 1,
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn 同id版本不同内容摘要不同() {
+        let a = manifest(&"a".repeat(64));
+        let b = manifest(&"b".repeat(64));
+        assert_eq!(a.content_digest(), a.content_digest());
+        assert_ne!(a.content_digest(), b.content_digest());
+        assert_eq!(a.content_digest().len(), 16);
+    }
 }

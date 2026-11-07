@@ -373,6 +373,7 @@ impl Coordinator {
             req,
             source.as_str(),
             &outcome.decision.engine_id,
+            outcome.engine.cache_identity().as_deref(),
             self.effective_rules_version,
             &self.resource_fingerprint,
         );

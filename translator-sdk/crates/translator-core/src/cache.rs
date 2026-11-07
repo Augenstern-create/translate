@@ -12,7 +12,7 @@ use std::collections::hash_map::{DefaultHasher, Entry};
 use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
 
-use translator_types::{TranslateRequest, TranslationResult};
+use translator_types::{TranslateRequest, TranslationPolicy, TranslationResult};
 
 use crate::diagnostics::TranslationDiagnostics;
 
@@ -34,6 +34,8 @@ pub struct CacheKey {
     pub source: String,
     pub target: String,
     pub engine_id: String,
+    /// 后端提供的执行身份摘要（模型/词表/解码/保护策略）；`None` 表示后端不提供。
+    pub engine_cache_identity: Option<String>,
     /// P0 恒为 `None`；模型版本确定后填入。
     pub model_id: Option<String>,
     pub glossary_id: Option<String>,
@@ -54,6 +56,7 @@ impl CacheKey {
         req: &TranslateRequest,
         source: &str,
         engine_id: &str,
+        engine_cache_identity: Option<&str>,
         rules_version: u32,
         resource_fingerprint: &str,
     ) -> Self {
@@ -65,11 +68,18 @@ impl CacheKey {
             source: source.to_string(),
             target: req.target.as_str().to_string(),
             engine_id: engine_id.to_string(),
+            engine_cache_identity: engine_cache_identity.map(str::to_string),
             model_id: None,
             glossary_id: req.glossary_id.clone(),
             rules_version,
             decode_config: "default".to_string(),
-            privacy_domain: "default".to_string(),
+            // P8.3 / EP-04：远程策略与本地策略不得共享缓存。
+            // 显式 engine:<id> 的隐私域由宿主负责；这里只隔离明确的 RemoteOnly。
+            privacy_domain: if matches!(req.policy, TranslationPolicy::RemoteOnly) {
+                "remote".to_string()
+            } else {
+                "local".to_string()
+            },
             resource_fingerprint: resource_fingerprint.to_string(),
         }
     }
@@ -146,7 +156,7 @@ mod tests {
 
     fn sample_key(text: &str) -> CacheKey {
         let req = TranslateRequest::new(text, LanguageTag::new("zh-Hans").unwrap());
-        CacheKey::new(text, &req, "en", "mock.nmt", 1, "")
+        CacheKey::new(text, &req, "en", "mock.nmt", None, 1, "")
     }
 
     #[test]
@@ -158,6 +168,7 @@ mod tests {
             &req,
             "en",
             "dictionary.package",
+            None,
             1,
             "dict.zh-en@0.1.0",
         );
@@ -166,10 +177,23 @@ mod tests {
             &req,
             "en",
             "dictionary.package",
+            None,
             1,
             "dict.zh-en@0.2.0",
         );
         assert_ne!(a, b, "换资源版本后必须换缓存键（ADR-011）");
+    }
+
+    #[test]
+    fn 远程与本地策略不共享缓存键() {
+        let target = LanguageTag::new("zh-Hans").unwrap();
+        let local = TranslateRequest::new("hi", target.clone());
+        let remote = TranslateRequest::new("hi", target).with_policy(TranslationPolicy::RemoteOnly);
+        let a = CacheKey::new("hi", &local, "en", "mock.nmt", None, 1, "");
+        let b = CacheKey::new("hi", &remote, "en", "mock.nmt", None, 1, "");
+        assert_ne!(a, b, "隐私域不同的请求不得共享缓存（EP-04）");
+        assert_eq!(a.privacy_domain, "local");
+        assert_eq!(b.privacy_domain, "remote");
     }
 
     #[test]
@@ -206,8 +230,8 @@ mod tests {
     #[test]
     fn 不同引擎不得共享缓存() {
         let req = TranslateRequest::new("hi", LanguageTag::new("zh-Hans").unwrap());
-        let a = CacheKey::new("hi", &req, "en", "mock.nmt", 1, "");
-        let b = CacheKey::new("hi", &req, "en", "mock.dictionary", 1, "");
+        let a = CacheKey::new("hi", &req, "en", "mock.nmt", None, 1, "");
+        let b = CacheKey::new("hi", &req, "en", "mock.dictionary", None, 1, "");
         assert_ne!(a, b);
     }
 
@@ -215,8 +239,8 @@ mod tests {
     fn 不同术语表不得共享缓存() {
         let base = TranslateRequest::new("hi", LanguageTag::new("zh-Hans").unwrap());
         let with_glossary = base.clone().with_glossary("g1");
-        let a = CacheKey::new("hi", &base, "en", "mock.nmt", 1, "");
-        let b = CacheKey::new("hi", &with_glossary, "en", "mock.nmt", 1, "");
+        let a = CacheKey::new("hi", &base, "en", "mock.nmt", None, 1, "");
+        let b = CacheKey::new("hi", &with_glossary, "en", "mock.nmt", None, 1, "");
         assert_ne!(a, b);
     }
 

@@ -38,6 +38,7 @@ translator-nmt-bergamot = { workspace = true, optional = true }
 translator-nmt-ort = { workspace = true, optional = true }
 
 [dev-dependencies]
+translator-nmt-bergamot.workspace = true
 # 测试通过 `--all-features` 启用 mocks，解析出的特性对本 crate 同样生效
 translator-plugin-api = { workspace = true, features = ["mocks"] }
 pollster.workspace = true

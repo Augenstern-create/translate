@@ -13,7 +13,7 @@
 //! 3. 空指纹不会把已有指纹抹掉（避免"忘了填"变成"静默共享缓存"）。
 
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use translator_core::{Coordinator, CoordinatorConfig};
 use translator_plugin_api::{BoxFuture, PluginRegistry, TranslationEngine};
@@ -64,6 +64,67 @@ impl TranslationEngine for CountingNmt {
     }
 }
 
+/// 可切换执行身份的引擎：模拟“同 engine_id、模型内容/解码身份变化”。
+struct IdentityNmt {
+    calls: Arc<AtomicUsize>,
+    identity: Arc<Mutex<String>>,
+}
+
+impl TranslationEngine for IdentityNmt {
+    fn descriptor(&self) -> EngineDescriptor {
+        EngineDescriptor {
+            id: "test.identity",
+            capabilities: &[Capability::Nmt],
+            priority: 50,
+            plugin_api: PluginApiVersion::CURRENT,
+            license: "MIT",
+        }
+    }
+
+    fn supports(&self, _source: &LanguageTag, _target: &LanguageTag) -> bool {
+        true
+    }
+
+    fn translate<'a>(
+        &'a self,
+        req: &'a TranslateRequest,
+    ) -> BoxFuture<'a, Result<TranslationResult, TranslationError>> {
+        Box::pin(async move {
+            let n = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
+            Ok(TranslationResult {
+                text: format!("[identity{n}] {}", req.text),
+                source: req
+                    .source
+                    .clone()
+                    .unwrap_or_else(|| LanguageTag::new("en").expect("静态标签合法")),
+                target: req.target.clone(),
+                engine_id: "test.identity".to_string(),
+                model_id: None,
+                elapsed_ms: 0,
+                warnings: Vec::new(),
+            })
+        })
+    }
+
+    fn cache_identity(&self) -> Option<String> {
+        Some(self.identity.lock().unwrap().clone())
+    }
+}
+
+fn setup_identity() -> (Coordinator, Arc<AtomicUsize>, Arc<Mutex<String>>) {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let identity = Arc::new(Mutex::new("plan-v1".to_string()));
+    let mut registry = PluginRegistry::new();
+    registry
+        .register_engine(Arc::new(IdentityNmt {
+            calls: calls.clone(),
+            identity: identity.clone(),
+        }))
+        .expect("注册身份引擎");
+    let coordinator = Coordinator::new(Arc::new(registry), CoordinatorConfig::default());
+    (coordinator, calls, identity)
+}
+
 fn setup() -> (Coordinator, Arc<AtomicUsize>) {
     let calls = Arc::new(AtomicUsize::new(0));
     let mut registry = PluginRegistry::new();
@@ -108,6 +169,23 @@ fn 同一次绑定内重复请求命中缓存() {
     assert_eq!(calls.load(Ordering::SeqCst), 1, "第二次不该再执行");
     assert!(hit(&second.warnings));
     assert_eq!(second.text, first.text);
+}
+
+#[test]
+fn 执行身份变化必须重新执行() {
+    let (coord, calls, identity) = setup_identity();
+    let first = pollster::block_on(coord.translate(&request())).unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    // 同 engine_id，但后端执行身份（模型/词表/解码/保护）变了：不得命中旧缓存。
+    *identity.lock().unwrap() = "plan-v2".to_string();
+    let second = pollster::block_on(coord.translate(&request())).unwrap();
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        2,
+        "cache_identity 变化后必须重新执行（EP-01/EP-03）"
+    );
+    assert_ne!(second.text, first.text);
 }
 
 #[test]
