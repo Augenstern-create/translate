@@ -1,0 +1,8 @@
+﻿cargo :     Checking translator-api v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-api)
+所在位置 E:\augenstern\translate\.build\staging\p7-check.ps1:33 字符: 35
++ ... -default' { cargo clippy --workspace --all-targets -- -D warnings } ' ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (    Checking tr...translator-api):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.34s

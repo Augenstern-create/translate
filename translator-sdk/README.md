@@ -670,6 +670,7 @@ Linux 401 tests（all-features 404）、Windows 354 tests（all-features 357）�
 
 **P9.1 小样本已完成（`docs/52`）**：下载 28,309,402 B（Kaikki 16 MiB 前缀、JMdict 10.6 MiB、fastText 938 KB）；
 生成 Kaikki en→zh 950 条、JMdict ja→en 999 条；DI-04/05/06/07/08 通过，DI-01 因目标词覆盖不足为 PARTIAL。
+Linux 404/0/60（all 407/0/65）、Windows 357/0/60（all 360/0/65）；Android 词库集成留 P9.4。
 资源仍仅内部研发、`redistribution=pending-review`；全量导入未批准。
 
 

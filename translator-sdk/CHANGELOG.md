@@ -26,7 +26,8 @@ tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `
   修复“同读音不同词头被合并”的 bug；词典插件 id 改为包级唯一（多包注册）。
 - 生成 Kaikki en→zh 950 条、JMdict ja→en 999 条包；DI-04/05/06/07/08 通过，DI-01 因目标词覆盖不足为 PARTIAL；
   `p33-bench dictionary` 支持 `--term/--lang`。
-- 资源仍内部研发、`redistribution=pending-review`；全量导入需再次审批。
+- Linux 404/0/60（all 407/0/65）、Windows 357/0/60（all 360/0/65）；资源仍内部研发、
+  `redistribution=pending-review`；全量导入需再次审批。
 
 ## P9.0 — 语言资源准入（报告 `docs/51`，计划 `docs/50`）
 

@@ -1,0 +1,12 @@
+﻿cargo.exe :     Checking translator-nmt-ort v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-nmt-ort)
+所在位置 E:\augenstern\translate\.build\staging\win-clippy-all.ps1:4 字符: 1
++ & cargo clippy --workspace --all-targets --all-features -- -D warning ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (    Checking tr...slator-nmt-ort):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+    Checking translator-api v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-api)
+    Checking translator-jni v0.1.0 (E:\augenstern\translate\translator-sdk\bindings\translator-jni)
+    Checking p33-bench v0.1.0 (E:\augenstern\translate\translator-sdk\tools\p33-bench)
+    Checking translator-cli v0.1.0 (E:\augenstern\translate\translator-sdk\apps\translator-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.36s
