@@ -53,3 +53,27 @@ fn ep02_术语内容变化改变指纹() {
     assert_ne!(ta.resource_fingerprint(), tb.resource_fingerprint());
     assert!(ta.resource_fingerprint().contains('#'));
 }
+
+#[test]
+fn ep02_直接注入arc可显式提供内容摘要() {
+    use std::sync::Arc;
+    use translator_api::{NoRules, NoTermGuard};
+
+    let a = Translator::builder()
+        .rules(Arc::new(NoRules))
+        .rules_fingerprint("rules-digest-a")
+        .term_guard(Arc::new(NoTermGuard))
+        .term_fingerprint("terms-digest-a")
+        .build()
+        .unwrap();
+    let b = Translator::builder()
+        .rules(Arc::new(NoRules))
+        .rules_fingerprint("rules-digest-b")
+        .term_guard(Arc::new(NoTermGuard))
+        .term_fingerprint("terms-digest-b")
+        .build()
+        .unwrap();
+    assert_ne!(a.resource_fingerprint(), b.resource_fingerprint());
+    assert!(a.resource_fingerprint().contains("rules-digest-a"));
+    assert!(b.resource_fingerprint().contains("terms-digest-b"));
+}

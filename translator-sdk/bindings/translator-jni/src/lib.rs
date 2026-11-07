@@ -194,6 +194,43 @@ fn envelope_sdk_err(err: &translator_types::TranslationError) -> Value {
 // 配置与调用
 // ============================================================
 
+/// 模型路径必须落在 `data_dir` 或 `resource_repo` 内；拒绝任意绝对路径。
+#[cfg_attr(not(feature = "fasttext"), allow(dead_code))]
+fn allowed_model_path(
+    config: &Value,
+    raw: &str,
+) -> Result<std::path::PathBuf, translator_types::TranslationError> {
+    use std::path::PathBuf;
+    let candidate = PathBuf::from(raw);
+    let canonical = candidate.canonicalize().map_err(|e| {
+        translator_types::TranslationError::new(
+            translator_types::TranslationErrorCode::InvalidRequest,
+            format!("模型路径不可读：{raw}：{e}"),
+        )
+    })?;
+    let mut roots: Vec<PathBuf> = Vec::new();
+    for key in ["data_dir", "resource_repo"] {
+        if let Some(root) = config.get(key).and_then(Value::as_str) {
+            if let Ok(c) = PathBuf::from(root).canonicalize() {
+                roots.push(c);
+            }
+        }
+    }
+    if roots.is_empty() {
+        return Err(translator_types::TranslationError::new(
+            translator_types::TranslationErrorCode::InvalidRequest,
+            "language_identifier 需要 data_dir 或 resource_repo 作为模型白名单根",
+        ));
+    }
+    if !roots.iter().any(|root| canonical.starts_with(root)) {
+        return Err(translator_types::TranslationError::new(
+            translator_types::TranslationErrorCode::InvalidRequest,
+            format!("模型路径不在授权资源目录内：{raw}"),
+        ));
+    }
+    Ok(canonical)
+}
+
 fn build_translator(config: &Value) -> Result<Translator, Value> {
     let build = || -> Result<Translator, translator_types::TranslationError> {
         let mut builder = Translator::builder();
@@ -236,6 +273,63 @@ fn build_translator(config: &Value) -> Result<Translator, Value> {
             };
             builder = builder.term_policy(parsed);
         }
+
+        if let Some(lid) = config.get("language_identifier") {
+            #[cfg(feature = "fasttext")]
+            {
+                let kind = lid.get("kind").and_then(Value::as_str).ok_or_else(|| {
+                    translator_types::TranslationError::new(
+                        translator_types::TranslationErrorCode::InvalidRequest,
+                        "language_identifier.kind 缺失",
+                    )
+                })?;
+                if kind != "fasttext" {
+                    return Err(translator_types::TranslationError::new(
+                        translator_types::TranslationErrorCode::InvalidRequest,
+                        format!("未知 language_identifier.kind：{kind}"),
+                    ));
+                }
+                let model = lid
+                    .get("model_path")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| {
+                        translator_types::TranslationError::new(
+                            translator_types::TranslationErrorCode::InvalidRequest,
+                            "language_identifier.model_path 缺失",
+                        )
+                    })?;
+                let model = allowed_model_path(config, model)?;
+                let identifier = translator_analysis::FastTextIdentifier::from_path(&model)
+                    .map_err(|e| {
+                        translator_types::TranslationError::new(
+                            translator_types::TranslationErrorCode::RuntimeInitFailed,
+                            e,
+                        )
+                    })?;
+                builder = builder.language_identifier(std::sync::Arc::new(identifier));
+            }
+            #[cfg(not(feature = "fasttext"))]
+            {
+                let _ = lid;
+                return Err(translator_types::TranslationError::new(
+                    translator_types::TranslationErrorCode::CapabilityUnavailable,
+                    "本 JNI 产物未编译 fasttext feature，不能加载 language_identifier",
+                ));
+            }
+        }
+
+        if let Some(kind) = config.get("lemmatizer").and_then(Value::as_str) {
+            if kind != "english" {
+                return Err(translator_types::TranslationError::new(
+                    translator_types::TranslationErrorCode::InvalidRequest,
+                    format!("未知 lemmatizer：{kind}（当前只支持 english）"),
+                ));
+            }
+            builder = builder.lemmatizer(std::sync::Arc::new(
+                translator_analysis::EnglishLemmatizer::new(),
+            ));
+        }
+
         builder.build()
     };
 
@@ -279,7 +373,12 @@ fn call_capabilities(translator: &Translator) -> Value {
 
     envelope_ok(json!({
         "platform": platform_name(),
-        "binding": { "multi_instance": true, "max_instances": MAX_ENTRIES },
+        "binding": {
+            "multi_instance": true,
+            "max_instances": MAX_ENTRIES,
+            "fasttext": cfg!(feature = "fasttext"),
+            "english_lemmatizer": true
+        },
         "engines": engines,
         "runtimes": runtimes,
     }))
@@ -892,6 +991,22 @@ mod tests {
         assert!(reg.close("9999:0").is_none());
         assert!(reg.resolve(&a).is_ok());
         assert_eq!(reg.resolve("1:9999").err().unwrap(), HandleError::Closed);
+    }
+
+    #[test]
+    fn p95_lid模型路径白名单() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("lid.176.ftz");
+        std::fs::write(&model, b"x").unwrap();
+        let cfg = json!({ "data_dir": dir.path().to_str().unwrap() });
+        let ok = allowed_model_path(&cfg, model.to_str().unwrap()).unwrap();
+        assert!(ok.ends_with("lid.176.ftz"));
+        let outside = std::env::temp_dir().join("lid-outside.ftz");
+        let err = allowed_model_path(&cfg, outside.to_str().unwrap()).unwrap_err();
+        assert_eq!(
+            err.code,
+            translator_types::TranslationErrorCode::InvalidRequest
+        );
     }
 
     #[test]

@@ -321,9 +321,13 @@ pub struct TranslatorBuilder {
     rules: Option<Arc<dyn TextRules>>,
     /// 规则文件内容摘要（仅 `rules_file` 路径有）；P8 EP-02。
     rules_digest: Option<String>,
+    /// 宿主直接注入 Arc 时提供的规则内容摘要（可选）。
+    rules_fingerprint: Option<String>,
     term_guard: Option<Arc<dyn TargetTermGuard>>,
     /// 术语文件内容摘要（仅 `term_table_file` 路径有）；P8 EP-02。
     term_digest: Option<String>,
+    /// 宿主直接注入 Arc 时提供的术语内容摘要（可选）。
+    term_fingerprint: Option<String>,
     term_policy: TermPolicy,
     language_identifier: Option<Arc<dyn LanguageIdentifier>>,
     lemmatizer: Option<Arc<dyn MorphologyAnalyzer>>,
@@ -355,8 +359,10 @@ impl TranslatorBuilder {
             dictionary_roots: Vec::new(),
             rules: None,
             rules_digest: None,
+            rules_fingerprint: None,
             term_guard: None,
             term_digest: None,
+            term_fingerprint: None,
             term_policy: TermPolicy::default(),
             language_identifier: None,
             lemmatizer: None,
@@ -451,6 +457,19 @@ impl TranslatorBuilder {
     #[cfg(feature = "dictionary")]
     pub fn dictionary_package(mut self, root: impl Into<std::path::PathBuf>) -> Self {
         self.dictionary_roots.push(root.into());
+        self
+    }
+
+    /// 为**直接注入**的规则 Arc 提供内容摘要。版本号不变但内容变化时，
+    /// 宿主应传新的摘要；不传则只按 `id@version` 计入缓存键（明确边界）。
+    pub fn rules_fingerprint(mut self, fingerprint: impl Into<String>) -> Self {
+        self.rules_fingerprint = Some(fingerprint.into());
+        self
+    }
+
+    /// 为**直接注入**的术语 Arc 提供内容摘要；语义同 [`Self::rules_fingerprint`]。
+    pub fn term_fingerprint(mut self, fingerprint: impl Into<String>) -> Self {
+        self.term_fingerprint = Some(fingerprint.into());
         self
     }
 
@@ -690,7 +709,11 @@ impl TranslatorBuilder {
 
         if let Some(rules) = &self.rules {
             let mut item = format!("{}@{}", rules.id(), rules.version());
-            if let Some(digest) = &self.rules_digest {
+            if let Some(digest) = self
+                .rules_digest
+                .as_ref()
+                .or(self.rules_fingerprint.as_ref())
+            {
                 item.push('#');
                 item.push_str(digest);
             }
@@ -699,7 +722,7 @@ impl TranslatorBuilder {
         if let Some(guard) = &self.term_guard {
             // 术语表变化必须让旧译文失效：同一句话在不同术语表下结果不同
             let mut item = format!("{}@{}", guard.id(), guard.version());
-            if let Some(digest) = &self.term_digest {
+            if let Some(digest) = self.term_digest.as_ref().or(self.term_fingerprint.as_ref()) {
                 item.push('#');
                 item.push_str(digest);
             }

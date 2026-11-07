@@ -18,6 +18,7 @@ public final class Harness {
     public static void main(String[] args) throws Exception {
         String dictDir = args.length > 0 ? args[0] : "/data/local/tmp/dictpkg";
         String p9Dict = args.length > 1 ? args[1] : "/data/local/tmp/p9/dictpkg";
+        String p9Dev = args.length > 2 ? args[2] : "/data/local/tmp/p9";
 
         System.out.println("protocol_version=" + NativeBridge.nativeProtocolVersion());
 
@@ -365,6 +366,30 @@ public final class Harness {
         check("P94-09d", hp2After.contains("chopsticks"),
                 "关闭 A 不影响 B: " + trim(hp2After));
         NativeBridge.nativeClose(hp2);
+
+        // ---------- P95-A：JNI fastText LID + lemma + en→zh 小样本 ----------
+        String configLid = "{"
+                + "\"protocol_version\":1,"
+                + "\"data_dir\":\"" + p9Dev + "\","
+                + "\"dict_package\":\"" + p9Dev + "/p9en\","
+                + "\"language_identifier\":{\"kind\":\"fasttext\","
+                + "\"model_path\":\"" + p9Dev + "/lid.176.ftz\"},"
+                + "\"lemmatizer\":\"english\"}";
+        String createdLid = NativeBridge.nativeCreate(configLid);
+        String hl = extract(createdLid, "\"handle\":\"", "\"");
+        System.out.println("createLid=" + trim(createdLid));
+        String lidEn = NativeBridge.nativeCall(hl, "detect", "{\"text\":\"Hello world\"}");
+        String lidZh = NativeBridge.nativeCall(hl, "detect", "{\"text\":\"你好世界\"}");
+        String lidJa = NativeBridge.nativeCall(hl, "detect", "{\"text\":\"こんにちは\"}");
+        check("P95-A1", lidEn.contains("en") && lidZh.contains("zh-Hans") && lidJa.contains("ja"),
+                "JNI fastText 实际识别: en=" + trim(lidEn) + " zh=" + trim(lidZh) + " ja=" + trim(lidJa));
+        String lemma = NativeBridge.nativeCall(hl, "lookup", "{\"term\":\"children\",\"limit\":5}");
+        check("P95-A2", lemma.contains("\"ok\":true") && lemma.contains("child"),
+                "JNI lemma 辅助查词: " + trim(lemma));
+        String enzh = NativeBridge.nativeCall(hl, "lookup", "{\"term\":\"light\",\"limit\":3}");
+        check("P95-A3", enzh.contains("\"ok\":true") && enzh.contains("光"),
+                "JNI en→zh 小样本查询: " + trim(enzh));
+        NativeBridge.nativeClose(hl);
 
         // ---------- 收尾 ----------
         System.out.println("SUMMARY pass=" + pass + " fail=" + fail);

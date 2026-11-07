@@ -56,6 +56,12 @@ fi
 if [ -d /tmp/p9-jmdict ]; then
   "$adb" push /tmp/p9-jmdict "$devdir/p9dict" >/dev/null
 fi
+if [ -d /tmp/p9-en-zh ]; then
+  "$adb" push /tmp/p9-en-zh "$devdir/p9en" >/dev/null
+fi
+if [ -f /tmp/p9-lid.ftz ]; then
+  "$adb" push /tmp/p9-lid.ftz "$devdir/lid.176.ftz" >/dev/null
+fi
 if [ -d /tmp/p7repo ]; then
   "$adb" shell "rm -rf $devdir/repo && mkdir -p $devdir/repo" >/dev/null
   "$adb" push /tmp/p7repo/. "$devdir/repo/" >/dev/null
@@ -72,4 +78,4 @@ fi
 
 echo "== run"
 "$adb" shell "cd $devdir && app_process -Djava.class.path=$devdir/classes.dex \
-  -Djava.library.path=$devdir /system/bin ai.ridge.translator.Harness $devdir/dictpkg $devdir/p9dict"
+  -Djava.library.path=$devdir /system/bin ai.ridge.translator.Harness $devdir/dictpkg $devdir/p9dict $devdir"

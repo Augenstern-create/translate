@@ -1397,6 +1397,8 @@ dependencies = [
  "jni",
  "pollster",
  "serde_json",
+ "tempfile",
+ "translator-analysis",
  "translator-api",
  "translator-resource",
  "translator-types",

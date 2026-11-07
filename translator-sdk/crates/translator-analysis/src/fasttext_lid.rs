@@ -46,12 +46,17 @@ impl super::LanguageIdentifier for FastTextIdentifier {
         let Ok(preds) = self.model.predict(text, limit.max(1), 0.0) else {
             return Vec::new();
         };
+        let mut seen = std::collections::HashSet::new();
         preds
             .into_iter()
             .filter_map(|p| {
                 let raw = p.label.strip_prefix("__label__").unwrap_or(&p.label);
                 let tag = map_iso3(raw)?;
-                LanguageTag::new(tag).ok().map(|language| LanguageGuess {
+                let language = LanguageTag::new(tag).ok()?;
+                if !seen.insert(language.as_str().to_string()) {
+                    return None;
+                }
+                Some(LanguageGuess {
                     language,
                     confidence: p.probability,
                 })
