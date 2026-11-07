@@ -369,9 +369,9 @@ impl TranslatorBuilder {
     /// 构造期只检查文件与配置，不加载权重；默认 feature 下这段代码不会进依赖树。
     #[cfg(feature = "nmt-ort")]
     pub fn nmt_ort(mut self, config: translator_nmt_ort::OrtNmtConfig) -> Self {
-        match translator_nmt_ort::OrtNmtEngine::new(config) {
+        // P8.2：相同 ORT 模型/配置的宿主共享同一个会话（池里只存 Weak）。
+        match translator_nmt_ort::OrtNmtEngine::shared(config) {
             Ok(engine) => {
-                let engine = Arc::new(engine);
                 self.ort_engines.push(engine.clone());
                 self.engine(engine)
             }

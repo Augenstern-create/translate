@@ -48,11 +48,12 @@
 //! 因此本后端固定四条上界：长度 `min(max_new_tokens, src_len*8/5+12)`、无重复 3-gram、
 //! 连续 3 个相同 token 即停、尾部同周期块收敛到一轮；触发次数记在 `degeneracy_count()` 上。
 
+use std::collections::HashMap;
 #[cfg(feature = "ort-runtime")]
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::Instant;
 
 use translator_core::protection::{ProtectionMode, ProtectionPlan};
@@ -196,6 +197,37 @@ pub struct OrtNmtEngine {
     degeneracy: AtomicU64,
 }
 
+type EnginePool = Mutex<HashMap<String, Weak<OrtNmtEngine>>>;
+
+static POOL: OnceLock<EnginePool> = OnceLock::new();
+
+fn pool() -> &'static EnginePool {
+    POOL.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn canonical(path: &std::path::Path) -> String {
+    path.canonicalize()
+        .unwrap_or_else(|_| path.to_path_buf())
+        .display()
+        .to_string()
+}
+
+/// 共享键：模型三文件内容 + 所有会影响解码/内存的配置。
+fn pool_key(config: &OrtNmtConfig, revision: &str) -> String {
+    format!(
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        canonical(&config.model_dir),
+        revision,
+        config.source.as_str(),
+        config.target.as_str(),
+        config.threads,
+        config.max_new_tokens,
+        config.protection.as_str(),
+        config.steady_bytes,
+        DECODE_POLICY,
+    )
+}
+
 impl std::fmt::Debug for OrtNmtEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OrtNmtEngine")
@@ -232,6 +264,31 @@ impl OrtNmtEngine {
             cache_identity: Mutex::new(None),
             degeneracy: AtomicU64::new(0),
         })
+    }
+
+    /// 进程内共享同一个 ORT 会话（相同模型内容/配置）。
+    ///
+    /// 池只存 `Weak`：最后一个 `Translator` 释放后会话/arena 自然释放。
+    pub fn shared(config: OrtNmtConfig) -> Result<Arc<Self>, TranslationError> {
+        let revision = revision_of(&config)?;
+        let key = pool_key(&config, &revision);
+        let pool = pool();
+        let mut map = pool.lock().unwrap_or_else(|e| e.into_inner());
+        map.retain(|_, weak| weak.strong_count() > 0);
+        if let Some(existing) = map.get(&key).and_then(Weak::upgrade) {
+            return Ok(existing);
+        }
+        let engine = Arc::new(Self::new(config)?);
+        map.insert(key, Arc::downgrade(&engine));
+        Ok(engine)
+    }
+
+    /// 当前池里仍存活的 ORT 引擎数（诊断/测试用）。
+    pub fn shared_engine_count() -> usize {
+        let pool = pool();
+        let mut map = pool.lock().unwrap_or_else(|e| e.into_inner());
+        map.retain(|_, weak| weak.strong_count() > 0);
+        map.len()
     }
 
     pub fn config(&self) -> &OrtNmtConfig {
@@ -800,7 +857,6 @@ fn build_session(
         .map_err(|e| init_error(format!("{} 加载失败：{e}", path.display())))
 }
 
-#[cfg(feature = "ort-runtime")]
 fn revision_of(config: &OrtNmtConfig) -> Result<String, TranslationError> {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();

@@ -24,11 +24,11 @@ tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `
 - **P8.1 JNI 多实例**：`Entry` 自带 generation/closed，`index` 单调不复用；创建 B 不再作废 A；
   `capabilities.binding.multi_instance=true`；ADR-063 从 Proposed → **Accepted**。
   Android Harness M-01～M-06 通过，总计 **40 PASS / 0 FAIL / 1 PENDING**；P6 J-01/J-03/J-06/J-15 无回退。
-- **P8.2 引擎共享**：`BergamotNmtEngine::shared` 进程内池（只存 `Weak`），键覆盖五文件 role+sha256 与配置；
-  相同模型/配置的多个 `Translator` 共享同一 engine/worker；4 条 shared_engine 测试通过。
+- **P8.2 引擎共享**：`BergamotNmtEngine::shared` 与 `OrtNmtEngine::shared` 进程内池（只存 `Weak`），
+  键覆盖模型文件 role+sha256 与配置；相同模型/配置的多个 `Translator` 共享 engine/worker 或 ORT 会话；7 条 shared 测试通过。
 - **P8.3 缓存一致性**：`TranslationEngine::cache_identity` + `CacheKey.engine_cache_identity`；
   Bergamot 用 plan digest、ORT 用文件内容哈希、词典用 `content_digest`；RemoteOnly/本地缓存域隔离。
-- Linux **401 passed / 0 failed / 60 ignored**（all-features 65 ignored）；Windows **354 / 0 / 60**（all-features 65）；
+- Linux **401 passed / 0 failed / 60 ignored**（all-features 404 / 65 ignored）；Windows **354 / 0 / 60**（all-features 65）；
   fmt/clippy（默认+全 feature）通过。G12/G11 仍 open。
 
 ## P8-AUDIT（报告 `docs/48`，计划 `docs/47`）

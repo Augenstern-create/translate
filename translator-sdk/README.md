@@ -663,7 +663,7 @@ NMT_BASELINE_OUT=fixtures/nmt/baseline-p3.1b-linux-x86_64-1thread.json \
 
 **P8 已完成**（`docs/49`）：JNI per-entry generation/closed 多实例（ADR-063 Accepted）；Bergamot 同进程共享池
 （相同五文件/配置复用同一 worker）；`cache_identity` 进 Coordinator 缓存键、词典内容摘要进资源指纹、远程/本地缓存域隔离。
-Linux 401 tests、Windows 354 tests、Android M-01～M-06 全过。P8 不关闭 G12/G11。
+Linux 401 tests（all-features 404）、Windows 354 tests、Android M-01～M-06 全过。P8 不关闭 G12/G11。
 
 发行阻断台账：`G06`（取消在途请求）与 `G08`（外部 `kill -9` 恢复测试）已闭合；
 `G12`（权重许可）与 `G11`（真实 CI runner）仍 open。`tools/check-release.py --release-mode`
