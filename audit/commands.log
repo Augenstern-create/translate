@@ -1,0 +1,39 @@
+===== cargo test -p translator-core --test cache_fingerprint
+running 5 tests
+.....
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+EXIT=0
+===== cargo test -p translator-core --test routing
+running 13 tests
+.............
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+EXIT=0
+===== cargo test -p translator-runtime --test lifecycle
+running 6 tests
+......
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.81s
+
+EXIT=0
+===== cargo test -p translator-runtime --test cancellation
+running 4 tests
+....
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.54s
+
+EXIT=0
+===== cargo test -p translator-resource --test p71_j07_security
+running 5 tests
+.....
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+EXIT=0
+===== cargo test -p translator-jni --lib
+running 7 tests
+.......
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+EXIT=0
+===== cargo test --workspace (commit 429cc9b)
+TOTAL passed=391 failed=0 ignored=60
+EXIT=0

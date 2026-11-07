@@ -19,12 +19,20 @@ tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `
 - 冻结 J-07/J-10/J-14/J-15 的注入方法与期望错误码（含 J-15c `.so` 重载标 PENDING：ART 类加载器限制）。
 - 两处待批资源（360.9 MB ORT 旧缓存、3.1 GB arm64 镜像 + AVD）**未删未移未改**。
 
+## P8-AUDIT（报告 `docs/48`，计划 `docs/47`）
+
+- 只读核验当前 commit `429cc9b`：10 个工作包逐项落到源码/测试/判定，**未改功能代码**。
+- 结论：P8.1 JNI 多实例 **Confirmed missing**（全局 generation 作废旧句柄）；P8.2 共享模型 / P8.3 计划缓存 **Partial**；
+  P9（en→zh/Kaikki/JMdict、正式 LID/形态）、P10.2/P10.3（Android NMT、ncnn）、P11.1（真实 Remote）多数 **Confirmed missing**。
+- 复跑：`cargo test --workspace` 391 passed / 0 failed / 60 ignored；专项 cache_fingerprint/routing/lifecycle/cancellation/J-07/JNI 全绿。
+- P8.1 下一步：先写 M-01～M-06 失败合同，再按 ADR-063（Proposed）改 per-entry generation/closed。
+
 ## P7 验收与 P8 启动（报告 `docs/45` / `docs/46`）
 
 - **P7 条件性验收通过**（Conditional / Internal Preview）；G12 方案①（暂不分发权重）、G11 两步走（仅本地准备）。
 - **Windows P7.3 复测完成**：`344 passed / 0 failed / 60 ignored`（all-features 65 ignored）；ORT 24 用例通过；
   fmt/clippy 默认+全 feature 通过；G08 外部强制终止 1 passed；G06 在 Windows 为 N/A（Linux 进程组语义）。
-- **G11 准备**：新增 `tools/ci-preflight.py`（255 文件 / 约 2.8 MB，无权重/凭据/大文件）并加入 `ci.yml`；
+- **G11 准备**：新增 `tools/ci-preflight.py`（260 文件 / 约 2.87 MB，无权重/凭据/大文件）并加入 `ci.yml`；
   未 push、未触发远程 CI，G11 保持 open。
 - **P8 P0**：ADR-063（Proposed）——JNI 多实例改为 per-entry generation/closed，handle 格式与入口不变。
 

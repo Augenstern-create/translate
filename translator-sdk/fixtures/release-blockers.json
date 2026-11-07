@@ -34,7 +34,7 @@
    "blocks_release": true,
    "blocking_scope": "发行记录里的 CI 证据",
    "evidence_required": "真实 runner 的 workflow run 链接 + 日志 + 产物；真实模型 job 需单独证明",
-   "current_evidence": ".github/workflows/ci.yml 与 real-model.yml 已提交；2026-11-07 用户批准两步走（先工作区准备，实际 push/触发远程 CI 另行授权）。工作区预检：tools/ci-preflight.py --check 通过（255 跟踪文件（检查时点约 2.8 MB），无权重/凭据/大文件；workflow 均 contents: read，无 secrets.*/pull_request_target）；ci.yml 已加预检步骤。尚未在真实 Linux runner 运行。",
+   "current_evidence": ".github/workflows/ci.yml 与 real-model.yml 已提交；2026-11-07 用户批准两步走（先工作区准备，实际 push/触发远程 CI 另行授权）。工作区预检：tools/ci-preflight.py --check 通过（260 跟踪文件（检查时点约 2.87 MB），无权重/凭据/大文件；workflow 均 contents: read，无 secrets.*/pull_request_target）；ci.yml 已加预检步骤。尚未在真实 Linux runner 运行。",
    "mitigation": "本地等价命令（fmt/clippy/391 tests/all-features/license）作为临时证据；取得真实 runner 日志后再关闭。",
    "opened_at": "2026-11-05",
    "closed_at": null,
