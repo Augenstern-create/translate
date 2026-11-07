@@ -24,7 +24,7 @@ tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `
 - **P7 条件性验收通过**（Conditional / Internal Preview）；G12 方案①（暂不分发权重）、G11 两步走（仅本地准备）。
 - **Windows P7.3 复测完成**：`344 passed / 0 failed / 60 ignored`（all-features 65 ignored）；ORT 24 用例通过；
   fmt/clippy 默认+全 feature 通过；G08 外部强制终止 1 passed；G06 在 Windows 为 N/A（Linux 进程组语义）。
-- **G11 准备**：新增 `tools/ci-preflight.py`（255 文件 / 2.80 MB，无权重/凭据/大文件）并加入 `ci.yml`；
+- **G11 准备**：新增 `tools/ci-preflight.py`（255 文件 / 约 2.8 MB，无权重/凭据/大文件）并加入 `ci.yml`；
   未 push、未触发远程 CI，G11 保持 open。
 - **P8 P0**：ADR-063（Proposed）——JNI 多实例改为 per-entry generation/closed，handle 格式与入口不变。
 
