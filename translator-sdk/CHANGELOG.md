@@ -19,6 +19,15 @@ tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `
 - 冻结 J-07/J-10/J-14/J-15 的注入方法与期望错误码（含 J-15c `.so` 重载标 PENDING：ART 类加载器限制）。
 - 两处待批资源（360.9 MB ORT 旧缓存、3.1 GB arm64 镜像 + AVD）**未删未移未改**。
 
+## P9.1-S — 定向覆盖与同音索引修复（报告 `docs/53`）
+
+- 新增 `dictionary.sqlite.v3`：`postings(key, rank, entry_id)` 支持一键多词条；v1/v2 仍只读兼容。
+  JMdict v3 的 はし 返回 6 条（橋/箸/端/梯/愛し/波斯），橋/箸/端 各自独立；DI-09～13 通过。
+- 额外 6×5 MiB Kaikki 未压缩 JSONL 分段（31,457,280 B；总 59,766,682 B < 64 MiB）；目标词仍只覆盖 light/close（2/10），
+  停止扩大下载，评估其他合法数据源。
+- 生成 100 条人工评审样本（50 Kaikki + 50 JMdict）；状态 **PENDING_HUMAN**，不冒充语言审查。
+- Linux 409/0/60（all 412/0/65）；Windows 362/0/60（all 365/0/65）；全量词库 **No-Go**。
+
 ## P9.1 — 多语言词库小样本（报告 `docs/52`）
 
 - 在 64 MiB 预算内下载 Kaikki 16 MiB 前缀、JMdict 10.6 MiB、fastText 938 KB（合计 28,309,402 B）。

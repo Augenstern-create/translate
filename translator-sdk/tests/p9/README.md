@@ -13,6 +13,11 @@
 | `di05-corrupt-install.log` | 坏包被 ResourceStore 完整性校验拒绝 |
 | `di06-repro.txt` | 两次构建逐文件 sha256 一致 |
 | `lock-check.log` | P9 资源锁校验 |
+| `di09-13-v3.txt` | v3 多值索引：はし 6 条、橋/箸/端 独立、v2 兼容 |
+| `jmdict-v3-manifest.json` | v3 包 manifest（payload v3 + postings） |
+| `jmdict-v2-bench.json` / `jmdict-v3-bench.json` | v2/v3 查询与内存对照（DI-13） |
+| `quality-100-sample.tsv` | 100 条人工评审样本（PENDING_HUMAN） |
+| `REVIEW-STATUS.md` | 人工评审状态说明 |
 
 生成命令（在 `translator-sdk/`）：
 

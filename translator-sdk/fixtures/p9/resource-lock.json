@@ -118,10 +118,11 @@
       "artifact": {
         "package_id": "dictionary.jmdict.ja-en",
         "version": "0.1.0-p9sample",
-        "entry_count": 999,
-        "index_fst_sha256": "3c4b5cd59ed4292895daa4b95772f505f442976d474b768032ce7ba226a178c5",
-        "entries_sqlite_sha256": "934927047dded24d869bab13302c2d2715875224b3fd37a45a5587d19f4f16b0",
-        "manifest_sha256": "a886e73e77c199b069617f891cb77de9a06734e606ad1871dc5d6740aa1187c3"
+        "payload_schema": "dictionary.sqlite.v3",
+        "entry_count": 1000,
+        "index_fst_sha256": "7eb5d9b7c483edd01bd14a80fb0238dc93c10656accd07613074a4de1c7d1449",
+        "entries_sqlite_sha256": "89f2525cc9f26e232dc524d337cfb147d12b5d82d9c8f37424e104910a820600",
+        "manifest_sha256": "cc000bf8e1f94d5d6674b0562e9c7951cb6f593c52ea6f9bce3b8a4c7255a762"
       }
     },
     {

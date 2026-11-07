@@ -1,8 +1,8 @@
-﻿cargo :     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
+﻿cargo :     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
 所在位置 E:\augenstern\translate\.build\staging\p7-check.ps1:39 字符: 27
 + ... ort-real' { cargo test -p translator-nmt-ort --features ort-runtime - ...
 +                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (    Finished `t...get(s) in 0.10s:String) [], RemoteException
+    + CategoryInfo          : NotSpecified: (    Finished `t...get(s) in 0.12s:String) [], RemoteException
     + FullyQualifiedErrorId : NativeCommandError
  
      Running tests\p4_ort.rs (E:\augenstern\translate\.build\target\debug\deps\p4_ort-3465af5827ff6ccc.exe)
@@ -10,10 +10,10 @@
 running 6 tests
 test 涓嶆敮鎸佺殑璇█瀵规槑纭嫆缁?... ok
 test 鍒嗚瘝鍣╥d绌洪棿瀵归綈鑱斿悎璇嶈〃 ... ok
-test 韬唤鍙娴嬩笖鍗歌浇鍚庡洖鍒版湭鍔犺浇 ... ok
 test g01_鐪熷疄妯″瀷浜у嚭璇戞枃 ... ok
+test 韬唤鍙娴嬩笖鍗歌浇鍚庡洖鍒版湭鍔犺浇 ... ok
 test 鍚屼竴杈撳叆杈撳嚭绋冲畾 ... ok
 test g04_鍙椾繚鎶よ法搴﹂€愬瓧鑺備繚鐣?... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.70s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.62s
 

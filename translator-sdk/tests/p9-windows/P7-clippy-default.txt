@@ -1,8 +1,14 @@
-﻿cargo :     Checking translator-api v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-api)
+﻿cargo :     Checking translator-resource v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-resource)
 所在位置 E:\augenstern\translate\.build\staging\p7-check.ps1:33 字符: 35
 + ... -default' { cargo clippy --workspace --all-targets -- -D warnings } ' ...
 +                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (    Checking tr...translator-api):String) [], RemoteException
+    + CategoryInfo          : NotSpecified: (    Checking tr...lator-resource):String) [], RemoteException
     + FullyQualifiedErrorId : NativeCommandError
  
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.34s
+    Checking translator-dictionary v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-dictionary)
+    Checking pack-dictionary v0.1.0 (E:\augenstern\translate\translator-sdk\tools\pack-dictionary)
+    Checking translator-api v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-api)
+    Checking p33-bench v0.1.0 (E:\augenstern\translate\translator-sdk\tools\p33-bench)
+    Checking translator-jni v0.1.0 (E:\augenstern\translate\translator-sdk\bindings\translator-jni)
+    Checking translator-cli v0.1.0 (E:\augenstern\translate\translator-sdk\apps\translator-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.48s

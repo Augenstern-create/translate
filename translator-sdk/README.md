@@ -34,6 +34,7 @@
 - `32_P5开发建议与实施计划（工作区与权限边界）.md` — 外部审查/计划稿归档：唯一可写工作区 `E:\augenstern\translate`、逐项审批、固定 Anaconda Python
 - `47_P8-P11_遗留能力源码核验与开发验收计划.md` — P8～P11 计划归档（权限边界、工作包、M/SM/EP/DI/LID/AND/NC/RM/R 矩阵、里程碑）
 - `50_P9_多语言词典语言识别与词形分析开发建议.md` — P9.0～P9.5 计划归档（资源准入、DI/LID/MOR 矩阵、权限边界）
+- `53_P9.1-S_定向覆盖与同音索引修复报告.md` — v3 多值索引（はし 6 条）、额外 30 MiB 定向采样（目标词仍 2/10）、100 条人工评审 PENDING；全量 No-Go
 - `52_P9.1_多语言词库导入报告.md` — P9.1 小样本：Kaikki en→zh 950 条、JMdict ja→en 999 条；DI-01～08 结果与 28.3 MB 下载审计
 - `51_P9.0_语言资源准入报告.md` — 只读准入：6 项资源锁文件、许可待审、无下载；P9.1 需批准
 - `49_P8_多实例共享资源与缓存一致性实施报告.md` — P8.1 JNI 多实例（ADR-063 Accepted）、P8.2 引擎共享池、P8.3 执行身份/缓存；Linux/Windows/Android 结果
@@ -672,6 +673,10 @@ Linux 401 tests（all-features 404）、Windows 354 tests（all-features 357）�
 生成 Kaikki en→zh 950 条、JMdict ja→en 999 条；DI-04/05/06/07/08 通过，DI-01 因目标词覆盖不足为 PARTIAL。
 Linux 404/0/60（all 407/0/65）、Windows 357/0/60（all 360/0/65）；Android 词库集成留 P9.4。
 资源仍仅内部研发、`redistribution=pending-review`；全量导入未批准。
+
+**P9.1-S 已完成（`docs/53`）**：v3 `postings` 多值索引修复 はし→橋/箸/端/梯/愛し/波斯；DI-09～13 通过。
+额外 30 MiB 分段采样仍未命中 bank/spring 等，目标词覆盖 2/10；100 条人工评审为 **PENDING_HUMAN**，
+**全量词库 Go/No-Go = No-Go**。Linux 409/412、Windows 362/365。
 
 
 发行阻断台账：`G06`（取消在途请求）与 `G08`（外部 `kill -9` 恢复测试）已闭合；
