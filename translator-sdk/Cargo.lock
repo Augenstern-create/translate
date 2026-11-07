@@ -354,6 +354,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
+name = "fasttext-pure-rs"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7eec6d842b339de477c0824b9cdac9ca7bc8900fe23646e5a67226286c9fd9f7"
+dependencies = [
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1316,6 +1325,9 @@ dependencies = [
 name = "translator-analysis"
 version = "0.1.0"
 dependencies = [
+ "fasttext-pure-rs",
+ "serde",
+ "serde_json",
  "translator-types",
 ]
 

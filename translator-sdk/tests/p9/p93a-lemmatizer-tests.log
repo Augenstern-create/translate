@@ -1,0 +1,15 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+     Running unittests src/lib.rs (target/debug/deps/translator_analysis-c78859f294d11b9b)
+
+running 8 tests
+test tests::limit参数生效 ... ok
+test english::tests::规则与不规则词形 ... ok
+test tests::假名应判定为日语 ... ok
+test tests::全角拉丁字母也算拉丁 ... ok
+test tests::拉丁字母给低置信度候选 ... ok
+test tests::汉字应返回多个候选 ... ok
+test tests::纯数字无候选 ... ok
+test tests::韩文应判定为韩语 ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

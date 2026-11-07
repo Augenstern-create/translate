@@ -402,6 +402,15 @@
       "checksum": ""
     },
     {
+      "name": "fasttext-pure-rs",
+      "version": "0.1.0",
+      "license": "MIT",
+      "license_normalized": "MIT",
+      "legacy_notation": false,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": ""
+    },
+    {
       "name": "find-msvc-tools",
       "version": "0.1.15",
       "license": "MIT OR Apache-2.0",
@@ -1581,5 +1590,5 @@
       "checksum": ""
     }
   ],
-  "count": 172
+  "count": 173
 }

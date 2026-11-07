@@ -14,6 +14,14 @@
 
 use translator_types::{LanguageGuess, LanguageTag};
 
+pub mod english;
+pub use english::{EnglishLemmatizer, MorphologyAnalyzer};
+
+#[cfg(feature = "fasttext")]
+mod fasttext_lid;
+#[cfg(feature = "fasttext")]
+pub use fasttext_lid::FastTextIdentifier;
+
 /// 语言识别器。
 pub trait LanguageIdentifier: Send + Sync {
     /// 返回按置信度降序排列的候选，最多 `limit` 个。

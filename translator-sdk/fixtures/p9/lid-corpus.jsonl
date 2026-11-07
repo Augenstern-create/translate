@@ -1,0 +1,40 @@
+{"id":"en-01","text":"The quick brown fox jumps over the lazy dog.","lang":"en"}
+{"id":"en-02","text":"Please open the window and close the door.","lang":"en"}
+{"id":"en-03","text":"I would like a cup of coffee.","lang":"en"}
+{"id":"en-04","text":"The meeting starts at nine tomorrow.","lang":"en"}
+{"id":"en-05","text":"Language identification is useful.","lang":"en"}
+{"id":"en-06","text":"hello","lang":"en"}
+{"id":"en-07","text":"thank you","lang":"en"}
+{"id":"en-08","text":"Where is the train station?","lang":"en"}
+{"id":"en-09","text":"This is a short sentence.","lang":"en"}
+{"id":"en-10","text":"Open source software","lang":"en"}
+{"id":"zh-01","text":"今天天气很好。","lang":"zh-Hans"}
+{"id":"zh-02","text":"你好世界","lang":"zh-Hans"}
+{"id":"zh-03","text":"计算机科学与技术","lang":"zh-Hans"}
+{"id":"zh-04","text":"我们一起去公园吧。","lang":"zh-Hans"}
+{"id":"zh-05","text":"这是一个测试句子。","lang":"zh-Hans"}
+{"id":"zh-06","text":"中文","lang":"zh-Hans"}
+{"id":"zh-07","text":"北京欢迎你","lang":"zh-Hans"}
+{"id":"zh-08","text":"谢谢你的帮助。","lang":"zh-Hans"}
+{"id":"zh-09","text":"开放源代码软件","lang":"zh-Hans"}
+{"id":"zh-10","text":"汉字","lang":"zh-Hans"}
+{"id":"ja-01","text":"こんにちは世界。","lang":"ja"}
+{"id":"ja-02","text":"今日はいい天気です。","lang":"ja"}
+{"id":"ja-03","text":"食べる","lang":"ja"}
+{"id":"ja-04","text":"学校へ行く","lang":"ja"}
+{"id":"ja-05","text":"ありがとうございます。","lang":"ja"}
+{"id":"ja-06","text":"漢字","lang":"ja"}
+{"id":"ja-07","text":"東京は日本の首都です。","lang":"ja"}
+{"id":"ja-08","text":"日本語を勉強します。","lang":"ja"}
+{"id":"ja-09","text":"さようなら","lang":"ja"}
+{"id":"ja-10","text":"ラーメンを食べたい。","lang":"ja"}
+{"id":"ko-01","text":"안녕하세요.","lang":"ko"}
+{"id":"ko-02","text":"오늘 날씨가 좋아요.","lang":"ko"}
+{"id":"ko-03","text":"감사합니다.","lang":"ko"}
+{"id":"ko-04","text":"학교","lang":"ko"}
+{"id":"ko-05","text":"한국어를 공부합니다.","lang":"ko"}
+{"id":"ko-06","text":"서울은 한국의 수도입니다.","lang":"ko"}
+{"id":"ko-07","text":"테스트","lang":"ko"}
+{"id":"ko-08","text":"사랑","lang":"ko"}
+{"id":"ko-09","text":"고양이","lang":"ko"}
+{"id":"ko-10","text":"책을 읽습니다.","lang":"ko"}

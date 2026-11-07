@@ -18,6 +18,9 @@
 | `jmdict-v2-bench.json` / `jmdict-v3-bench.json` | v2/v3 查询与内存对照（DI-13） |
 | `quality-100-sample.tsv` | 100 条人工评审样本（PENDING_HUMAN） |
 | `REVIEW-STATUS.md` | 人工评审状态说明 |
+| `lid-compare.json` | P9.2 fastText vs heuristic 同集指标 |
+| `p93a-lemmatizer-tests.log` | P9.3-A 8 tests |
+| `../../fixtures/p9/lid-corpus.jsonl` | 40 条手写 LID 对照语料（仓库内小样本，非第三方数据） |
 
 生成命令（在 `translator-sdk/`）：
 

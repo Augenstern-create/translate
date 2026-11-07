@@ -19,6 +19,13 @@ tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `
 - 冻结 J-07/J-10/J-14/J-15 的注入方法与期望错误码（含 J-15c `.so` 重载标 PENDING：ART 类加载器限制）。
 - 两处待批资源（360.9 MB ORT 旧缓存、3.1 GB arm64 镜像 + AVD）**未删未移未改**。
 
+## P9.2 / P9.3-A — LID 与英语词形（报告 `docs/54`）
+
+- 新增可选 `translator-analysis/fasttext`（`fasttext-pure-rs` 0.1.0，MIT，纯 Rust）：`FastTextIdentifier`，
+  40 条同集对照 accuracy/Macro-F1 均 0.975/0.9749；冷加载 44.9 ms、热 p50 0.0041 ms、加载 RSS +2.8 MiB。
+- 新增 `EnglishLemmatizer` + `MorphologyAnalyzer`：规则 + 例外词表，8 tests；未接入词典查询（P9.4）。
+- 未下载 Lindera；许可证审查仅到 crate MIT/词典另审。Linux 410/0/60（all 413/0/66）。
+
 ## P9.1-S — 定向覆盖与同音索引修复（报告 `docs/53`）
 
 - 新增 `dictionary.sqlite.v3`：`postings(key, rank, entry_id)` 支持一键多词条；v1/v2 仍只读兼容。
