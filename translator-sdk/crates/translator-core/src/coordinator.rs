@@ -48,6 +48,10 @@ pub struct CoordinatorConfig {
     ///
     /// 默认 [`TermPolicy::Warn`]：只报告不改写（P2-S / S-03）。
     pub term_policy: TermPolicy,
+    /// 可选 LID 实现。`None` 时保持原有 Unicode 启发式，默认构建不引入模型。
+    pub language_identifier: Option<Arc<dyn translator_analysis::LanguageIdentifier>>,
+    /// 可选形态分析器；只用于**查词未命中后的候选**，不改写翻译输入。
+    pub lemmatizer: Option<Arc<dyn translator_analysis::MorphologyAnalyzer>>,
 }
 
 impl std::fmt::Debug for CoordinatorConfig {
@@ -66,6 +70,11 @@ impl std::fmt::Debug for CoordinatorConfig {
             )
             .field("term_guard", &term)
             .field("term_policy", &self.term_policy)
+            .field(
+                "language_identifier",
+                &self.language_identifier.as_ref().map(|x| x.name()),
+            )
+            .field("lemmatizer", &self.lemmatizer.as_ref().map(|x| x.name()))
             .finish()
     }
 }
@@ -87,6 +96,8 @@ impl Default for CoordinatorConfig {
             strict_placeholder_restore: false,
             term_guard: None,
             term_policy: TermPolicy::default(),
+            language_identifier: None,
+            lemmatizer: None,
         }
     }
 }
@@ -282,18 +293,64 @@ impl Coordinator {
                 ));
             }
 
-            let mut all = Vec::new();
-            for provider in self.registry.providers() {
-                let mut entries = provider.lookup(req).await?;
-                all.append(&mut entries);
-                if all.len() >= req.limit {
-                    break;
+            let mut all = self.lookup_term(req, &req.term).await?;
+            if all.is_empty() {
+                if let Some(lemmatizer) = &self.config.lemmatizer {
+                    for lemma in lemmatizer.lemmas(&req.term).into_iter().take(3) {
+                        let mut found = self.lookup_term(req, &lemma).await?;
+                        for entry in found.drain(..) {
+                            if !all.iter().any(|e| {
+                                e.headword == entry.headword && e.source_id == entry.source_id
+                            }) {
+                                all.push(entry);
+                                if all.len() >= req.limit {
+                                    break;
+                                }
+                            }
+                        }
+                        if all.len() >= req.limit {
+                            break;
+                        }
+                    }
                 }
             }
 
             all.truncate(req.limit);
             Ok(all)
         })
+    }
+
+    async fn lookup_term(
+        &self,
+        req: &LookupRequest,
+        term: &str,
+    ) -> Result<Vec<DictionaryEntry>, TranslationError> {
+        let mut all = Vec::new();
+        let sub = LookupRequest {
+            term: term.to_string(),
+            language: req.language.clone(),
+            limit: req.limit,
+        };
+        for provider in self.registry.providers() {
+            let mut entries = provider.lookup(&sub).await?;
+            all.append(&mut entries);
+            if all.len() >= req.limit {
+                break;
+            }
+        }
+        Ok(all)
+    }
+
+    /// 注入的 LID（若配置）；返回 `None` 表示使用调用方原有启发式。
+    pub fn identify_language(
+        &self,
+        text: &str,
+        limit: usize,
+    ) -> Option<Vec<translator_types::LanguageGuess>> {
+        self.config
+            .language_identifier
+            .as_ref()
+            .map(|id| id.identify(text, limit))
     }
 
     // ---------------- 内部实现 ----------------
@@ -307,7 +364,14 @@ impl Coordinator {
             return Ok(source.clone());
         }
 
-        text::guess_language(normalized).ok_or_else(|| {
+        let guessed = self
+            .config
+            .language_identifier
+            .as_ref()
+            .and_then(|id| id.identify(normalized, 1).into_iter().next())
+            .map(|g| g.language)
+            .or_else(|| text::guess_language(normalized));
+        guessed.ok_or_else(|| {
             TranslationError::new(
                 TranslationErrorCode::InvalidRequest,
                 "无法自动识别源语言，请显式指定 source",

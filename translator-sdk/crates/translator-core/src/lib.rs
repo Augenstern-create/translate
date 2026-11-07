@@ -40,3 +40,4 @@ pub use rules::{NoRules, RuleOutcome, RulePreview, TextRules};
 pub use terms::{
     NoTermGuard, TargetTermGuard, TermContext, TermOutcome, TermPolicy, TermViolation,
 };
+pub use translator_analysis::{LanguageIdentifier, MorphologyAnalyzer};

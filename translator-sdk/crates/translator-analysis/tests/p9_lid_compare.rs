@@ -136,3 +136,9 @@ fn p9_2_fasttext与启发式同集对照() {
         })
     );
 }
+
+#[test]
+fn p94_04_模型缺失返回明确错误() {
+    let err = FastTextIdentifier::from_path("/nonexistent/lid.176.ftz").unwrap_err();
+    assert!(err.contains("读取"), "{err}");
+}

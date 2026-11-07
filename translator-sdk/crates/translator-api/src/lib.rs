@@ -39,6 +39,7 @@ pub use translator_core::rules::{NoRules, RuleOutcome, RulePreview, TextRules};
 pub use translator_core::terms::{
     NoTermGuard, TargetTermGuard, TermOutcome, TermPolicy, TermViolation,
 };
+pub use translator_core::{LanguageIdentifier, MorphologyAnalyzer};
 // 受保护跨度（P2.4 起出现在诊断里，因此必须公开）
 pub use translator_core::text::{ProtectedKind, ProtectedSpan};
 // 诊断（P2.4）：`translate_with_diagnostics` 的返回类型。
@@ -150,6 +151,18 @@ impl Translator {
                 TranslationErrorCode::InvalidRequest,
                 "文本为空",
             ));
+        }
+
+        // 注入的 LID 优先；未注入时保持 P1 的启发式行为（P94-01）。
+        if let Some(mut guesses) = self.coordinator.identify_language(&normalized, 5) {
+            if guesses.is_empty() {
+                return Err(TranslationError::new(
+                    TranslationErrorCode::UnsupportedLanguage,
+                    "无法从文本判断语言",
+                ));
+            }
+            guesses.truncate(5);
+            return Ok(guesses);
         }
 
         let primary = translator_core::text::guess_language(&normalized).ok_or_else(|| {
@@ -270,6 +283,11 @@ impl Translator {
     ///
     /// 数值来自各组件自报的**下界估计**，不是进程 RSS；
     /// 判断"是否够用"请看 `docs/04` §6.2 的实测数据，不要把这里的数字当保证。
+    /// 当前资源指纹（词典/规则/术语的 `id@version#digest`）；诊断与测试用。
+    pub fn resource_fingerprint(&self) -> &str {
+        self.coordinator.resource_fingerprint()
+    }
+
     pub fn memory_report(&self) -> MemoryReport {
         self.budget.report()
     }
@@ -301,8 +319,14 @@ pub struct TranslatorBuilder {
     #[cfg(feature = "dictionary")]
     dictionary_roots: Vec<std::path::PathBuf>,
     rules: Option<Arc<dyn TextRules>>,
+    /// 规则文件内容摘要（仅 `rules_file` 路径有）；P8 EP-02。
+    rules_digest: Option<String>,
     term_guard: Option<Arc<dyn TargetTermGuard>>,
+    /// 术语文件内容摘要（仅 `term_table_file` 路径有）；P8 EP-02。
+    term_digest: Option<String>,
     term_policy: TermPolicy,
+    language_identifier: Option<Arc<dyn LanguageIdentifier>>,
+    lemmatizer: Option<Arc<dyn MorphologyAnalyzer>>,
     /// 峰值内存上限（字节）。`None` 表示不限制但仍记账。
     memory_limit: Option<u64>,
     /// 已登记的资源租约，`build()` 时移交给 `Translator`。
@@ -330,8 +354,12 @@ impl TranslatorBuilder {
             #[cfg(feature = "dictionary")]
             dictionary_roots: Vec::new(),
             rules: None,
+            rules_digest: None,
             term_guard: None,
+            term_digest: None,
             term_policy: TermPolicy::default(),
+            language_identifier: None,
+            lemmatizer: None,
             memory_limit: None,
             #[cfg(feature = "resource")]
             leases: Vec::new(),
@@ -382,6 +410,19 @@ impl TranslatorBuilder {
         }
     }
 
+    /// 注入 LID 实现（可选）。默认不注入，保持零模型启发式；只有宿主显式提供
+    /// `FastTextIdentifier` 等实现时才启用正式模型。
+    pub fn language_identifier(mut self, identifier: Arc<dyn LanguageIdentifier>) -> Self {
+        self.language_identifier = Some(identifier);
+        self
+    }
+
+    /// 注入形态分析器（可选）：只在 `lookup` 原词未命中时尝试 lemma 候选。
+    pub fn lemmatizer(mut self, lemmatizer: Arc<dyn MorphologyAnalyzer>) -> Self {
+        self.lemmatizer = Some(lemmatizer);
+        self
+    }
+
     pub fn engine(mut self, engine: Arc<dyn TranslationEngine>) -> Self {
         if let Err(err) = self.registry.register_engine(engine) {
             self.errors.push(err);
@@ -428,8 +469,12 @@ impl TranslatorBuilder {
     /// 规则是为了纠正译文，静默失效比报错更危险。
     #[cfg(feature = "rules")]
     pub fn rules_file(mut self, path: impl AsRef<std::path::Path>) -> Self {
-        match translator_rules::RuleEngine::load(path) {
-            Ok(engine) => self.rules = Some(Arc::new(engine)),
+        let path_buf = path.as_ref().to_path_buf();
+        match translator_rules::RuleEngine::load(&path_buf) {
+            Ok(engine) => {
+                self.rules = Some(Arc::new(engine));
+                self.rules_digest = sha256_file(&path_buf);
+            }
             Err(e) => self.errors.push(TranslationError::new(
                 TranslationErrorCode::InvalidRequest,
                 format!("规则包加载失败：{e}"),
@@ -527,8 +572,12 @@ impl TranslatorBuilder {
     /// 会让用户以为约束生效了。
     #[cfg(feature = "rules")]
     pub fn term_table_file(mut self, path: impl AsRef<std::path::Path>) -> Self {
-        match translator_rules::terms::TargetTermTable::from_file(path) {
-            Ok(table) => self.term_guard = Some(Arc::new(table)),
+        let path_buf = path.as_ref().to_path_buf();
+        match translator_rules::terms::TargetTermTable::from_file(&path_buf) {
+            Ok(table) => {
+                self.term_guard = Some(Arc::new(table));
+                self.term_digest = sha256_file(&path_buf);
+            }
             Err(e) => self.errors.push(TranslationError::new(
                 TranslationErrorCode::InvalidRequest,
                 format!("术语表加载失败：{e}"),
@@ -640,15 +689,27 @@ impl TranslatorBuilder {
         }
 
         if let Some(rules) = &self.rules {
-            fingerprint.push(format!("{}@{}", rules.id(), rules.version()));
+            let mut item = format!("{}@{}", rules.id(), rules.version());
+            if let Some(digest) = &self.rules_digest {
+                item.push('#');
+                item.push_str(digest);
+            }
+            fingerprint.push(item);
         }
         if let Some(guard) = &self.term_guard {
             // 术语表变化必须让旧译文失效：同一句话在不同术语表下结果不同
-            fingerprint.push(format!("{}@{}", guard.id(), guard.version()));
+            let mut item = format!("{}@{}", guard.id(), guard.version());
+            if let Some(digest) = &self.term_digest {
+                item.push('#');
+                item.push_str(digest);
+            }
+            fingerprint.push(item);
         }
         self.config.rules = self.rules.take();
         self.config.term_guard = self.term_guard.take();
         self.config.term_policy = self.term_policy;
+        self.config.language_identifier = self.language_identifier.take();
+        self.config.lemmatizer = self.lemmatizer.take();
 
         let mut coordinator = Coordinator::new(Arc::new(self.registry), self.config);
         coordinator.bind_resource_fingerprint(fingerprint.join(";"));
@@ -664,6 +725,22 @@ impl TranslatorBuilder {
             ort_engines: self.ort_engines,
         })
     }
+}
+
+fn sha256_file(path: &std::path::Path) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = file.read(&mut buf).ok()?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Some(format!("{:x}", hasher.finalize()))
 }
 
 /// 常用类型的预导入。

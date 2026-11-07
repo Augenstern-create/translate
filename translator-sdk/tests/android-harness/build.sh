@@ -53,6 +53,9 @@ echo "== adb push"
 if [ -d /tmp/dictpkg ]; then
   "$adb" push /tmp/dictpkg "$devdir/dictpkg" >/dev/null
 fi
+if [ -d /tmp/p9-jmdict ]; then
+  "$adb" push /tmp/p9-jmdict "$devdir/p9dict" >/dev/null
+fi
 if [ -d /tmp/p7repo ]; then
   "$adb" shell "rm -rf $devdir/repo && mkdir -p $devdir/repo" >/dev/null
   "$adb" push /tmp/p7repo/. "$devdir/repo/" >/dev/null
@@ -69,4 +72,4 @@ fi
 
 echo "== run"
 "$adb" shell "cd $devdir && app_process -Djava.class.path=$devdir/classes.dex \
-  -Djava.library.path=$devdir /system/bin ai.ridge.translator.Harness $devdir/dictpkg"
+  -Djava.library.path=$devdir /system/bin ai.ridge.translator.Harness $devdir/dictpkg $devdir/p9dict"

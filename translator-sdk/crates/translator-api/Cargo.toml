@@ -28,6 +28,7 @@ nmt-ort = ["dep:translator-nmt-ort"]
 nmt-ort-runtime = ["nmt-ort", "translator-nmt-ort/ort-runtime"]
 
 [dependencies]
+sha2.workspace = true
 translator-types.workspace = true
 translator-plugin-api.workspace = true
 translator-core.workspace = true
@@ -38,6 +39,7 @@ translator-nmt-bergamot = { workspace = true, optional = true }
 translator-nmt-ort = { workspace = true, optional = true }
 
 [dev-dependencies]
+translator-analysis.workspace = true
 translator-nmt-bergamot.workspace = true
 translator-nmt-ort.workspace = true
 # 测试通过 `--all-features` 启用 mocks，解析出的特性对本 crate 同样生效

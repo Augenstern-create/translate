@@ -17,6 +17,7 @@ public final class Harness {
 
     public static void main(String[] args) throws Exception {
         String dictDir = args.length > 0 ? args[0] : "/data/local/tmp/dictpkg";
+        String p9Dict = args.length > 1 ? args[1] : "/data/local/tmp/p9/dictpkg";
 
         System.out.println("protocol_version=" + NativeBridge.nativeProtocolVersion());
 
@@ -341,6 +342,29 @@ public final class Harness {
         NativeBridge.nativeClose(mb);
         NativeBridge.nativeClose(mc);
 
+
+        // ---------- P94-09：Android JNI 词典 v3 + detect + 双实例 ----------
+        String configP9 = "{"
+                + "\"protocol_version\":1,"
+                + "\"data_dir\":\"/data/local/tmp/p9\","
+                + "\"dict_package\":\"" + p9Dict + "\"}";
+        String hp = extract(NativeBridge.nativeCreate(configP9), "\"handle\":\"", "\"");
+        String hp2 = extract(NativeBridge.nativeCreate(configP9), "\"handle\":\"", "\"");
+        String hashi = NativeBridge.nativeCall(hp, "lookup", "{\"term\":\"はし\",\"limit\":20}");
+        check("P94-09a", hashi.contains("\"ok\":true") && hashi.contains("橋")
+                        && hashi.contains("箸") && hashi.contains("端"),
+                "JNI v3 词典返回同音多义: " + trim(hashi));
+        String hashi2 = NativeBridge.nativeCall(hp2, "lookup", "{\"term\":\"橋\",\"limit\":5}");
+        check("P94-09b", hashi2.contains("bridge"),
+                "第二个实例独立查询: " + trim(hashi2));
+        String enDetect = NativeBridge.nativeCall(hp, "detect", "{\"text\":\"Hello world\"}");
+        check("P94-09c", enDetect.contains("\"ok\":true") && enDetect.contains("en"),
+                "Android detect 可用: " + trim(enDetect));
+        NativeBridge.nativeClose(hp);
+        String hp2After = NativeBridge.nativeCall(hp2, "lookup", "{\"term\":\"箸\",\"limit\":5}");
+        check("P94-09d", hp2After.contains("chopsticks"),
+                "关闭 A 不影响 B: " + trim(hp2After));
+        NativeBridge.nativeClose(hp2);
 
         // ---------- 收尾 ----------
         System.out.println("SUMMARY pass=" + pass + " fail=" + fail);
