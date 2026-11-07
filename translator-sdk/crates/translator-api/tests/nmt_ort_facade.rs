@@ -11,6 +11,8 @@
 
 #![cfg(feature = "nmt-ort")]
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use translator_api::{nmt_ort::OrtNmtConfig, Translator, TranslatorBuilder};
 use translator_types::{
     LanguageTag, LookupRequest, TranslateRequest, TranslationErrorCode, TranslationResult,
@@ -30,7 +32,13 @@ fn zh() -> LanguageTag {
 }
 
 fn config() -> OrtNmtConfig {
-    OrtNmtConfig::new(model_dir(), en(), zh()).with_threads(1)
+    // P8.2 默认共享相同 ORT 配置的引擎；测试并行时，显式给每个测试不同
+    // max_new_tokens，避免一个测试的 unload 影响另一个测试（共享故障域）。
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, Ordering::SeqCst);
+    OrtNmtConfig::new(model_dir(), en(), zh())
+        .with_threads(1)
+        .with_max_new_tokens(192 + n)
 }
 
 fn req(text: &str) -> TranslateRequest {
@@ -139,9 +147,10 @@ fn 查词与翻译互不影响() {
 #[test]
 #[ignore = "需要真实 ORT 模型资产（P4_ORT_MODEL_DIR）"]
 fn 重复挂载同一引擎明确拒绝() {
+    let c = config();
     let err = TranslatorBuilder::new()
-        .nmt_ort(config())
-        .nmt_ort(config())
+        .nmt_ort(c.clone())
+        .nmt_ort(c)
         .build()
         .expect_err("重复挂载同一 engine_id 必须失败");
     assert_eq!(err.code, TranslationErrorCode::InvalidRequest);
