@@ -184,7 +184,7 @@ fn 引擎命中时返回词典译文() {
     let result = pollster::block_on(engine.translate(&req)).unwrap();
 
     assert_eq!(result.text, "hello");
-    assert_eq!(result.engine_id, "dictionary.package");
+    assert_eq!(result.engine_id, "dictionary.package:dictionary.test.zh-en");
     assert_eq!(
         result.model_id.as_deref(),
         Some("dictionary.test.zh-en"),

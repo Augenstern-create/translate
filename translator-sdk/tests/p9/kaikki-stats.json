@@ -1,0 +1,11 @@
+{
+  "source": "kaikki-zh-wiktionary",
+  "total_rows": 12094,
+  "accepted_rows": 950,
+  "skipped_language": 10644,
+  "skipped_missing_headword": 0,
+  "skipped_invalid_schema": 1,
+  "skipped_no_chinese_gloss": 153,
+  "merged_duplicates": 346,
+  "output_entries": 950
+}

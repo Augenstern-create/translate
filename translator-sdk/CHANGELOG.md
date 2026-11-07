@@ -19,6 +19,15 @@ tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `
 - 冻结 J-07/J-10/J-14/J-15 的注入方法与期望错误码（含 J-15c `.so` 重载标 PENDING：ART 类加载器限制）。
 - 两处待批资源（360.9 MB ORT 旧缓存、3.1 GB arm64 镜像 + AVD）**未删未移未改**。
 
+## P9.1 — 多语言词库小样本（报告 `docs/52`）
+
+- 在 64 MiB 预算内下载 Kaikki 16 MiB 前缀、JMdict 10.6 MiB、fastText 938 KB（合计 28,309,402 B）。
+- 新增 `tools/p9/import_kaikki.py` / `import_jmdict.py`；`pack-dictionary` 增加 `--format jsonl` 与 `--license-file`，
+  修复“同读音不同词头被合并”的 bug；词典插件 id 改为包级唯一（多包注册）。
+- 生成 Kaikki en→zh 950 条、JMdict ja→en 999 条包；DI-04/05/06/07/08 通过，DI-01 因目标词覆盖不足为 PARTIAL；
+  `p33-bench dictionary` 支持 `--term/--lang`。
+- 资源仍内部研发、`redistribution=pending-review`；全量导入需再次审批。
+
 ## P9.0 — 语言资源准入（报告 `docs/51`，计划 `docs/50`）
 
 - 只读复核现有 CC-CEDICT 与源码；确认 Kaikki/JMdict/fastText/Lindera 均未取得/未接入。

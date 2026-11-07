@@ -50,7 +50,11 @@ fn main() {
 
     let report = match cmd.as_str() {
         "empty" => cmd_empty(),
-        "dictionary" => cmd_dictionary(flag("--dir").unwrap_or_else(|| "resources/zh-en".into())),
+        "dictionary" => cmd_dictionary(
+            flag("--dir").unwrap_or_else(|| "resources/zh-en".into()),
+            flag("--term").unwrap_or_else(|| "计算机".into()),
+            flag("--lang").unwrap_or_else(|| "zh-Hans".into()),
+        ),
         "worker" => cmd_worker(
             flag("--bin").unwrap_or_else(|| "target/debug/nmt-worker".into()),
             flag("--n").and_then(|v| v.parse().ok()).unwrap_or(200),
@@ -97,7 +101,7 @@ p33-bench —— P3.3 性能与质量验收工具（Linux）
 
 子命令（每个都输出 JSON，可用 --out <文件> 另存）：
   empty                         空 SDK（只有 Mock）：初始化耗时 + 自身 RSS/PSS
-  dictionary [--dir <包>]       挂真实词典包：初始化 + 查询 p50/p95
+  dictionary [--dir <包>] [--term <词>] [--lang <tag>]  挂真实词典包：初始化 + 查询 p50/p95
   worker [--bin <nmt-worker>]   只用 worker（--mock）：IPC 往返 p50/p95
   load                          真实模型：快照/加载/首句，native RSS/PSS/VmHWM
   nmt [--n <n>]                 真实模型：20/100/500 字热翻译（缓存关闭）+ 缓存命中延迟
@@ -159,7 +163,7 @@ fn cmd_empty() -> serde_json::Value {
 
 // ------------------------------------------------------------- dictionary
 
-fn cmd_dictionary(dir: String) -> serde_json::Value {
+fn cmd_dictionary(dir: String, term: String, lang: String) -> serde_json::Value {
     let started = Instant::now();
     let translator = Translator::builder()
         .dictionary_package(&dir)
@@ -170,7 +174,8 @@ fn cmd_dictionary(dir: String) -> serde_json::Value {
     // 口径 1：SDK 门面（路由 + 规范化 + 语言校验 + 缓存查找）
     let mut facade = Sample::new();
     for _ in 0..200 {
-        let req = LookupRequest::new("计算机").with_language(LanguageTag::new("zh-Hans").unwrap());
+        let req = LookupRequest::new(term.as_str())
+            .with_language(LanguageTag::new(lang.as_str()).unwrap());
         let t = Instant::now();
         let hits = pollster::block_on(translator.lookup(&req)).expect("查询失败");
         facade.push(t.elapsed().as_micros() as f64 / 1000.0);
@@ -183,7 +188,7 @@ fn cmd_dictionary(dir: String) -> serde_json::Value {
     let mut raw = Sample::new();
     for _ in 0..200 {
         let t = Instant::now();
-        let hit = package.lookup_exact("计算机").expect("直接查询失败");
+        let hit = package.lookup_exact(term.as_str()).expect("直接查询失败");
         raw.push(t.elapsed().as_micros() as f64 / 1000.0);
         assert!(hit.is_some(), "直接查询应当命中");
     }

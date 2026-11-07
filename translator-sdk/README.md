@@ -34,6 +34,7 @@
 - `32_P5开发建议与实施计划（工作区与权限边界）.md` — 外部审查/计划稿归档：唯一可写工作区 `E:\augenstern\translate`、逐项审批、固定 Anaconda Python
 - `47_P8-P11_遗留能力源码核验与开发验收计划.md` — P8～P11 计划归档（权限边界、工作包、M/SM/EP/DI/LID/AND/NC/RM/R 矩阵、里程碑）
 - `50_P9_多语言词典语言识别与词形分析开发建议.md` — P9.0～P9.5 计划归档（资源准入、DI/LID/MOR 矩阵、权限边界）
+- `52_P9.1_多语言词库导入报告.md` — P9.1 小样本：Kaikki en→zh 950 条、JMdict ja→en 999 条；DI-01～08 结果与 28.3 MB 下载审计
 - `51_P9.0_语言资源准入报告.md` — 只读准入：6 项资源锁文件、许可待审、无下载；P9.1 需批准
 - `49_P8_多实例共享资源与缓存一致性实施报告.md` — P8.1 JNI 多实例（ADR-063 Accepted）、P8.2 引擎共享池、P8.3 执行身份/缓存；Linux/Windows/Android 结果
 - `48_P8-AUDIT_源码核验报告.md` — 只读审计：P8.1 多实例 Confirmed missing、P8.2/P8.3 Partial、P9–P11 多数缺失；`audit/evidence-matrix.md`
@@ -667,8 +668,9 @@ NMT_BASELINE_OUT=fixtures/nmt/baseline-p3.1b-linux-x86_64-1thread.json \
 （相同五文件/配置复用同一 worker）；`cache_identity` 进 Coordinator 缓存键、词典内容摘要进资源指纹、远程/本地缓存域隔离。
 Linux 401 tests（all-features 404）、Windows 354 tests（all-features 357）、Android M-01～M-06 全过。P8 不关闭 G12/G11。
 
-**P9.0 已完成（`docs/51`）**：只读资源准入与锁文件校验（`fixtures/p9/resource-lock.json`，6 项）；
-Kaikki/JMdict/fastText/Lindera 均未下载，许可/下载待批准。P9.1 不在批准前导入真实数据。
+**P9.1 小样本已完成（`docs/52`）**：下载 28,309,402 B（Kaikki 16 MiB 前缀、JMdict 10.6 MiB、fastText 938 KB）；
+生成 Kaikki en→zh 950 条、JMdict ja→en 999 条；DI-04/05/06/07/08 通过，DI-01 因目标词覆盖不足为 PARTIAL。
+资源仍仅内部研发、`redistribution=pending-review`；全量导入未批准。
 
 
 发行阻断台账：`G06`（取消在途请求）与 `G08`（外部 `kill -9` 恢复测试）已闭合；

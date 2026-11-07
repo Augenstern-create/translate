@@ -24,3 +24,6 @@ translator-sdk/models/
 translator-sdk/dist/
 translator-sdk/tests/android-harness/out/classes/
 translator-sdk/tests/android-harness/out/dex/
+
+# P9+ 构建/下载缓存（不随仓库分发）
+translator-sdk/.build/

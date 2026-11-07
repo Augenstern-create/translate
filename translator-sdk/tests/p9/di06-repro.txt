@@ -1,0 +1,17 @@
+$ pack twice and sha256
+fac2dc979379492476e23f75baad68754dae0f7a52730164cd3ef3ff0f2841ad  .build/p9-data/packages/kaikki-en-zh/index.fst
+fac2dc979379492476e23f75baad68754dae0f7a52730164cd3ef3ff0f2841ad  .build/p9-data/packages/kaikki-repro/index.fst
+3c4b5cd59ed4292895daa4b95772f505f442976d474b768032ce7ba226a178c5  .build/p9-data/packages/jmdict-ja-en/index.fst
+3c4b5cd59ed4292895daa4b95772f505f442976d474b768032ce7ba226a178c5  .build/p9-data/packages/jmdict-repro/index.fst
+727ab15aff75d415cd68c75bc6352d064e1e451dc054537e7203a12428ec9fb9  .build/p9-data/packages/kaikki-en-zh/entries.sqlite
+727ab15aff75d415cd68c75bc6352d064e1e451dc054537e7203a12428ec9fb9  .build/p9-data/packages/kaikki-repro/entries.sqlite
+934927047dded24d869bab13302c2d2715875224b3fd37a45a5587d19f4f16b0  .build/p9-data/packages/jmdict-ja-en/entries.sqlite
+934927047dded24d869bab13302c2d2715875224b3fd37a45a5587d19f4f16b0  .build/p9-data/packages/jmdict-repro/entries.sqlite
+0546b02448ce4430c72a2da131c821ba1b53d59830f6fa9c390be2e1c1f4f26c  .build/p9-data/packages/kaikki-en-zh/manifest.json
+0546b02448ce4430c72a2da131c821ba1b53d59830f6fa9c390be2e1c1f4f26c  .build/p9-data/packages/kaikki-repro/manifest.json
+a886e73e77c199b069617f891cb77de9a06734e606ad1871dc5d6740aa1187c3  .build/p9-data/packages/jmdict-ja-en/manifest.json
+a886e73e77c199b069617f891cb77de9a06734e606ad1871dc5d6740aa1187c3  .build/p9-data/packages/jmdict-repro/manifest.json
+a8bd7a667bd6a1181393efb60afa1d9e79f155495ff23a5e18ea659d558a6598  .build/p9-data/packages/kaikki-en-zh/LICENSE.txt
+a8bd7a667bd6a1181393efb60afa1d9e79f155495ff23a5e18ea659d558a6598  .build/p9-data/packages/kaikki-repro/LICENSE.txt
+1f770e6016a66538dccc6588bc01aec282227bf7aaaa91f41944e5c54c25105f  .build/p9-data/packages/jmdict-ja-en/LICENSE.txt
+1f770e6016a66538dccc6588bc01aec282227bf7aaaa91f41944e5c54c25105f  .build/p9-data/packages/jmdict-repro/LICENSE.txt

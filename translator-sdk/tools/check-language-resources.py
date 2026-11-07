@@ -25,6 +25,7 @@ LICENSE_STATUSES = {
     "reviewed-allowed",
     "reviewed-denied",
     "not-required",
+    "internal-only-reviewed",
 }
 REDISTRIBUTION = {"pending-review", "allowed", "allowed-with-attribution", "prohibited"}
 REQUIRED = {

@@ -258,6 +258,65 @@ fn insert_record_v2(tx: &rusqlite::Transaction<'_>, row: RecordRow<'_>) -> Resul
     Ok(id)
 }
 
+/// 通用 JSONL 输入：每行一个对象，字段 `headword` / `definitions` 必填，
+/// 可选 `traditional` / `pinyin` / `pos`。供 Kaikki/JMdict 转换器使用。
+#[derive(serde::Deserialize)]
+struct JsonEntry {
+    headword: String,
+    #[serde(default)]
+    traditional: Option<String>,
+    #[serde(default)]
+    pinyin: Option<String>,
+    #[serde(default)]
+    pos: Option<String>,
+    definitions: Vec<String>,
+}
+
+pub fn parse_jsonl<R: std::io::BufRead>(
+    reader: R,
+    limit: Option<usize>,
+) -> Result<Vec<RawEntry>, PackError> {
+    let mut entries = Vec::new();
+    for (lineno, line) in reader.lines().enumerate() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let raw: JsonEntry = serde_json::from_str(&line).map_err(|e| {
+            PackError::InvalidPackage(format!("JSONL 第 {} 行不是合法对象：{e}", lineno + 1))
+        })?;
+        if raw.headword.trim().is_empty() {
+            return Err(PackError::InvalidPackage(format!(
+                "JSONL 第 {} 行 headword 为空",
+                lineno + 1
+            )));
+        }
+        if raw.definitions.iter().all(|d| d.trim().is_empty()) {
+            return Err(PackError::InvalidPackage(format!(
+                "JSONL 第 {} 行 definitions 为空",
+                lineno + 1
+            )));
+        }
+        entries.push(RawEntry {
+            headword: raw.headword,
+            traditional: raw.traditional.filter(|s| !s.trim().is_empty()),
+            pinyin: raw.pinyin.filter(|s| !s.trim().is_empty()),
+            pos: raw.pos.filter(|s| !s.trim().is_empty()),
+            definitions: raw
+                .definitions
+                .into_iter()
+                .filter(|d| !d.trim().is_empty())
+                .collect(),
+        });
+        if let Some(limit) = limit {
+            if entries.len() >= limit {
+                break;
+            }
+        }
+    }
+    Ok(entries)
+}
+
 /// 编译词条为词典包。
 pub fn pack(
     entries: Vec<RawEntry>,
@@ -278,12 +337,10 @@ pub fn pack(
         if let Some(&id) = keys.get(&entry.headword) {
             target_idx = Some(id);
         }
-        // 繁体键（若有）
-        if let Some(trad) = &entry.traditional {
-            if let Some(&id) = keys.get(trad) {
-                target_idx.get_or_insert(id);
-            }
-        }
+        // 注意：**不能**用 traditional/读音键反查已有记录来合并。
+        // 日语同音词（はし → 橋/箸/端）各有独立词条；按读音合并会把不同词义的
+        // definitions 混进同一条记录。traditional 只作为附加索引键，冲突时保留先到的
+        // 记录（单值 FST 无法表达一对多；完整同音多义需要后续 schema 扩展）。
 
         match target_idx {
             Some(id) => {
@@ -301,7 +358,7 @@ pub fn pack(
                 let id = records.len() as u64 + 1;
                 keys.insert(entry.headword.clone(), id);
                 if let Some(trad) = &entry.traditional {
-                    keys.insert(trad.clone(), id);
+                    keys.entry(trad.clone()).or_insert(id);
                 }
                 let definitions = entry.definitions.clone();
                 records.push((entry, definitions));
@@ -554,6 +611,53 @@ mod tests {
         // 繁体也能查到同一条目
         let trad = pkg.lookup_exact("貓").unwrap().unwrap();
         assert_eq!(trad.headword, "猫");
+    }
+
+    #[test]
+    fn jsonl_输入可被解析与打包() {
+        let jsonl =
+            "{\"headword\":\"bank\",\"pos\":\"noun\",\"definitions\":[\"銀行\",\"河岸\"]}\n";
+        let entries = parse_jsonl(std::io::Cursor::new(jsonl), None).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].definitions.len(), 2);
+
+        let dir = tempfile::tempdir().unwrap();
+        let mut o = opts();
+        o.id = "dictionary.test.en-zh".into();
+        o.language = "en".into();
+        o.target_languages = vec!["zh".into()];
+        let stats = pack(entries, dir.path(), &o).unwrap();
+        assert_eq!(stats.records, 1);
+        let pkg = translator_dictionary::DictionaryPackage::open(dir.path(), true).unwrap();
+        assert_eq!(pkg.lookup_exact("bank").unwrap().unwrap().senses.len(), 2);
+    }
+
+    #[test]
+    fn 同读音不同词头不得合并词义() {
+        let jsonl = concat!(
+            "{\"headword\":\"橋\",\"traditional\":\"はし\",\"definitions\":[\"bridge\"]}\n",
+            "{\"headword\":\"箸\",\"traditional\":\"はし\",\"definitions\":[\"chopsticks\"]}\n",
+        );
+        let entries = parse_jsonl(std::io::Cursor::new(jsonl), None).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let mut o = opts();
+        o.id = "dictionary.test.ja-en".into();
+        o.language = "ja".into();
+        o.target_languages = vec!["en".into()];
+        let stats = pack(entries, dir.path(), &o).unwrap();
+        assert_eq!(stats.records, 2);
+        let pkg = translator_dictionary::DictionaryPackage::open(dir.path(), true).unwrap();
+        assert_eq!(
+            pkg.lookup_exact("橋").unwrap().unwrap().senses[0].definition,
+            "bridge"
+        );
+        assert_eq!(
+            pkg.lookup_exact("箸").unwrap().unwrap().senses[0].definition,
+            "chopsticks"
+        );
+        // 单值读音索引只能指向其中一条，但绝不能把两条词义混在一起
+        let hashi = pkg.lookup_exact("はし").unwrap().unwrap();
+        assert!(hashi.senses.len() == 1, "同音词不得被合并：{hashi:?}");
     }
 
     #[test]

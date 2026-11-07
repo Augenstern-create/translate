@@ -1,0 +1,16 @@
+   Compiling pack-dictionary v0.1.0 (/home/nan/deepseek-harness/translate-workspace/translator-sdk/tools/pack-dictionary)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.40s
+     Running unittests src/lib.rs (target/debug/deps/pack_dictionary-3406ada12dc8193d)
+
+running 8 tests
+test tests::limit参数生效 ... ok
+test tests::头部注释被保留为许可证 ... ok
+test tests::畸形行应被跳过而不是中断 ... ok
+test tests::能解析标准行 ... ok
+test tests::校验和不匹配应被检出 ... ok
+test tests::同读音不同词头不得合并词义 ... ok
+test tests::打包后可被重新打开并查询 ... ok
+test tests::jsonl_输入可被解析与打包 ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

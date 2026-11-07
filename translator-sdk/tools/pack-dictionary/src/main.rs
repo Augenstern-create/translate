@@ -10,16 +10,17 @@
 
 use std::process::ExitCode;
 
-use pack_dictionary::{pack, parse_cedict, PackOptions};
+use pack_dictionary::{pack, parse_cedict, parse_jsonl, PackOptions};
 use translator_dictionary::{PayloadKind, Provenance};
 
 const USAGE: &str = "\
-pack-dictionary —— 把 CC-CEDICT 词表编译为词典包
+pack-dictionary —— 把 CC-CEDICT 或规范化 JSONL 词表编译为词典包
 
 用法:
   pack-dictionary <输入词表> <输出目录> [选项]
 
 选项:
+  --format <F>          输入格式：cedict | jsonl（默认 cedict）
   --id <ID>             包 id（默认 dictionary.cc-cedict.zh-en）
   --version <VER>       包版本（默认 0.1.0）
   --language <LANG>     词条语言（默认 zh-Hans）
@@ -28,6 +29,7 @@ pack-dictionary —— 把 CC-CEDICT 词表编译为词典包
   --name <NAME>         来源名称（默认 CC-CEDICT）
   --url <URL>           来源地址
   --license <SPDX>      许可证（默认 CC-BY-SA-4.0）
+  --license-file <PATH> LICENSE.txt 的原文（JSONL 输入建议显式提供）
   --revision <REV>      数据 revision（默认取源文件 #! version=，否则用当天日期）
   --payload-schema <S>  释义库格式：dictionary.sqlite.v1 | dictionary.sqlite.v2（默认 v2）
   -h, --help            显示本帮助
@@ -55,6 +57,8 @@ fn main() -> ExitCode {
     let mut license_spdx = "CC-BY-SA-4.0".to_string();
     let mut revision: Option<String> = None;
     let mut payload = PayloadKind::V2;
+    let mut format = "cedict".to_string();
+    let mut license_file: Option<String> = None;
 
     let mut i = 0;
     while i < args.len() {
@@ -76,6 +80,18 @@ fn main() -> ExitCode {
                 if let Some(t) = args.get(i) {
                     targets.push(t.clone());
                 }
+            }
+            "--format" => {
+                i += 1;
+                format = args.get(i).cloned().unwrap_or_default();
+                if format != "cedict" && format != "jsonl" {
+                    eprintln!("--format 只能是 cedict | jsonl：{format}");
+                    return ExitCode::from(2);
+                }
+            }
+            "--license-file" => {
+                i += 1;
+                license_file = args.get(i).cloned();
             }
             "--payload-schema" => {
                 i += 1;
@@ -142,28 +158,56 @@ fn main() -> ExitCode {
         }
     };
 
-    println!("解析 {input_path} ...");
-    let parsed = match parse_cedict(std::io::BufReader::new(file), limit) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("解析失败：{e}");
-            return ExitCode::FAILURE;
+    println!("解析 {input_path}（format={format}）...");
+    let (entries, header, skipped, source_version) = if format == "jsonl" {
+        let entries = match parse_jsonl(std::io::BufReader::new(file), limit) {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("解析失败：{e}");
+                return ExitCode::FAILURE;
+            }
+        };
+        (entries, String::new(), 0, None)
+    } else {
+        let parsed = match parse_cedict(std::io::BufReader::new(file), limit) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("解析失败：{e}");
+                return ExitCode::FAILURE;
+            }
+        };
+        (
+            parsed.entries,
+            parsed.header,
+            parsed.skipped_lines,
+            parsed.source_version,
+        )
+    };
+
+    println!("  词条 {} 条，跳过畸形行 {} 条", entries.len(), skipped);
+    let license_text = match license_file {
+        Some(path) => match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(e) => {
+                eprintln!("无法读取 --license-file {path}：{e}");
+                return ExitCode::FAILURE;
+            }
+        },
+        None => {
+            if header.is_empty() {
+                eprintln!(
+                    "警告：没有 --license-file，且输入没有头部注释块；LICENSE.txt 只是占位说明"
+                );
+                format!("# 许可证见 {}\n", positional[0])
+            } else {
+                header.clone()
+            }
         }
     };
 
-    println!(
-        "  词条 {} 条，跳过畸形行 {} 条",
-        parsed.entries.len(),
-        parsed.skipped_lines
-    );
-    if parsed.header.is_empty() {
-        eprintln!("警告：源文件没有头部注释块，LICENSE.txt 将不完整");
-    }
-
     // 注意：CC-CEDICT 的 `#! version=1` 是**文件格式版本**，不是数据版本。
-    // 把它当 revision 会误导读者，因此默认用抓取日期作为 revision，
-    // 同时把格式版本单独打印出来。
-    if let Some(v) = &parsed.source_version {
+    // 把它当 revision 会误导读者，因此默认用抓取日期作为 revision。
+    if let Some(v) = &source_version {
         println!("  源文件格式版本：{v}");
     }
     let revision = revision.unwrap_or_else(|| format!("snapshot-{}", today()));
@@ -182,15 +226,11 @@ fn main() -> ExitCode {
             license_file: "LICENSE.txt".to_string(),
             retrieved_at: today(),
         },
-        license_text: if parsed.header.is_empty() {
-            format!("# 许可证见 {}\n", positional[0])
-        } else {
-            parsed.header.clone()
-        },
+        license_text,
     };
 
     println!("打包到 {out_dir} ...");
-    match pack(parsed.entries, out_dir, &opts) {
+    match pack(entries, out_dir, &opts) {
         Ok(stats) => {
             println!("  payload {} ", payload.as_str());
             println!("  记录 {} 条 / 索引键 {} 个", stats.records, stats.keys);

@@ -1,0 +1,32 @@
+{
+  "manifest_schema_version": 2,
+  "payload_schema_version": "dictionary.sqlite.v2",
+  "id": "dictionary.kaikki.zh-wiktionary.en-zh",
+  "version": "0.1.0-p9sample",
+  "kind": "dictionary",
+  "language": "en",
+  "target_languages": [
+    "zh"
+  ],
+  "entry_count": 950,
+  "provenance": {
+    "name": "Kaikki-zh-wiktionary",
+    "source_url": "https://kaikki.org/dictionary/downloads/zh/zh-extract.jsonl",
+    "revision": "zh-extract@2026-10-30#range=0-16777215",
+    "license_spdx": "CC-BY-SA-4.0",
+    "license_file": "LICENSE.txt",
+    "retrieved_at": "2026-11-07"
+  },
+  "files": [
+    {
+      "path": "index.fst",
+      "sha256": "fac2dc979379492476e23f75baad68754dae0f7a52730164cd3ef3ff0f2841ad",
+      "bytes": 7740
+    },
+    {
+      "path": "entries.sqlite",
+      "sha256": "727ab15aff75d415cd68c75bc6352d064e1e451dc054537e7203a12428ec9fb9",
+      "bytes": 143360
+    }
+  ]
+}

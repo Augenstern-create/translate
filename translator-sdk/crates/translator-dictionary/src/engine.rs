@@ -13,9 +13,6 @@ use translator_types::{
 
 use crate::{DictionaryError, DictionaryPackage};
 
-const ENGINE_ID: &str = "dictionary.package";
-const PROVIDER_ID: &str = "dictionary.package.provider";
-
 /// 基于词典包的翻译引擎：只做**精确词条**直译。
 ///
 /// 未命中时返回 `CapabilityUnavailable`，由 Coordinator 在 `AutoLocalFirst`
@@ -23,18 +20,33 @@ const PROVIDER_ID: &str = "dictionary.package.provider";
 pub struct DictionaryEngine {
     package: Arc<DictionaryPackage>,
     priority: i32,
+    /// 包级唯一 id：多词典包共存时不能都叫 `dictionary.package`。
+    id: &'static str,
+}
+
+fn engine_id_of(package: &DictionaryPackage) -> &'static str {
+    // 包 id 来自 manifest；这里只需在进程内唯一。字符串很小，按包泄漏一次，
+    // 换取 `EngineDescriptor.id: &'static str` 的公共契约不变。
+    Box::leak(format!("dictionary.package:{}", package.manifest().id).into_boxed_str())
 }
 
 impl DictionaryEngine {
     pub fn new(package: Arc<DictionaryPackage>) -> Self {
+        let id = engine_id_of(&package);
         Self {
             package,
             priority: 100,
+            id,
         }
     }
 
     pub fn with_priority(package: Arc<DictionaryPackage>, priority: i32) -> Self {
-        Self { package, priority }
+        let id = engine_id_of(&package);
+        Self {
+            package,
+            priority,
+            id,
+        }
     }
 
     pub fn package(&self) -> &DictionaryPackage {
@@ -45,7 +57,7 @@ impl DictionaryEngine {
 impl TranslationEngine for DictionaryEngine {
     fn descriptor(&self) -> EngineDescriptor {
         EngineDescriptor {
-            id: ENGINE_ID,
+            id: self.id,
             capabilities: &[Capability::Dictionary],
             priority: self.priority,
             plugin_api: PluginApiVersion::CURRENT,
@@ -106,7 +118,7 @@ impl TranslationEngine for DictionaryEngine {
                 text,
                 source,
                 target: req.target.clone(),
-                engine_id: ENGINE_ID.to_string(),
+                engine_id: self.id.to_string(),
                 model_id: Some(self.package.manifest().id.clone()),
                 elapsed_ms: started.elapsed().as_millis() as u64,
                 warnings: Vec::new(),
@@ -118,11 +130,15 @@ impl TranslationEngine for DictionaryEngine {
 /// 基于词典包的查词提供者。
 pub struct DictionaryProviderImpl {
     package: Arc<DictionaryPackage>,
+    id: &'static str,
 }
 
 impl DictionaryProviderImpl {
     pub fn new(package: Arc<DictionaryPackage>) -> Self {
-        Self { package }
+        let id = Box::leak(
+            format!("dictionary.package.provider:{}", package.manifest().id).into_boxed_str(),
+        );
+        Self { package, id }
     }
 
     pub fn package(&self) -> &DictionaryPackage {
@@ -133,7 +149,7 @@ impl DictionaryProviderImpl {
 impl DictionaryProvider for DictionaryProviderImpl {
     fn descriptor(&self) -> ProviderDescriptor {
         ProviderDescriptor {
-            id: PROVIDER_ID,
+            id: self.id,
             plugin_api: PluginApiVersion::CURRENT,
             license: "Apache-2.0 OR MIT",
         }

@@ -6,13 +6,20 @@
     "download_requires_approval": true,
     "redistribution_requires_review": true,
     "hashes_must_come_from_local_files": true,
-    "placeholder_values": ["REQUIRED", "TBD", "pending-review"]
+    "placeholder_values": [
+      "REQUIRED",
+      "TBD",
+      "pending-review"
+    ]
   },
   "resources": [
     {
       "id": "dictionary.cc-cedict.zh-en",
       "kind": "dictionary",
-      "language_pair": { "source": "zh-Hans", "target": "en" },
+      "language_pair": {
+        "source": "zh-Hans",
+        "target": "en"
+      },
       "format": "cedict-tsv",
       "official_url": "https://cc-cedict.org/wiki/start",
       "source_revision": "snapshot-2026-11-05",
@@ -28,34 +35,60 @@
     {
       "id": "dictionary.kaikki.en-zh",
       "kind": "dictionary",
-      "language_pair": { "source": "en", "target": "zh-Hans" },
+      "language_pair": {
+        "source": "en",
+        "target": "zh-Hans"
+      },
       "format": "jsonl",
       "official_url": "https://kaikki.org/dictionary/",
-      "source_revision": null,
-      "source_sha256": null,
-      "size_bytes": null,
-      "license_spdx": "pending-review",
-      "license_status": "pending-review",
+      "source_revision": "zh-extract@2026-10-30T20:49:11Z#bytes=16777216",
+      "source_sha256": "a035b14c331c316fb8b4c70b97be3d48bb3f9811d136fb13c9ca939ccd2ce696",
+      "size_bytes": 16777216,
+      "license_spdx": "CC-BY-SA-4.0",
+      "license_status": "internal-only-reviewed",
       "redistribution_status": "pending-review",
       "converter_version": "p9-v1",
-      "status": "not-acquired",
-      "notes": "需确认所选语言/来源的 Wiktionary 授权、署名与 ShareAlike 义务；不得用 CC-CEDICT 英文释义倒排冒充。"
+      "status": "sample-acquired",
+      "notes": "中文 Wiktionary 提取的前 16 MiB（HTTP Range 0-16777215，Last-Modified 2026-10-30）；仅内部评估，不随 SDK 分发；Wiktionary 条目另有 GFDL/逐条署名要求。",
+      "local_path": ".build/p9-data/kaikki-zh-16m.jsonl",
+      "downloaded_at": "2026-11-08",
+      "artifact": {
+        "package_id": "dictionary.kaikki.zh-wiktionary.en-zh",
+        "version": "0.1.0-p9sample",
+        "entry_count": 950,
+        "index_fst_sha256": "fac2dc979379492476e23f75baad68754dae0f7a52730164cd3ef3ff0f2841ad",
+        "entries_sqlite_sha256": "727ab15aff75d415cd68c75bc6352d064e1e451dc054537e7203a12428ec9fb9",
+        "manifest_sha256": "0546b02448ce4430c72a2da131c821ba1b53d59830f6fa9c390be2e1c1f4f26c"
+      }
     },
     {
       "id": "dictionary.jmdict.ja-en",
       "kind": "dictionary",
-      "language_pair": { "source": "ja", "target": "en" },
+      "language_pair": {
+        "source": "ja",
+        "target": "en"
+      },
       "format": "xml",
       "official_url": "https://www.edrdg.org/wiki/Main_Page.html",
-      "source_revision": null,
-      "source_sha256": null,
-      "size_bytes": null,
-      "license_spdx": "pending-review",
-      "license_status": "pending-review",
+      "source_revision": "JMdict_e@2026-11-07T03:30:27Z",
+      "source_sha256": "490d2fef9cd8dfcdfcd618863c827fe2efd52992b002fb502679d4e1b7fb039d",
+      "size_bytes": 10594173,
+      "license_spdx": "CC-BY-SA-4.0",
+      "license_status": "internal-only-reviewed",
       "redistribution_status": "pending-review",
       "converter_version": "p9-v1",
-      "status": "not-acquired",
-      "notes": "许可与署名以 EDRDG 官方条款为准；需保留 ent_seq/k_ele/r_ele/sense/POS。"
+      "status": "sample-acquired",
+      "notes": "JMdict_e.gz（10.6 MiB；解压 61 MiB）；EDRDG CC BY-SA 4.0，保留署名/改编记录；仅内部评估。",
+      "local_path": ".build/p9-data/jmdict_e.gz",
+      "downloaded_at": "2026-11-08",
+      "artifact": {
+        "package_id": "dictionary.jmdict.ja-en",
+        "version": "0.1.0-p9sample",
+        "entry_count": 999,
+        "index_fst_sha256": "3c4b5cd59ed4292895daa4b95772f505f442976d474b768032ce7ba226a178c5",
+        "entries_sqlite_sha256": "934927047dded24d869bab13302c2d2715875224b3fd37a45a5587d19f4f16b0",
+        "manifest_sha256": "a886e73e77c199b069617f891cb77de9a06734e606ad1871dc5d6740aa1187c3"
+      }
     },
     {
       "id": "lid.fasttext.lid176-ftz",
@@ -63,20 +96,25 @@
       "language_pair": null,
       "format": "fasttext-ftz",
       "official_url": "https://fasttext.cc/docs/en/language-identification.html",
-      "source_revision": null,
-      "source_sha256": null,
-      "size_bytes": null,
-      "license_spdx": "pending-review",
-      "license_status": "pending-review",
+      "source_revision": "lid.176.ftz@2019-01-18T15:01:21Z",
+      "source_sha256": "8f3472cfe8738a7b6099e8e999c3cbfae0dcd15696aac7d7738a8039db603e83",
+      "size_bytes": 938013,
+      "license_spdx": "CC-BY-SA-3.0",
+      "license_status": "internal-only-reviewed",
       "redistribution_status": "pending-review",
       "converter_version": "p9-v1",
-      "status": "not-acquired",
-      "notes": "文档旧记录约 917 KB、CC BY-SA 3.0；软件代码与模型许可需分别以官方文本确认。"
+      "status": "sample-acquired",
+      "notes": "完整 lid.176.ftz（938,013 B）；fastText 代码 MIT、模型 CC BY-SA 3.0；仅内部性能测试。",
+      "local_path": ".build/p9-data/lid.176.ftz",
+      "downloaded_at": "2026-11-08"
     },
     {
       "id": "morph.lindera.ipadic",
       "kind": "morphology",
-      "language_pair": { "source": "ja", "target": "ja" },
+      "language_pair": {
+        "source": "ja",
+        "target": "ja"
+      },
       "format": "lindera-ipadic",
       "official_url": "https://github.com/lindera/lindera",
       "source_revision": null,
@@ -92,7 +130,10 @@
     {
       "id": "morph.lindera.unidic",
       "kind": "morphology",
-      "language_pair": { "source": "ja", "target": "ja" },
+      "language_pair": {
+        "source": "ja",
+        "target": "ja"
+      },
       "format": "lindera-unidic",
       "official_url": "https://github.com/lindera/lindera",
       "source_revision": null,
