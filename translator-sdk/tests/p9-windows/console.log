@@ -1,11 +1,11 @@
 === fmt -> E:\augenstern\translate\.build\reports\P7-fmt.txt
 === clippy-default -> E:\augenstern\translate\.build\reports\P7-clippy-default.txt
-    Checking translator-api v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-api)
-    Checking migrate-rules v0.1.0 (E:\augenstern\translate\translator-sdk\tools\migrate-rules)
-    Checking p33-bench v0.1.0 (E:\augenstern\translate\translator-sdk\tools\p33-bench)
-    Checking translator-jni v0.1.0 (E:\augenstern\translate\translator-sdk\bindings\translator-jni)
+    + FullyQualifiedErrorId : NativeCommandError
+ 
     Checking translator-cli v0.1.0 (E:\augenstern\translate\translator-sdk\apps\translator-cli)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.63s
+    Checking translator-jni v0.1.0 (E:\augenstern\translate\translator-sdk\bindings\translator-jni)
+    Checking p33-bench v0.1.0 (E:\augenstern\translate\translator-sdk\tools\p33-bench)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.08s
 === test-default -> E:\augenstern\translate\.build\reports\P7-test-default.txt
    Doc-tests translator_types
 
@@ -39,21 +39,21 @@ test lc03_09_内容不同则身份不�?... ok
 test lc06_反复加载卸载不无限堆�?has been running for over 60 seconds
 test lc06_反复加载卸载不无限堆�?... ok
 
-test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 84.58s
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 83.99s
 
 === ort-real -> E:\augenstern\translate\.build\reports\P7-ort-real.txt
-test 身份可观测且卸载后回到未加载 ... ok
+test g01_真实模型产出译文 ... ok
 test 同一输入输出稳定 ... ok
 test g04_受保护跨度逐字节保�?... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.22s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.25s
 
 === ort-facade -> E:\augenstern\translate\.build\reports\P7-ort-facade.txt
 test 宿主可观测并可卸�?... ok
 test 查词与翻译互不影�?... ok
 test g02_仅挂ort后端也能完成翻译 ... ok
 
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 15.83s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 15.85s
 
 === license-audit -> E:\augenstern\translate\.build\reports\P7-license.txt
 PASS 第三方许可清单与依赖树一致（173 个包，全部通过策略�?
@@ -65,8 +65,8 @@ C9 P4 验收台账     PASS  P4 台账一致（8 个门禁，部分满足 ['P4-G
 
 结论：FAIL�? 项）—�?发行红线未满�?
 === cache dirs ===
-P7 Windows check 2026-11-08 02:31:13
-commit=b2b3c473
+P7 Windows check 2026-11-08 04:09:46
+commit=a9e4656f
 status=
 rustc=rustc 1.99.1 (58cf8f9c3 2026-10-13)
 python=Python 3.13.5

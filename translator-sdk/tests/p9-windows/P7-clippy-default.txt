@@ -1,17 +1,11 @@
-﻿cargo :     Checking translator-core v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-core)
+﻿cargo :     Checking translator-api v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-api)
 所在位置 E:\augenstern\translate\.build\staging\p7-check.ps1:33 字符: 35
 + ... -default' { cargo clippy --workspace --all-targets -- -D warnings } ' ...
 +                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (    Checking tr...ranslator-core):String) [], RemoteException
+    + CategoryInfo          : NotSpecified: (    Checking tr...translator-api):String) [], RemoteException
     + FullyQualifiedErrorId : NativeCommandError
  
-    Checking translator-analysis v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-analysis)
-    Checking translator-nmt-bergamot v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-nmt-bergamot)
-    Checking translator-rules v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-rules)
-    Checking translator-nmt-ort v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-nmt-ort)
-    Checking translator-api v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-api)
-    Checking migrate-rules v0.1.0 (E:\augenstern\translate\translator-sdk\tools\migrate-rules)
-    Checking p33-bench v0.1.0 (E:\augenstern\translate\translator-sdk\tools\p33-bench)
-    Checking translator-jni v0.1.0 (E:\augenstern\translate\translator-sdk\bindings\translator-jni)
     Checking translator-cli v0.1.0 (E:\augenstern\translate\translator-sdk\apps\translator-cli)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.63s
+    Checking translator-jni v0.1.0 (E:\augenstern\translate\translator-sdk\bindings\translator-jni)
+    Checking p33-bench v0.1.0 (E:\augenstern\translate\translator-sdk\tools\p33-bench)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.08s

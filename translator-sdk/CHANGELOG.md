@@ -19,6 +19,14 @@ tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `
 - 冻结 J-07/J-10/J-14/J-15 的注入方法与期望错误码（含 J-15c `.so` 重载标 PENDING：ART 类加载器限制）。
 - 两处待批资源（360.9 MB ORT 旧缓存、3.1 GB arm64 镜像 + AVD）**未删未移未改**。
 
+## P9.5 — P9 收口与支持矩阵（报告 `docs/56`）
+
+- P9.5-A：JNI 可选 fastText LID（路径白名单）、Android 真实识别/lemma/en→zh 样本、直接 Arc 指纹；
+  Android **47 PASS / 0 FAIL / 1 PENDING**。
+- P9.5-B：P9.0～P9.5 汇总、资源锁/再分发状态、v3 兼容、MSRV 差异、最终支持矩阵。
+- **工程能力 Conditional；语言资源质量未达标**：en→zh 2/10、人工评审 PENDING、全量 No-Go、Lindera PENDING。
+- Linux 419/0/60（all 423/0/66）、Windows 372/0/60（all 376/0/66）；G11/G12 仍 open。
+
 ## P9.4 — SDK 集成与跨平台回归（报告 `docs/55`）
 
 - `TranslatorBuilder::language_identifier`/`lemmatizer` 注入；默认启发式、原词精确优先、lemma 只在未命中时兜底。

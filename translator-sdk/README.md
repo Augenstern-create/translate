@@ -34,6 +34,7 @@
 - `32_P5开发建议与实施计划（工作区与权限边界）.md` — 外部审查/计划稿归档：唯一可写工作区 `E:\augenstern\translate`、逐项审批、固定 Anaconda Python
 - `47_P8-P11_遗留能力源码核验与开发验收计划.md` — P8～P11 计划归档（权限边界、工作包、M/SM/EP/DI/LID/AND/NC/RM/R 矩阵、里程碑）
 - `50_P9_多语言词典语言识别与词形分析开发建议.md` — P9.0～P9.5 计划归档（资源准入、DI/LID/MOR 矩阵、权限边界）
+- `56_P9.5_P9阶段收口与支持矩阵报告.md` — P9 收口：工程能力 Conditional、en→zh 质量 No-Go、人工评审 PENDING；最终支持矩阵
 - `55_P9.4_SDK集成与跨平台回归报告.md` — LID/lemma 注入、Android JNI v3 词典 44 PASS、EP-02；Linux 417/421、Windows 370/374
 - `54_P9.2_P9.3-A_LID与英语词形分析报告.md` — fastText LID 同集对照（40 条）、RSS/时延、英语轻量 lemmatizer 8 tests
 - `53_P9.1-S_定向覆盖与同音索引修复报告.md` — v3 多值索引（はし 6 条）、额外 30 MiB 定向采样（目标词仍 2/10）、100 条人工评审 PENDING；全量 No-Go
@@ -675,6 +676,9 @@ Linux 401 tests（all-features 404）、Windows 354 tests（all-features 357）�
 生成 Kaikki en→zh 950 条、JMdict ja→en 999 条；DI-04/05/06/07/08 通过，DI-01 因目标词覆盖不足为 PARTIAL。
 Linux 404/0/60（all 407/0/65）、Windows 357/0/60（all 360/0/65）；Android 词库集成留 P9.4。
 资源仍仅内部研发、`redistribution=pending-review`；全量导入未批准。
+
+**P9 阶段收口（`docs/56`）**：工程能力 Conditional；JNI fastText/lemma 实测、v3 多值、EP-02 完成；
+en→zh 目标词仍 2/10、100 条人工评审 PENDING，全量 **No-Go**；Lindera 未下载。Linux 419/423、Windows 372/376、Android 47 PASS。
 
 **P9.4 已完成（`docs/55`）**：LID/lemmatizer 已接入 Rust `Translator`；Android JNI v3 词典与双实例
 **44 PASS / 0 FAIL / 1 PENDING**；EP-02 规则/术语内容摘要；Linux 417/421、Windows 370/374。
