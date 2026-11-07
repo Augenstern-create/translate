@@ -43,6 +43,9 @@ jobs:
       - name: 上传范围预检（G11）
         run: python3 translator-sdk/tools/ci-preflight.py --check
 
+      - name: P9 资源锁校验（不下载）
+        run: python3 translator-sdk/tools/check-language-resources.py --check
+
       - name: 格式
         working-directory: translator-sdk
         run: cargo fmt --all -- --check

@@ -19,6 +19,13 @@ tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `
 - 冻结 J-07/J-10/J-14/J-15 的注入方法与期望错误码（含 J-15c `.so` 重载标 PENDING：ART 类加载器限制）。
 - 两处待批资源（360.9 MB ORT 旧缓存、3.1 GB arm64 镜像 + AVD）**未删未移未改**。
 
+## P9.0 — 语言资源准入（报告 `docs/51`，计划 `docs/50`）
+
+- 只读复核现有 CC-CEDICT 与源码；确认 Kaikki/JMdict/fastText/Lindera 均未取得/未接入。
+- 新增 `fixtures/p9/resource-lock.json`（6 项，未取得数据哈希为 null、许可/再分发 `pending-review`）与
+  `tools/check-language-resources.py`（`--check` / `--self-test`），并加入 `ci.yml` 的无下载校验步骤。
+- 未下载第三方数据、未新增依赖、未改 G11/G12；P9.1 需用户批准下载/许可判断后启动。
+
 ## P8 — 多实例、共享资源与缓存一致性（报告 `docs/49`）
 
 - **P8.1 JNI 多实例**：`Entry` 自带 generation/closed，`index` 单调不复用；创建 B 不再作废 A；
