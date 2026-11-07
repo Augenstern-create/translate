@@ -19,6 +19,13 @@ tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `
 - 冻结 J-07/J-10/J-14/J-15 的注入方法与期望错误码（含 J-15c `.so` 重载标 PENDING：ART 类加载器限制）。
 - 两处待批资源（360.9 MB ORT 旧缓存、3.1 GB arm64 镜像 + AVD）**未删未移未改**。
 
+## P9.4 — SDK 集成与跨平台回归（报告 `docs/55`）
+
+- `TranslatorBuilder::language_identifier`/`lemmatizer` 注入；默认启发式、原词精确优先、lemma 只在未命中时兜底。
+- Android JNI 接入 v3 JMdict 样本包：`lookup はし` 多义、双实例、detect、关 A 不影响 B；44 PASS / 1 PENDING。
+- EP-02：`rules_file`/`term_table_file` 内容 SHA-256 进入资源指纹；2 条合同测试。
+- Linux 417/0/60（all 421/0/66）、Windows 370/0/60（all 374/0/66）；G11/G12 仍 open。
+
 ## P9.2 / P9.3-A — LID 与英语词形（报告 `docs/54`）
 
 - 新增可选 `translator-analysis/fasttext`（`fasttext-pure-rs` 0.1.0，MIT，纯 Rust）：`FastTextIdentifier`，

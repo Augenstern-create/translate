@@ -5,7 +5,7 @@
     Checking p33-bench v0.1.0 (E:\augenstern\translate\translator-sdk\tools\p33-bench)
     Checking translator-jni v0.1.0 (E:\augenstern\translate\translator-sdk\bindings\translator-jni)
     Checking translator-cli v0.1.0 (E:\augenstern\translate\translator-sdk\apps\translator-cli)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.23s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.63s
 === test-default -> E:\augenstern\translate\.build\reports\P7-test-default.txt
    Doc-tests translator_types
 
@@ -32,28 +32,28 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 running 1 test
 after-staging: 崩溃�?1 �?staging 残留；recover=RecoverReport { removed_staging: 1, reclaimed_leases: 0, removed_temp_files: 0, removed_orphans: 0, dropped_records: 0 }；修复后 仓库状态一致：state / installed / staging 三方无差�?before-rename: 崩溃�?1 �?staging 残留；recover=RecoverReport { removed_staging: 1, reclaimed_leases: 0, removed_temp_files: 0, removed_orphans: 0, dropped_records: 0 }；修复后 仓库状态一致：state / installed / staging 三方无差�?after-rename: 崩溃�?1 个目录无记录（孤儿）；recover=RecoverReport { removed_staging: 0, reclaimed_leases: 0, removed_temp_files: 0, removed_orphans: 1, dropped_records: 0 }；修复后 仓库状态一致：state / installed / staging 三方无差�?before-state: 崩溃�?1 个目录无记录（孤儿）；recover=RecoverReport { removed_staging: 0, reclaimed_leases: 0, removed_temp_files: 0, removed_orphans: 1, dropped_records: 0 }；修复后 仓库状态一致：state / installed / staging 三方无差�?after-state: 崩溃�?仓库状态一致：state / installed / staging 三方无差异；recover=RecoverReport { removed_staging: 0, reclaimed_leases: 0, removed_temp_files: 0, removed_orphans: 0, dropped_records: 0 }；修复后 仓库状态一致：state / installed / staging 三方无差�?test lc08_安装关键点被外部sigkill杀死后仓库仍可修复且旧版本不损�?... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.53s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.24s
 
 === ort-contract -> E:\augenstern\translate\.build\reports\P7-ort-contract.txt
 test lc03_09_内容不同则身份不�?... ok
 test lc06_反复加载卸载不无限堆�?has been running for over 60 seconds
 test lc06_反复加载卸载不无限堆�?... ok
 
-test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 82.36s
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 84.58s
 
 === ort-real -> E:\augenstern\translate\.build\reports\P7-ort-real.txt
 test 身份可观测且卸载后回到未加载 ... ok
-test g04_受保护跨度逐字节保�?... ok
 test 同一输入输出稳定 ... ok
+test g04_受保护跨度逐字节保�?... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.19s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.22s
 
 === ort-facade -> E:\augenstern\translate\.build\reports\P7-ort-facade.txt
-test 查词与翻译互不影�?... ok
 test 宿主可观测并可卸�?... ok
+test 查词与翻译互不影�?... ok
 test g02_仅挂ort后端也能完成翻译 ... ok
 
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 15.38s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 15.83s
 
 === license-audit -> E:\augenstern\translate\.build\reports\P7-license.txt
 PASS 第三方许可清单与依赖树一致（173 个包，全部通过策略�?
@@ -65,8 +65,8 @@ C9 P4 验收台账     PASS  P4 台账一致（8 个门禁，部分满足 ['P4-G
 
 结论：FAIL�? 项）—�?发行红线未满�?
 === cache dirs ===
-P7 Windows check 2026-11-08 02:16:07
-commit=0f866766
+P7 Windows check 2026-11-08 02:31:13
+commit=b2b3c473
 status=
 rustc=rustc 1.99.1 (58cf8f9c3 2026-10-13)
 python=Python 3.13.5

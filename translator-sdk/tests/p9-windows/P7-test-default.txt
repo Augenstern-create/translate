@@ -1,22 +1,22 @@
-﻿cargo :    Compiling translator-analysis v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-analysis)
+﻿cargo :    Compiling translator-core v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-core)
 所在位置 E:\augenstern\translate\.build\staging\p7-check.ps1:34 字符: 32
 + $tests = Step 'test-default' { cargo test --workspace } 'P7-test-defa ...
 +                                ~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (   Compiling tr...lator-analysis):String) [], RemoteException
+    + CategoryInfo          : NotSpecified: (   Compiling tr...ranslator-core):String) [], RemoteException
     + FullyQualifiedErrorId : NativeCommandError
  
    Compiling translator-runtime v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-runtime)
    Compiling translator-dictionary v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-dictionary)
-   Compiling translator-core v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-core)
+   Compiling translator-analysis v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-analysis)
    Compiling translator-nmt-bergamot v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-nmt-bergamot)
    Compiling translator-rules v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-rules)
    Compiling translator-nmt-ort v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-nmt-ort)
    Compiling translator-api v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-api)
+   Compiling migrate-rules v0.1.0 (E:\augenstern\translate\translator-sdk\tools\migrate-rules)
    Compiling translator-jni v0.1.0 (E:\augenstern\translate\translator-sdk\bindings\translator-jni)
    Compiling translator-cli v0.1.0 (E:\augenstern\translate\translator-sdk\apps\translator-cli)
-   Compiling migrate-rules v0.1.0 (E:\augenstern\translate\translator-sdk\tools\migrate-rules)
    Compiling p33-bench v0.1.0 (E:\augenstern\translate\translator-sdk\tools\p33-bench)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.70s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.75s
      Running unittests src\main.rs (E:\augenstern\translate\.build\target\debug\deps\migrate_rules-c7f7f961bd658567.exe
 )
 
@@ -24,7 +24,7 @@ running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src\main.rs (E:\augenstern\translate\.build\target\debug\deps\p33_bench-3205381dbf01bae6.exe)
+     Running unittests src\main.rs (E:\augenstern\translate\.build\target\debug\deps\p33_bench-c98c1fecd1c996cd.exe)
 
 running 0 tests
 
@@ -34,17 +34,17 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 e)
 
 running 9 tests
-test tests::鑳借В鏋愭爣鍑嗚 ... ok
 test tests::limit鍙傛暟鐢熸晥 ... ok
-test tests::鐣稿舰琛屽簲琚烦杩囪€屼笉鏄腑鏂?... ok
 test tests::澶撮儴娉ㄩ噴琚繚鐣欎负璁稿彲璇?... ok
-test tests::鎵撳寘鍚庡彲琚噸鏂版墦寮€骞舵煡璇?... ok
-test tests::鍚岃闊充笉鍚岃瘝澶翠笉寰楀悎骞惰瘝涔?... ok
+test tests::鐣稿舰琛屽簲琚烦杩囪€屼笉鏄腑鏂?... ok
+test tests::鑳借В鏋愭爣鍑嗚 ... ok
+test tests::鏍￠獙鍜屼笉鍖归厤搴旇妫€鍑?... ok
 test tests::jsonl_杈撳叆鍙瑙ｆ瀽涓庢墦鍖?... ok
 test tests::v3_鍚岃闊冲鍊肩储寮曞彲杩斿洖鍏ㄩ儴璇嶆潯 ... ok
-test tests::鏍￠獙鍜屼笉鍖归厤搴旇妫€鍑?... ok
+test tests::鎵撳寘鍚庡彲琚噸鏂版墦寮€骞舵煡璇?... ok
+test tests::鍚岃闊充笉鍚岃瘝澶翠笉寰楀悎骞惰瘝涔?... ok
 
-test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
      Running unittests src\main.rs (E:\augenstern\translate\.build\target\debug\deps\pack_dictionary-675075f7e86223e6.e
 xe)
@@ -58,13 +58,13 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 running 8 tests
 test english::tests::瑙勫垯涓庝笉瑙勫垯璇嶅舰 ... ok
-test tests::姹夊瓧搴旇繑鍥炲涓€欓€?... ok
 test tests::limit鍙傛暟鐢熸晥 ... ok
-test tests::闊╂枃搴斿垽瀹氫负闊╄ ... ok
-test tests::鎷変竵瀛楁瘝缁欎綆缃俊搴﹀€欓€?... ok
 test tests::鍏ㄨ鎷変竵瀛楁瘝涔熺畻鎷変竵 ... ok
+test tests::姹夊瓧搴旇繑鍥炲涓€欓€?... ok
 test tests::绾暟瀛楁棤鍊欓€?... ok
+test tests::闊╂枃搴斿垽瀹氫负闊╄ ... ok
 test tests::鍋囧悕搴斿垽瀹氫负鏃ヨ ... ok
+test tests::鎷変竵瀛楁瘝缁欎綆缃俊搴﹀€欓€?... ok
 
 test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -75,29 +75,29 @@ running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src\lib.rs (E:\augenstern\translate\.build\target\debug\deps\translator_api-4a21b92fc25a02cf.exe
+     Running unittests src\lib.rs (E:\augenstern\translate\.build\target\debug\deps\translator_api-f2686fab8776682b.exe
 )
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running tests\mock_e2e.rs (E:\augenstern\translate\.build\target\debug\deps\mock_e2e-71b40b9b06707bfc.exe)
+     Running tests\mock_e2e.rs (E:\augenstern\translate\.build\target\debug\deps\mock_e2e-4c19788dbdef2248.exe)
 
 running 9 tests
-test 鏌ヤ笉鍒扮殑璇嶆潯杩斿洖绌哄垪琛ㄨ€岄潪閿欒 ... ok
-test 鍏虫満鍚庣紦瀛樿娓呯┖涓斿彲閲嶅鍏虫満 ... ok
-test 鏌ヨ瘝杩斿洖甯︽潵婧愪俊鎭殑璇嶆潯 ... ok
 test 鍙互鏌ヨ鑳藉姏娓呭崟 ... ok
-test 娌¤妯″瀷鏃惰繑鍥炲彲瀹夎璧勬簮寤鸿 ... ok
-test 杩滅▼鏈巿鏉冩椂鏁存潯閾捐矾鎷掔粷 ... ok
+test 鏌ヤ笉鍒扮殑璇嶆潯杩斿洖绌哄垪琛ㄨ€岄潪閿欒 ... ok
 test 鍙互閫氳繃闂ㄩ潰瀹屾垚涓€娆＄炕璇?... ok
 test 鍚屼竴寮曟搸閲嶅娉ㄥ唽搴旇鎷掔粷 ... ok
+test 鍏虫満鍚庣紦瀛樿娓呯┖涓斿彲閲嶅鍏虫満 ... ok
+test 鏌ヨ瘝杩斿洖甯︽潵婧愪俊鎭殑璇嶆潯 ... ok
+test 娌¤妯″瀷鏃惰繑鍥炲彲瀹夎璧勬簮寤鸿 ... ok
 test 鎺堟潈鍚庤繙绋嬪彲鐢?... ok
+test 杩滅▼鏈巿鏉冩椂鏁存潯閾捐矾鎷掔粷 ... ok
 
 test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running tests\nmt_facade.rs (E:\augenstern\translate\.build\target\debug\deps\nmt_facade-5cb7af4681949f74.exe)
+     Running tests\nmt_facade.rs (E:\augenstern\translate\.build\target\debug\deps\nmt_facade-cb40709c64872116.exe)
 
 running 8 tests
 test f01_闂ㄩ潰_local_only_浜у嚭鐪熷疄璇戞枃骞舵姤鍛婂紩鎿庝笌妯″瀷韬唤 ... ignored, 闇€瑕佺湡瀹?Bergamot 妯″瀷锛圢MT_BERGAMOT_BIN / NMT_MODEL_DIR锛?test f02_auto_local_first涔熼€夌湡瀹炴湰鍦皀mt ... ignored, 闇€瑕佺湡瀹?Bergamot 妯″瀷锛圢MT_BERGAMOT_BIN / NMT_MODEL_DIR锛?test f07_璇婃柇璺緞涓庢櫘閫氳矾寰勮瘧鏂囦竴鑷翠笖鎶ュ憡鍙椾繚鎶ょ墖娈?... ignored, 闇€瑕佺湡瀹?Bergamot 妯″瀷锛圢MT_BERGAMOT_BIN / NMT_MODEL_DIR锛?test f08_鍔犺浇鐘舵€佷笌缂撳瓨缁熻鍙粡_sdk_瑙傛祴 ... ignored, 闇€瑕佺湡瀹?Bergamot 妯″瀷锛圢MT_BERGAMOT_BIN / NMT_MODEL_DIR锛?test f05_鏈湴澶辫触涓嶅緱鑷姩鍥為€€杩滅▼ ... ok
@@ -107,88 +107,108 @@ test f04_translate涓巘ranslate_with_diagnostics鍏辩敤鍚屼竴鏉℃墽琛�
 
 test result: ok. 4 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running tests\nmt_ort_facade.rs (E:\augenstern\translate\.build\target\debug\deps\nmt_ort_facade-17a0b840f2bea938.
+     Running tests\nmt_ort_facade.rs (E:\augenstern\translate\.build\target\debug\deps\nmt_ort_facade-51daea85cf37e885.
 exe)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running tests\p23_lease_budget.rs (E:\augenstern\translate\.build\target\debug\deps\p23_lease_budget-f7a81411c3dd5
-695.exe)
+     Running tests\p23_lease_budget.rs (E:\augenstern\translate\.build\target\debug\deps\p23_lease_budget-4fb7ef4201f34
+360.exe)
 
 running 6 tests
 test 浠撳簱閲屾病鏈夋縺娲荤増鏈椂鎶ユ湭瀹夎 ... ok
-test 棰勭畻涓嶈冻鏃惰閰嶆湡鐩存帴澶辫触 ... ok
-test 涓嶈涓婇檺鏃跺彧璁拌处涓嶆嫆缁?... ok
 test 棰勭畻鍏呰冻鏃跺彲浠ユ寕杞藉苟濡傚疄鎶ュ憡鍗犵敤 ... ok
+test 涓嶈涓婇檺鏃跺彧璁拌处涓嶆嫆缁?... ok
+test 棰勭畻涓嶈冻鏃惰閰嶆湡鐩存帴澶辫触 ... ok
 test 棰勭畻鍑嵁闅忛棬闈㈤噴鏀捐€屽綊杩?... ok
 test 浠庝粨搴撴寕杞界殑鐗堟湰鍦ㄥ瓨娲绘湡闂村垹涓嶆帀 ... ok
 
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
 
-     Running tests\p24_terms_diagnostics.rs (E:\augenstern\translate\.build\target\debug\deps\p24_terms_diagnostics-910
-d7c203f9a9709.exe)
+     Running tests\p24_terms_diagnostics.rs (E:\augenstern\translate\.build\target\debug\deps\p24_terms_diagnostics-b0c
+8c4b110c7dbc1.exe)
 
 running 13 tests
 test 娌℃湁鏈琛ㄦ椂璇婃柇閲屾病鏈塼erm瀛楁 ... ok
-test 璇婃柇璁板綍婧愯瑷€鏄惁涓虹寽娴?... ok
 test 璇婃柇甯﹀嚭瑙勫垯鍛戒腑涓庤矾鐢辩悊鐢?... ok
-test warn绛栫暐鍙姤鍛婁笉鏀规枃鏈?... ok
-test off绛栫暐涓嶈窇瀹堝崼 ... ok
+test 璇婃柇璁板綍婧愯瑷€鏄惁涓虹寽娴?... ok
 test 鏈棰勮涓嶆敼鍔ㄤ篃涓嶇炕璇?... ok
-test 鎽樿鍙涓斿寘鍚叧閿」 ... ok
 test 鏈绾︽潫浼氭敼鍐欒瘧鏂囧苟鎶ュ嚭浣嶇疆 ... ok
+test 鎽樿鍙涓斿寘鍚叧閿」 ... ok
 test 鍙椾繚鎶よ法搴﹂噷鐨勫唴瀹逛笉琚湳璇敼鍐?... ok
-test 缂撳瓨鍛戒腑鏃惰瘖鏂笌棣栨涓€鑷?... ok
-test 榛樿绛栫暐鍙姤鍛婁笉鏀瑰啓 ... ok
-test 鏈琛ㄧ増鏈繘鍏ヨ祫婧愭寚绾?... ok
 test 涓ゆ潯鍏ュ彛缁欏嚭鍚屼竴浠借瘧鏂?... ok
+test 榛樿绛栫暐鍙姤鍛婁笉鏀瑰啓 ... ok
+test off绛栫暐涓嶈窇瀹堝崼 ... ok
+test 缂撳瓨鍛戒腑鏃惰瘖鏂笌棣栨涓€鑷?... ok
+test 鏈琛ㄧ増鏈繘鍏ヨ祫婧愭寚绾?... ok
+test warn绛栫暐鍙姤鍛婁笉鏀规枃鏈?... ok
 
 test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
-     Running tests\p9_multisource.rs (E:\augenstern\translate\.build\target\debug\deps\p9_multisource-743434fe4df45e72.
+     Running tests\p94_ep02.rs (E:\augenstern\translate\.build\target\debug\deps\p94_ep02-2bf7bb3fc6b089cc.exe)
+
+running 2 tests
+test ep02_瑙勫垯鍐呭鍙樺寲鏀瑰彉鎸囩汗 ... ok
+test ep02_鏈鍐呭鍙樺寲鏀瑰彉鎸囩汗 ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\p94_integration.rs (E:\augenstern\translate\.build\target\debug\deps\p94_integration-91b6b059c002180
+e.exe)
+
+running 5 tests
+test p94_01_榛樿detect琛屼负淇濇寔鍚彂寮?... ok
+test p94_02_p94_03_娉ㄥ叆鐨刲id鐢熸晥涓斿疄渚嬮殧绂?... ok
+test p94_08_鍚岄煶璇峫ookup杩斿洖鍏ㄩ儴鑰宼ranslate淇濈暀棣栦箟legacy ... ok
+test p94_05_p94_06_lemma鍙湪鍘熻瘝鏈懡涓椂鍏滃簳 ... ok
+test p94_07_淇濇姢鏂囨湰涓嶈lemma淇敼 ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests\p9_multisource.rs (E:\augenstern\translate\.build\target\debug\deps\p9_multisource-9b72cd2f7864505e.
 exe)
 
 running 1 test
 test di04_涓や釜璇嶅吀鍖呮潵婧愪笉涓?... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
-     Running tests\rules_e2e.rs (E:\augenstern\translate\.build\target\debug\deps\rules_e2e-2647cf468fc2ed59.exe)
+     Running tests\rules_e2e.rs (E:\augenstern\translate\.build\target\debug\deps\rules_e2e-4cdd2a1576243f9f.exe)
 
 running 9 tests
-test 鏈厤缃鍒欐椂棰勮涓虹┖涓斾笉鎶ラ敊 ... ok
-test explain_rules鎶ュ憡鐢熸晥瑙勫垯浣嗕笉鏀瑰叕寮€缁撴灉缁撴瀯 ... ok
-test 鏈瑙勫垯鎸夎瑷€瀵圭敓鏁?... ok
-test 瑙勫垯涓嶅緱鏀瑰啓url閲岀殑鍐呭 ... ok
 test 瑙勫垯鏂囦欢鍔犺浇澶辫触璁″叆鏋勫缓閿欒 ... ok
-test 瑙勫垯涓嶅緱鏀瑰啓閭閲岀殑鍐呭 ... ok
+test 鏈厤缃鍒欐椂棰勮涓虹┖涓斾笉鎶ラ敊 ... ok
 test 瑙勫垯璁╁叏瑙掕緭鍏ュ懡涓瘝鍏?... ok
+test explain_rules鎶ュ憡鐢熸晥瑙勫垯浣嗕笉鏀瑰叕寮€缁撴灉缁撴瀯 ... ok
+test 瑙勫垯涓嶅緱鏀瑰啓url閲岀殑鍐呭 ... ok
+test 瑙勫垯涓嶅緱鏀瑰啓閭閲岀殑鍐呭 ... ok
+test 鏈瑙勫垯鎸夎瑷€瀵圭敓鏁?... ok
 test 瑙勫垯鍐呭鍧忎簡浼氳鎷掔粷鍔犺浇 ... ok
 test 瑙勫垯鐗堟湰鍙樺寲浼氭敼鍙樼紦瀛橀敭 ... ok
 
-test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
-     Running tests\shared_engine.rs (E:\augenstern\translate\.build\target\debug\deps\shared_engine-17efa13909b1039b.ex
+     Running tests\shared_engine.rs (E:\augenstern\translate\.build\target\debug\deps\shared_engine-521fbc9033c8235d.ex
 e)
 
 running 4 tests
 test sm03_鏈€鍚庝竴涓疄渚嬮噴鏀惧悗姹犱笉鎸佹湁寮哄紩鐢?... ok
-test sm01_鐩稿悓閰嶇疆鎷垮埌鍚屼竴涓紩鎿庝笌worker ... ok
 test sm02_鍏抽棴涓€涓疄渚嬩笉褰卞搷鍙︿竴涓?... ok
+test sm01_鐩稿悓閰嶇疆鎷垮埌鍚屼竴涓紩鎿庝笌worker ... ok
 test sm04_涓嶅悓妯″瀷鍐呭鎴栬В鐮佸弬鏁颁笉寰楄鍏变韩 ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
-     Running tests\shared_engine_ort.rs (E:\augenstern\translate\.build\target\debug\deps\shared_engine_ort-57c9ee7df2e
-367be.exe)
+     Running tests\shared_engine_ort.rs (E:\augenstern\translate\.build\target\debug\deps\shared_engine_ort-f5cfed0f525
+4039a.exe)
 
 running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running unittests src\main.rs (E:\augenstern\translate\.build\target\debug\deps\translator_cli-08f70725cb90d75b.ex
+     Running unittests src\main.rs (E:\augenstern\translate\.build\target\debug\deps\translator_cli-066ebcac79904d6e.ex
 e)
 
 running 0 tests
@@ -199,50 +219,50 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 e)
 
 running 55 tests
-test budget::tests::瓒呭嚭涓婇檺鏃舵嫆缁濅笖涓嶈璐?... ok
-test budget::tests::棰勭暀涓庨噴鏀惧湪璐﹂潰涓婂钩琛?... ok
-test budget::tests::涓嶉檺閲忔椂鍙璐︿笉鎷掔粷 ... ok
 test budget::tests::鍚屽悕棰勭暀鍚勮嚜鐙珛褰掕繕 ... ok
-test cache::tests::瀹归噺涓?鏃朵笉缂撳瓨 ... ok
-test cache::tests::涓嶅悓寮曟搸涓嶅緱鍏变韩缂撳瓨 ... ok
 test cache::tests::瓒呭嚭瀹归噺搴旀窐姹版渶鏃х殑 ... ok
-test budget::tests::闆跺瓧鑺傜敵璇疯鎷掔粷 ... ok
-test plan::tests::鍚屼竴杈撳叆缁欏嚭鍚屼竴digest涓旈『搴忕ǔ瀹?... ok
-test plan::tests::digest閲戝€奸攣瀹?... ok
+test budget::tests::棰勭暀涓庨噴鏀惧湪璐﹂潰涓婂钩琛?... ok
 test cache::tests::涓嶅悓鏈琛ㄤ笉寰楀叡浜紦瀛?... ok
+test cache::tests::瀹归噺涓?鏃朵笉缂撳瓨 ... ok
 test cache::tests::缂撳瓨鏉＄洰甯﹁瘖鏂彲鎸夋枃鏈彇鍥?... ok
-test cache::tests::杩滅▼涓庢湰鍦扮瓥鐣ヤ笉鍏变韩缂撳瓨閿?... ok
+test budget::tests::瓒呭嚭涓婇檺鏃舵嫆缁濅笖涓嶈璐?... ok
 test cache::tests::璧勬簮鎸囩汗涓嶅悓涓嶅緱鍏变韩缂撳瓨 ... ok
-test plan::tests::浠讳綍褰卞搷璇戞枃鐨勫瓧娈靛彉鍖栭兘浼氭敼digest ... ok
-test plan::tests::灞曠ず涓查噷甯︾煭digest ... ok
+test budget::tests::闆跺瓧鑺傜敵璇疯鎷掔粷 ... ok
+test cache::tests::杩滅▼涓庢湰鍦扮瓥鐣ヤ笉鍏变韩缂撳瓨閿?... ok
+test plan::tests::鍚屼竴杈撳叆缁欏嚭鍚屼竴digest涓旈『搴忕ǔ瀹?... ok
+test budget::tests::涓嶉檺閲忔椂鍙璐︿笉鎷掔粷 ... ok
+test cache::tests::涓嶅悓寮曟搸涓嶅緱鍏变韩缂撳瓨 ... ok
+test plan::tests::digest閲戝€奸攣瀹?... ok
 test plan::tests::瀛楁鍊奸噷鐨勬崲琛屼笉鑳戒吉閫犻澶栧瓧娈?... ok
 test plan_cache::tests::鍚屼竴璁″垝鍚屼竴鏂囨湰鍛戒腑 ... ok
+test plan::tests::灞曠ず涓查噷甯︾煭digest ... ok
+test protection::tests::sp03_閲嶅鍙橀噺鎸夊疄渚嬭鏁?... ok
 test plan_cache::tests::瀹归噺涓洪浂绛変簬鍏虫帀缂撳瓨 ... ok
-test plan_cache::tests::閿噷涓嶅瓨鍘熸枃 ... ok
-test plan::tests::缂哄け鐨勫彲閫夊瓧娈典篃杩沝igest ... ok
-test plan_cache::tests::瀹归噺婊℃椂鎸夊厛杩涘厛鍑烘窐姹颁笖璁℃暟 ... ok
 test plan_cache::tests::鐩爣璇█涓庡師鏂囬兘杩涢敭 ... ok
 test plan_cache::tests::璁″垝鎽樿涓嶅悓蹇呯劧鏈懡涓?... ok
+test plan_cache::tests::閿噷涓嶅瓨鍘熸枃 ... ok
+test plan::tests::浠讳綍褰卞搷璇戞枃鐨勫瓧娈靛彉鍖栭兘浼氭敼digest ... ok
 test protection::tests::sp01_鍗曚釜妯℃澘鍙橀噺瀹屾暣淇濈暀 ... ok
-test protection::tests::sp03_閲嶅鍙橀噺鎸夊疄渚嬭鏁?... ok
 test protection::tests::sp04_url涓庡甫鏌ヨ鍙傛暟鐨剈rl閫愬瓧鑺備繚鐣?... ok
+test plan_cache::tests::瀹归噺婊℃椂鎸夊厛杩涘厛鍑烘窐姹颁笖璁℃暟 ... ok
+test protection::tests::sp08_浼€犳爣璁拌鍒や负鏈煡鏍囪 ... ok
 test protection::tests::sp02_澶氫釜涓嶅悓鍙橀噺鍚勮嚜瀹屾暣 ... ok
+test protection::tests::sp05_email涓庢贩鍚堢粨鏋勭簿纭繚鐣?... ok
 test protection::tests::sp06_鍙嶅紩鍙蜂唬鐮佹暣浣撲繚鐣欏惈鍙嶅紩鍙锋湰韬?... ok
 test protection::tests::sp07_浠ｇ爜鍐呭祵url涓庡彉閲忎笉閲嶅淇濇姢 ... ok
-test protection::tests::sp08_浼€犳爣璁拌鍒や负鏈煡鏍囪 ... ok
-test protection::tests::sp05_email涓庢贩鍚堢粨鏋勭簿纭繚鐣?... ok
 test protection::tests::sp09_涓㈠け鎴栧鍒舵爣璁板繀椤绘姤閿?... ok
-test terms::tests::鏃犱笂涓嬫枃鏃堕€€鍖栦负浠呭嚟璇戞枃 ... ok
+test protection::tests::sp09b_鏍囪绛栫暐鍦ㄦā鍨嬩繚鐣欐爣璁版椂鍙敤涓斿厑璁搁噸鎺?... ok
+test plan::tests::缂哄け鐨勫彲閫夊瓧娈典篃杩沝igest ... ok
 test protection::tests::sp10_utf8涓巈moji涓嶇牬鍧忓瓧鑺傝竟鐣?... ok
-test protection::tests::sp11_澶氳闀挎枃鏈€愯缁撴瀯涓嶅彉 ... ok
 test protection::tests::sp12_绌虹櫧杈撳叆涓庡叏淇濇姢杈撳叆涓嶅穿 ... ok
 test protection::tests::鍒嗘鏁扮瓑浜庢櫘閫氭枃鏈鏁?... ok
-test protection::tests::sp09b_鏍囪绛栫暐鍦ㄦā鍨嬩繚鐣欐爣璁版椂鍙敤涓斿厑璁搁噸鎺?... ok
+test protection::tests::sp11_澶氳闀挎枃鏈€愯缁撴瀯涓嶅彉 ... ok
+test terms::tests::鏃犱笂涓嬫枃鏃堕€€鍖栦负浠呭嚟璇戞枃 ... ok
+test protection::tests::澶辫触閿欒鏄犲皠涓哄畬鏁存€ч敊璇?... ok
 test terms::tests::绌哄畧鍗笉鏀规枃鏈?... ok
 test terms::tests::绛栫暐璇箟 ... ok
-test protection::tests::澶辫触閿欒鏄犲皠涓哄畬鏁存€ч敊璇?... ok
-test terms::tests::杩濊灞曠ず鍖呭惈鏈熸湜涓庡疄闄?... ok
 test terms::tests::榛樿绛栫暐涓嶆敼鍐欒瘧鏂?... ok
+test terms::tests::杩濊灞曠ず鍖呭惈鏈熸湜涓庡疄闄?... ok
 test text::tests::cjk鍙ュ瓙涓嶅簲琚鍒や负鍗曡瘝 ... ok
 test text::tests::涓㈠け鍗犱綅绗﹀簲琚鍑?... ok
 test text::tests::鍒囧垎鍙椾繚鎶ょ墖娈?... ok
@@ -261,31 +281,31 @@ test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 d24ed.exe)
 
 running 6 tests
-test 绌烘寚绾逛笉浼氭姽鎺夊凡缁戝畾鐨勬寚绾?... ok
-test 璇婃柇閲岃兘璇诲埌鏈浣跨敤鐨勮祫婧愭寚绾?... ok
-test 鍚屼竴娆＄粦瀹氬唴閲嶅璇锋眰鍛戒腑缂撳瓨 ... ok
 test 鎵ц韬唤鍙樺寲蹇呴』閲嶆柊鎵ц ... ok
-test 鏈粦瀹氭寚绾规椂鏄┖涓茶€屼笉鏄崰浣嶇 ... ok
+test 鍚屼竴娆＄粦瀹氬唴閲嶅璇锋眰鍛戒腑缂撳瓨 ... ok
+test 绌烘寚绾逛笉浼氭姽鎺夊凡缁戝畾鐨勬寚绾?... ok
 test 璧勬簮鎸囩汗鍙樺寲蹇呴』閲嶆柊鎵ц ... ok
+test 璇婃柇閲岃兘璇诲埌鏈浣跨敤鐨勮祫婧愭寚绾?... ok
+test 鏈粦瀹氭寚绾规椂鏄┖涓茶€屼笉鏄崰浣嶇 ... ok
 
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
      Running tests\routing.rs (E:\augenstern\translate\.build\target\debug\deps\routing-cd81291f9c53e967.exe)
 
 running 13 tests
-test localonly绛栫暐涓嬩笉寰楅€夋嫨杩滅▼ ... ok
-test 鍗曡瘝搴旇矾鐢卞埌璇嶅吀 ... ok
-test 婧愯瑷€涓庣洰鏍囪瑷€鐩稿悓搴旀姤閿?... ok
-test 鏃犺瘝鍏歌鐩栫殑璇█瀵瑰簲閫€鍖栧埌nmt ... ok
-test 绗簩娆＄浉鍚岃姹傚簲鍛戒腑缂撳瓨 ... ok
-test 鏁村彞搴旇矾鐢卞埌鏈湴nmt ... ok
-test 绌烘枃鏈簲鎶ラ敊 ... ok
-test 杩滅▼寮曟搸鏈巿鏉冩椂搴旀嫆缁?... ok
 test remoteonly绛栫暐搴旈€変腑杩滅▼寮曟搸 ... ok
-test 鍗犱綅绗﹀簲琚繚鎶ゅ苟瀹屾暣杩樺師 ... ok
-test 璇嶅吀鍛戒腑涓嶅簲鍥為€€ ... ok
+test 绌烘枃鏈簲鎶ラ敊 ... ok
+test 鍗曡瘝搴旇矾鐢卞埌璇嶅吀 ... ok
+test 鏁村彞搴旇矾鐢卞埌鏈湴nmt ... ok
+test 鏃犺瘝鍏歌鐩栫殑璇█瀵瑰簲閫€鍖栧埌nmt ... ok
+test localonly绛栫暐涓嬩笉寰楅€夋嫨杩滅▼ ... ok
+test 婧愯瑷€涓庣洰鏍囪瑷€鐩稿悓搴旀姤閿?... ok
 test 璇嶅吀鏈懡涓簲鑷姩鍥為€€鍒皀mt ... ok
+test 鍗犱綅绗﹀簲琚繚鎶ゅ苟瀹屾暣杩樺師 ... ok
+test 杩滅▼寮曟搸鏈巿鏉冩椂搴旀嫆缁?... ok
 test 鎸囧畾涓嶅瓨鍦ㄧ殑寮曟搸搴旀姤閿?... ok
+test 绗簩娆＄浉鍚岃姹傚簲鍛戒腑缂撳瓨 ... ok
+test 璇嶅吀鍛戒腑涓嶅簲鍥為€€ ... ok
 
 test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -316,49 +336,49 @@ test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; fini
 e)
 
 running 4 tests
+test di12_澶氬€奸『搴忕ǔ瀹氫笖鍘婚噸 ... ok
 test di09_鍚岄煶澶氫箟杩斿洖鍏ㄩ儴涓斾笉娣疯瘝涔?... ok
 test di11_鏃2鍗曞€煎寘浠嶅彲璇诲彇 ... ok
-test di12_澶氬€奸『搴忕ǔ瀹氫笖鍘婚噸 ... ok
 test di10_姹夊瓧璇嶆潯鍚勮嚜鐙珛 ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
      Running tests\package.rs (E:\augenstern\translate\.build\target\debug\deps\package-3a5d9a5e783a183e.exe)
 
 running 16 tests
 test 閲婁箟閲屽嚭鐜板垎闅旂鏃舵墦鍖呭け璐?... ok
-test 鎻愪緵鑰呭涓嶅尮閰嶈瑷€杩斿洖绌哄垪琛?... ok
+test 寮曟搸鍛戒腑鏃惰繑鍥炶瘝鍏歌瘧鏂?... ok
+test 澶氫箟璇嶇殑閲婁箟閮戒繚鐣?... ok
 test 鎻掍欢鐗堟湰涓哄綋鍓嶇増鏈?... ok
 test 绻佷綋閿懡涓悓涓€鏉＄洰 ... ok
-test 寮曟搸鏈懡涓繑鍥炲彲鍥為€€鐨勯敊璇爜 ... ok
-test 寮曟搸鍛戒腑鏃惰繑鍥炶瘝鍏歌瘧鏂?... ok
-test 娓呭崟涓庡簱鏍煎紡涓嶄竴鑷存椂鎷掔粷鎵撳紑 ... ok
-test 寮曟搸鍙负鍖归厤鐨勮瑷€瀵瑰０鏄庢敮鎸?... ok
-test 澶氫箟璇嶇殑閲婁箟閮戒繚鐣?... ok
-test 涓嶅瓨鍦ㄧ殑璇嶆潯杩斿洖none ... ok
 test 鍓嶇紑鏌ヨ杩斿洖琛ュ叏涓斾笉閲嶅 ... ok
-test 绮剧‘鏌ヨ杩斿洖閲婁箟涓庤鍙潵婧?... ok
 test v2娓呭崟澹版槑鏈煡payload琚嫆鏀?... ok
+test 寮曟搸鍙负鍖归厤鐨勮瑷€瀵瑰０鏄庢敮鎸?... ok
+test 鎻愪緵鑰呭涓嶅尮閰嶈瑷€杩斿洖绌哄垪琛?... ok
 test 鍓嶇紑鏌ヨ閬靛畧limit ... ok
-test 娓呭崟鎷掔粷鍗犱綅绗?... ok
+test 绮剧‘鏌ヨ杩斿洖閲婁箟涓庤鍙潵婧?... ok
+test 寮曟搸鏈懡涓繑鍥炲彲鍥為€€鐨勯敊璇爜 ... ok
+test 涓嶅瓨鍦ㄧ殑璇嶆潯杩斿洖none ... ok
 test v1涓巚2璇诲嚭鐨勮瘝鏉″畬鍏ㄤ竴鑷?... ok
+test 娓呭崟涓庡簱鏍煎紡涓嶄竴鑷存椂鎷掔粷鎵撳紑 ... ok
+test 娓呭崟鎷掔粷鍗犱綅绗?... ok
 
 test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
 
-     Running unittests src\lib.rs (E:\augenstern\translate\.build\target\debug\deps\translator_jni-c860a5faa77dca76.exe
+     Running unittests src\lib.rs (E:\augenstern\translate\.build\target\debug\deps\translator_jni-fde08464758f6c25.exe
 )
 
 running 10 tests
-test tests::m03_m04_鍏抽棴鍙奖鍝嶇洰鏍囧疄渚嬩笖绱㈠紩涓嶅鐢?... ok
+test tests::鎴愬姛淇″皝褰㈢姸绋冲畾 ... ok
 test tests::m01_涓や釜瀹炰緥鍙互鍚屾椂瀛樻椿 ... ok
-test tests::閿欒淇″皝甯﹀崗璁増鏈笌閿欒鐮?... ok
+test tests::m06_浼€犳垨閿欎唬鍙ユ焺鍙楁帶鎷掔粷 ... ok
 test tests::j10_鎺у埗瀛楃鏄庣‘鎷掔粷浣嗕繚鐣欐崲琛?... ok
+test tests::閿欒淇″皝甯﹀崗璁増鏈笌閿欒鐮?... ok
+test tests::j10_瓒呴暱鏂囨湰涓巔ayload鍦ㄤ笂闄愬鎷掔粷 ... ok
+test tests::m03_m04_鍏抽棴鍙奖鍝嶇洰鏍囧疄渚嬩笖绱㈠紩涓嶅鐢?... ok
 test tests::j10_鐣稿舰json涓庢繁宓屽鍙楁帶澶辫触 ... ok
 test tests::骞冲彴鍚嶅甫鏋舵瀯 ... ok
-test tests::鎴愬姛淇″皝褰㈢姸绋冲畾 ... ok
-test tests::m06_浼€犳垨閿欎唬鍙ユ焺鍙楁帶鎷掔粷 ... ok
 test tests::鍙ユ焺瑙ｆ瀽鎷掔粷闈炴硶鏍煎紡 ... ok
-test tests::j10_瓒呴暱鏂囨湰涓巔ayload鍦ㄤ笂闄愬鎷掔粷 ... ok
 
 test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -366,12 +386,12 @@ test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 cf76f.exe)
 
 running 6 tests
-test tests::淇濇姢缁熻鍙粰绫诲埆涓庢暟閲?... ok
-test tests::璁″垝鎽樿鎶婃ā鍨嬫枃浠朵笌瑙ｇ爜鍙傛暟鍒嗗紑 ... ok
-test tests::鍐呭瓨浼拌鏄疄娴嬩笅鐣?... ok
-test tests::寮曟搸澹版槑鏈湴nmt鑳藉姏涓斿彧鏀寔閰嶇疆鐨勮瑷€瀵?... ok
-test tests::缂哄皯蹇呴渶鏂囦欢鏃舵瀯閫犳竻鍗曞け璐?... ok
 test tests::鏈姞杞芥椂鐘舵€佹槸unloaded涓旂┖闂插洖鏀舵槸绌烘搷浣?... ok
+test tests::淇濇姢缁熻鍙粰绫诲埆涓庢暟閲?... ok
+test tests::寮曟搸澹版槑鏈湴nmt鑳藉姏涓斿彧鏀寔閰嶇疆鐨勮瑷€瀵?... ok
+test tests::鍐呭瓨浼拌鏄疄娴嬩笅鐣?... ok
+test tests::璁″垝鎽樿鎶婃ā鍨嬫枃浠朵笌瑙ｇ爜鍙傛暟鍒嗗紑 ... ok
+test tests::缂哄皯蹇呴渶鏂囦欢鏃舵瀯閫犳竻鍗曞け璐?... ok
 
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -388,19 +408,19 @@ test result: ok. 0 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; fini
      Running tests\sp_contract.rs (E:\augenstern\translate\.build\target\debug\deps\sp_contract-23ee0014c7ec2892.exe)
 
 running 15 tests
+test 妯″瀷涓㈡蹇呴』鎶ラ敊鑰屼笉鏄繑鍥炲崐鎴瘧鏂?... ok
 test sp01_鍗曚釜妯℃澘鍙橀噺瀹屾暣淇濈暀 ... ok
 test sp03_閲嶅鍑虹幇鐨勫悓涓€妯℃澘鍙橀噺鎸夊嚭鐜版鏁板垎鍒紪鍙?... ok
-test sp10_utf8涓巈moji涓嶇牬鍧忓瓧鑺傝竟鐣?... ok
-test sp02_澶氱妯℃澘鍙橀噺鍚勮嚜瀹屾暣 ... ok
+test sp04_url_email_妯℃澘娣峰悎绮剧‘淇濈暀 ... ok
+test sp05_甯︽煡璇㈠弬鏁扮殑url涓嶈ampersand鎴柇 ... ok
+test sp07_浠ｇ爜鍐呭祵url涓嶉噸澶嶆爣璁?... ok
 test sp06_鍙嶅紩鍙蜂唬鐮佹暣浣撲繚鐣欏惈鍙嶅紩鍙锋湰韬?... ok
+test sp10_utf8涓巈moji涓嶇牬鍧忓瓧鑺傝竟鐣?... ok
 test sp08_浼€犳爣璁板繀椤绘姤閿?... ok
 test sp09_涓㈠け澶嶅埗绡℃敼蹇呴』鎶ラ敊涓旈敊璇爜鏄畬鏁存€уけ璐?... ok
-test sp04_url_email_妯℃澘娣峰悎绮剧‘淇濈暀 ... ok
-test sp12_绌虹櫧涓庡叏淇濇姢杈撳叆涓嶅穿婧?... ok
-test 妯″瀷涓㈡蹇呴』鎶ラ敊鑰屼笉鏄繑鍥炲崐鎴瘧鏂?... ok
 test 缁撴瀯瀹屽ソ鏃朵笉鍙楀奖鍝?... ok
-test sp07_浠ｇ爜鍐呭祵url涓嶉噸澶嶆爣璁?... ok
-test sp05_甯︽煡璇㈠弬鏁扮殑url涓嶈ampersand鎴柇 ... ok
+test sp02_澶氱妯℃澘鍙橀噺鍚勮嚜瀹屾暣 ... ok
+test sp12_绌虹櫧涓庡叏淇濇姢杈撳叆涓嶅穿婧?... ok
 test sp11_澶氳鏂囨湰鎹㈣淇濈暀涓斾笉閫佽繘妯″瀷 ... ok
 test 妯″瀷澶氭蹇呴』鎶ラ敊 ... ok
 
@@ -441,11 +461,11 @@ test result: ok. 0 passed; 0 failed; 6 ignored; 0 measured; 0 filtered out; fini
 ab2.exe)
 
 running 5 tests
-test mocks::contract_tests::鍚庣鍙兘瀵规樉寮忓吋瀹圭殑鏋舵瀯杩斿洖鍏煎 ... ok
-test mocks::contract_tests::涓嶆敮鎸佺殑璋冪敤蹇呴』杩斿洖缁撴瀯鍖栭敊璇€岄潪宕╂簝 ... ok
 test mocks::contract_tests::杩滅▼寮曟搸鏈巿鏉冨繀椤绘嫆缁?... ok
 test mocks::contract_tests::寮曟搸鎻忚堪蹇呴』鑷唇 ... ok
+test mocks::contract_tests::涓嶆敮鎸佺殑璋冪敤蹇呴』杩斿洖缁撴瀯鍖栭敊璇€岄潪宕╂簝 ... ok
 test mocks::contract_tests::璇嶅吀鏈懡涓繀椤昏繑鍥炴湭鍛戒腑閿欒 ... ok
+test mocks::contract_tests::鍚庣鍙兘瀵规樉寮忓吋瀹圭殑鏋舵瀯杩斿洖鍏煎 ... ok
 
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -453,38 +473,38 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 1.exe)
 
 running 30 tests
-test leases::tests::鍚姩鏍囪瘑涓嶄竴鑷存椂瑙嗕负涓嶅悓杩涚▼ ... ok
-test leases::tests::pid涓洪浂瑙嗕负宸叉 ... ok
-test compat::tests::缂轰緷璧栦笉鍏煎 ... ok
-test compat::tests::渚濊禆鐗堟湰涓嶇涓嶅吋瀹?... ok
-test compat::tests::娌℃湁璇诲彇鍣ㄧ殑kind涓嶅吋瀹?... ok
-test compat::tests::v1鍖呭湪褰撳墠瀹夸富涓嬪吋瀹?... ok
-test leases::tests::涓嶅瓨鍦ㄧ殑pid瑙嗕负宸叉 ... ok
-test compat::tests::骞冲彴涓嶅尮閰嶄笉鍏煎 ... ok
-test leases::tests::褰撳墠杩涚▼蹇呯劧瀛樻椿 ... ok
 test compat::tests::鏈煡payload鐗堟湰涓嶅吋瀹?... ok
+test compat::tests::v1鍖呭湪褰撳墠瀹夸富涓嬪吋瀹?... ok
+test compat::tests::渚濊禆鐗堟湰涓嶇涓嶅吋瀹?... ok
+test leases::tests::涓嶅瓨鍦ㄧ殑pid瑙嗕负宸叉 ... ok
+test leases::tests::pid涓洪浂瑙嗕负宸叉 ... ok
+test leases::tests::鍚姩鏍囪瘑涓嶄竴鑷存椂瑙嗕负涓嶅悓杩涚▼ ... ok
+test compat::tests::缂轰緷璧栦笉鍏煎 ... ok
+test leases::tests::褰撳墠杩涚▼蹇呯劧瀛樻椿 ... ok
+test compat::tests::骞冲彴涓嶅尮閰嶄笉鍏煎 ... ok
 test leases::tests::鏃犳硶鍒ゅ畾瀛樻椿鏃舵寜鍗犵敤澶勭悊 ... ok
+test compat::tests::娌℃湁璇诲彇鍣ㄧ殑kind涓嶅吋瀹?... ok
 test lockfile::tests::drop鍗抽噴鏀?... ok
 test manifest::tests::sha256鏍煎紡涓嶅悎娉曟椂鎷掓敹 ... ok
 test manifest::tests::v1娓呭崟鍙涓旀帹鏂嚭payload鐗堟湰 ... ok
 test manifest::tests::v2娓呭崟瑙ｆ瀽鍑烘樉寮弍ayload鐗堟湰 ... ok
 test manifest::tests::鍚屾椂鍑虹幇涓や釜鍗忚鐗堟湰瀛楁鏃舵嫆鏀?... ok
-test lockfile::tests::鍙栭攣涓庨噴鏀?... ok
-test manifest::tests::鏈煡manifest鐗堟湰琚嫆鏀?... ok
 test manifest::tests::瀛楁鎷奸敊涓嶄細琚綋鎴恦1闈欓粯鎺ュ彈 ... ok
+test lockfile::tests::鍙栭攣涓庨噴鏀?... ok
 test manifest::tests::鏈煡payload鐗堟湰涓嶈闈欓粯鎺ュ彈 ... ok
+test manifest::tests::鏈煡manifest鐗堟湰琚嫆鏀?... ok
 test manifest::tests::缂哄皯payload鏂囦欢鏃舵嫆鏀?... ok
 test manifest::tests::璺緞绌胯秺琚嫆鏀?... ok
-test leases::tests::鍨冨溇绉熺害鏂囦欢涓嶈褰撴垚鍗犵敤 ... ok
 test lockfile::tests::姝昏繘绋嬬殑閿佷細琚洖鏀?... ok
+test leases::tests::鍨冨溇绉熺害鏂囦欢涓嶈褰撴垚鍗犵敤 ... ok
 test leases::tests::鏃ф牸寮忕绾︿粛鐒跺彲璇?... ok
 test leases::tests::娲荤潃鐨勫瓙杩涚▼琚垽瀹氫负瀛樻椿 ... ok
-test lockfile::tests::鍚屼竴杩涚▼閲嶅叆浼氳秴鏃?... ok
 test leases::tests::宸查€€鍑虹殑瀛愯繘绋嬭鍒ゅ畾涓哄凡姝?... ok
+test lockfile::tests::鍚屼竴杩涚▼閲嶅叆浼氳秴鏃?... ok
 test lockfile::tests::鏃爌id瀛楁鐨勯攣鏂囦欢涓嶈鍥炴敹 ... ok
 test lockfile::tests::鍚姩鏍囪瘑涓€鑷存椂涓嶅洖鏀舵椿閿?... ok
 
-test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
 
      Running tests\cross_process.rs (E:\augenstern\translate\.build\target\debug\deps\cross_process-6a8d58beb0f9f31e.ex
 e)
@@ -496,17 +516,17 @@ test child_hold_lock ... ignored, 鐢辩埗娴嬭瘯閫氳繃 --exact 鐐瑰悕�
 test child_lease_then_die ... ignored, 鐢辩埗娴嬭瘯閫氳繃 --exact 鐐瑰悕鎵ц
 test child_uninstall ... ignored, 鐢辩埗娴嬭瘯閫氳繃 --exact 鐐瑰悕鎵ц
 
-thread 'child_uninstall' (26452) panicked at crates\translator-resource\tests\cross_process.rs:258:10:
+thread 'child_uninstall' (30860) panicked at crates\translator-resource\tests\cross_process.rs:258:10:
 瀛愯繘绋嬪簲鑳藉嵏杞?1.0.0: NotFound("dictionary.test")
 note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 test 瀛愯繘绋嬫嬁鍒扮殑鏄悓涓€鎶婅法杩涚▼閿?... ok
-test 璺ㄨ繘绋嬪穿婧冪暀涓嬬殑绉熺害鍙鍥炴敹 ... ok
 test 鍒殑杩涚▼鍗歌浇鍚庣绾︾櫥璁拌鎷?... ok
-test 璺ㄨ繘绋嬫椿璺冪绾﹂樆姝㈠嵏杞?... ok
+test 璺ㄨ繘绋嬪穿婧冪暀涓嬬殑绉熺害鍙鍥炴敹 ... ok
 test 璺ㄨ繘绋嬪穿婧冪暀涓嬬殑閿佷細琚洖鏀?... ok
+test 璺ㄨ繘绋嬫椿璺冪绾﹂樆姝㈠嵏杞?... ok
 test 璺ㄨ繘绋嬫寔鏈夐攣鏃朵笉浼氳璇姠 ... ok
 
-test result: ok. 6 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out; finished in 0.93s
+test result: ok. 6 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out; finished in 0.97s
 
      Running tests\p32_lifecycle.rs (E:\augenstern\translate\.build\target\debug\deps\p32_lifecycle-4998c7f5ab7042d9.ex
 e)
@@ -517,58 +537,58 @@ test lc07_娓呯悊淇濈暀琚緷璧栫殑鐗堟湰鑰屼笉鏄垹鎺?...
 test lc07_琚緷璧栫殑鐗堟湰涓嶅彲鍗歌浇 ... ok
 test lc08_瀹夎鍏抽敭鐐硅澶栭儴sigkill鏉€姝诲悗浠撳簱浠嶅彲淇涓旀棫鐗堟湰涓嶆崯鍧?... ok
 
-test result: ok. 4 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.25s
+test result: ok. 4 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.28s
 
      Running tests\p71_j07_security.rs (E:\augenstern\translate\.build\target\debug\deps\p71_j07_security-650686c6763b0
 619.exe)
 
 running 4 tests
-test j07d_璺緞绌胯秺涓嶄骇鐢熶粨搴撳鏂囦欢 ... ok
 test j07c_鏈煡schema蹇呴』绋冲畾鎷掔粷 ... ok
 test j07b_缂烘枃浠跺繀椤昏鎷掔粷 ... ok
 test j07a_绡℃敼涓€涓瓧鑺傚繀椤昏鎷掔粷涓旀棫鐗堟湰涓嶅彈褰卞搷 ... ok
+test j07d_璺緞绌胯秺涓嶄骇鐢熶粨搴撳鏂囦欢 ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
 
      Running tests\store.rs (E:\augenstern\translate\.build\target\debug\deps\store-9fd37def425604f7.exe)
 
 running 40 tests
 test recover娓呯悊閬楃暀staging鐩綍 ... ok
 test 涓嶆敮鎸佺殑payload鐗堟湰琚嫆鏀?... ok
+test 鍏煎鎬ф姤鍛婅兘鍚屾椂鎶ュ嚭澶氫釜闂 ... ok
 test manifest閲岀殑闈炴硶鐗堟湰鍙疯鎷掓敹 ... ok
 test 涓嶆敮鎸佺殑鍗忚鐗堟湰琚嫆鏀?... ok
-test 鍏煎鎬ф姤鍛婅兘鍚屾椂鎶ュ嚭澶氫釜闂 ... ok
 test 骞冲彴涓嶅尮閰嶆椂鎷掓敹 ... ok
 test 鏂板缓浠撳簱瀵硅处鏄共鍑€鐨?... ok
-test 鍗婃垚鍝佹畫鐣欏彲琚璐﹀彂鐜板苟鑷姩鍥炴敹 ... ok
 test 鏈畨瑁呯殑鐗堟湰涓嶈兘鐧昏绉熺害 ... ok
-test v1鏃у寘鍙互鐩存帴瀹夎 ... ok
-test recover鍥炴敹姝昏繘绋嬬殑绉熺害 ... ok
 test 瀹夎鍚庢垚涓烘縺娲荤増鏈?... ok
+test recover鍥炴敹姝昏繘绋嬬殑绉熺害 ... ok
+test 鍗婃垚鍝佹畫鐣欏彲琚璐﹀彂鐜板苟鑷姩鍥炴敹 ... ok
+test v1鏃у寘鍙互鐩存帴瀹夎 ... ok
 test 瀛ゅ効鐩綍琚姤鍑哄苟鍙樉寮忔竻鐞?... ok
 test 澶氫釜绉熺害鎸塸id绋冲畾鎺掑簭 ... ok
-test 鍐呭琚鏀规椂鎷掔粷瀹夎涓旀棫鐗堟湰浠嶅彲鐢?... ok
+test 渚濊禆婊¤冻鏃跺彲浠ュ畨瑁?... ok
+test 鐘舵€佹枃浠舵崯鍧忔椂鍚姩鍗虫姤閿?... ok
+test 鐪熷疄v1璇嶅吀鍖呰嫢瀛樺湪鍒欏繀椤昏璇嗗埆 ... ok
 test 娓呭崟璺緞绌胯秺鏃舵嫆缁濆畨瑁?... ok
 test 鐘舵€佹枃浠舵湭鐭chema鏃舵嫆缁濆姞杞?... ok
-test 鐪熷疄v1璇嶅吀鍖呰嫢瀛樺湪鍒欏繀椤昏璇嗗埆 ... ok
-test 鐘舵€佹枃浠舵崯鍧忔椂鍚姩鍗虫姤閿?... ok
-test 鐘舵€侀攣閲婃斁鍚庡彲琚笅涓€涓寔鏈夎€呰幏寰?... ok
 test 骞跺彂瀹夎鍚屼竴鐗堟湰鍙湁涓€娆℃垚鍔?... ok
+test 鍐呭琚鏀规椂鎷掔粷瀹夎涓旀棫鐗堟湰浠嶅彲鐢?... ok
+test 鐘舵€侀攣閲婃斁鍚庡彲琚笅涓€涓寔鏈夎€呰幏寰?... ok
 test 娌℃湁鍘嗗彶鐗堟湰鏃跺洖婊氭姤閿?... ok
-test 渚濊禆婊¤冻鏃跺彲浠ュ畨瑁?... ok
-test 缂轰緷璧栨椂鎷掓敹 ... ok
-test 婵€娲讳笉瀛樺湪鐨勭増鏈姤閿?... ok
-test 瀹夎鏂扮増鏈笉澶哄彇婵€娲讳綅 ... ok
-test 婵€娲荤増鏈笉鍙垹闄?... ok
 test 鍗歌浇鏈€鍚庝竴涓棫鐗堟湰鍚庤祫婧愯褰曟秷澶?... ok
+test 缂轰緷璧栨椂鎷掓敹 ... ok
+test 瀹夎鏂扮増鏈笉澶哄彇婵€娲讳綅 ... ok
+test 婵€娲讳笉瀛樺湪鐨勭増鏈姤閿?... ok
+test 婵€娲荤増鏈笉鍙垹闄?... ok
 test 缂烘枃浠舵椂鎷掔粷瀹夎 ... ok
 test 鐩綍涓㈠け琚姤鎴愮己澶变笖涓嶄細鑷姩鍒犺褰?... ok
-test 鍙︿竴涓寔鏈夎€呭崰鐫€鐘舵€侀攣鏃跺畨瑁呬細瓒呮椂涓斾笉鐣欐畫楠?... ok
 test 绉熺害鏂囦欢闅廳rop娑堝け骞舵竻鐞嗙┖鐩綍 ... ok
 test 閲嶅瀹夎鍚屼竴鐗堟湰琚嫆 ... ok
+test 鍙︿竴涓寔鏈夎€呭崰鐫€鐘舵€侀攣鏃跺畨瑁呬細瓒呮椂涓斾笉鐣欐畫楠?... ok
 test 琚鐢ㄧ殑瀛ゅ効鐩綍涓嶄細琚竻鐞?... ok
-test 婵€娲讳笌鍥炴粴淇濈暀鍘嗗彶 ... ok
 test 绉熺害涓嶉樆姝㈠畨瑁呬笌婵€娲?... ok
+test 婵€娲讳笌鍥炴粴淇濈暀鍘嗗彶 ... ok
 test 绉熺害淇濇姢闈炴縺娲荤増鏈笉琚嵏杞?... ok
 test 闈炴縺娲荤増鏈彲浠ュ嵏杞?... ok
 test cleanup淇濈暀琚鐢ㄧ殑鐗堟湰骞跺瀹炴姤鍛?... ok
@@ -580,53 +600,53 @@ test result: ok. 40 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 xe)
 
 running 45 tests
-test migrate::tests::閲戞牱鏈繃涓嶄簡灏变笉浜у嚭杩佺Щ缁撴灉 ... ok
-test terms::tests::ascii澶у皬鍐欎笉鏁忔劅 ... ok
-test terms::tests::涓枃鍙樹綋鎸夊瓙涓插尮閰?... ok
+test terms::tests::鏈煡schema鐗堟湰琚嫆鏀?... ok
 test migrate::tests::浜岃繘鍒跺舰鎬佷篃鑳借鍏冩暟鎹?... ok
-test migrate::tests::杩佺Щ鍚庨噸璺戦噾鏍锋湰骞朵骇鍑哄彲鎵ц鍖?... ok
 test terms::tests::鍙樹綋涓庤鑼冩湳璇浉鍚屾椂琚嫆鏀?... ok
+test terms::tests::ascii澶у皬鍐欎笉鏁忔劅 ... ok
+test migrate::tests::杩佺Щ鍚庨噸璺戦噾鏍锋湰骞朵骇鍑哄彲鎵ц鍖?... ok
+test terms::tests::涓枃鍙樹綋鎸夊瓙涓插尮閰?... ok
+test migrate::tests::宸叉槸褰撳墠鐗堟湰鐨勫寘杩佺Щ鏄箓绛夌殑 ... ok
 test terms::tests::鍚屼竴鍙樹綋鏄犲皠鍒颁袱涓笉鍚岃鑼冩湳璇椂琚嫆鏀?... ok
 test terms::tests::鏁磋瘝鍖归厤涓嶄細鍛戒腑鏇撮暱鍗曡瘝鐨勪竴閮ㄥ垎 ... ok
-test terms::tests::鏈€闀夸紭鍏?... ok
-test migrate::tests::宸叉槸褰撳墠鐗堟湰鐨勫寘杩佺Щ鏄箓绛夌殑 ... ok
-test terms::tests::鏈煡schema鐗堟湰琚嫆鏀?... ok
-test terms::tests::鍙椾繚鎶よ法搴﹂噷鐨勫唴瀹逛笉琚敼鍐?... ok
 test terms::tests::鏃犺繚瑙勬椂鍘熸牱杩斿洖 ... ok
+test terms::tests::鍙椾繚鎶よ法搴﹂噷鐨勫唴瀹逛笉琚敼鍐?... ok
+test terms::tests::鏈€闀夸紭鍏?... ok
 test terms::tests::鏈煡瀛楁涓嶄細琚潤榛樺拷鐣?... ok
+test migrate::tests::閲戞牱鏈繃涓嶄簡灏变笉浜у嚭杩佺Щ缁撴灉 ... ok
 test terms::tests::娌℃湁婧愭枃鏃惰烦杩囬渶瑕佽Е鍙戠殑瑙勫垯 ... ok
-test terms::tests::绌哄彉浣撹鎷掓敹 ... ok
 test terms::tests::婧愭枃鍛戒腑瑙﹀彂鏉′欢鏃舵墠鏀瑰啓 ... ok
+test terms::tests::绌哄彉浣撹鎷掓敹 ... ok
 test terms::tests::绌鸿〃琚嫆鏀?... ok
 test terms::tests::绌鸿Е鍙戞潯浠惰鎷掓敹 ... ok
-test terms::tests::瑙﹀彂鏉′欢鐨勭粺璁″彲瑙?... ok
 test terms::tests::缂栬瘧鍚庡彲鎶ュ嚭缁熻 ... ok
+test terms::tests::瑙﹀彂鏉′欢鐨勭粺璁″彲瑙?... ok
 test terms::tests::閫氶厤鐩爣璇█瀵规墍鏈夎瑷€鐢熸晥 ... ok
 test terms::tests::杩濊鍋忕Щ鎸囧悜杈撳嚭鏂囨湰 ... ok
-test terms::tests::閲嶅鐨勫悓涔夐厤缃鎶樺彔 ... ok
-test tests::nfkc鎶婂叏瑙掕浆鍗婅 ... ok
-test tests::whole_word鍙尮閰嶆暣璇?... ok
-test tests::浜岃繘鍒惰绡℃敼浼氳妫€鍑?... ok
-test tests::浜岃繘鍒跺線杩斾繚鎸佽涓轰竴鑷?... ok
-test tests::鏃ф墽琛岃涔夌増鏈鎷掔粷 ... ok
-test tests::浼樺厛绾у喅瀹氭墽琛岄『搴?... ok
-test tests::鏈煡schema琚嫆缁?... ok
-test tests::鏍锋湰涓嶉€氳繃琚嫆缁?... ok
-test tests::鏉′欢鍛戒腑鎵嶄慨鏀规枃鏈?... ok
 test migrate::tests::鏃у寘鑳借璇嗗埆鍏冩暟鎹絾涓嶅彲鎵ц ... ok
-test tests::鐪佺暐鎵ц璇箟鐗堟湰鏃惰涓哄綋鍓嶇増鏈?... ok
+test terms::tests::閲嶅鐨勫悓涔夐厤缃鎶樺彔 ... ok
+test tests::whole_word鍙尮閰嶆暣璇?... ok
+test tests::nfkc鎶婂叏瑙掕浆鍗婅 ... ok
+test tests::浼樺厛绾у喅瀹氭墽琛岄『搴?... ok
+test tests::鏍锋湰涓嶉€氳繃琚嫆缁?... ok
+test tests::鏃ф墽琛岃涔夌増鏈鎷掔粷 ... ok
+test tests::浜岃繘鍒跺線杩斾繚鎸佽涓轰竴鑷?... ok
 test tests::绌烘搷浣滆鍒欒鎷掔粷 ... ok
+test tests::鐪佺暐鎵ц璇箟鐗堟湰鏃惰涓哄綋鍓嶇増鏈?... ok
+test tests::鏉′欢鍛戒腑鎵嶄慨鏀规枃鏈?... ok
 test tests::缂烘牱鏈鎷掔粷 ... ok
+test tests::鏈煡schema琚嫆缁?... ok
+test tests::浜岃繘鍒惰绡℃敼浼氳妫€鍑?... ok
+test tests::璇█瀵归潪娉曡鎷掔粷 ... ok
 test tests::缂栬瘧鎴愬姛骞舵毚闇插厓淇℃伅 ... ok
 test tests::璇█瀵逛笉鍖归厤鐨勮鍒欎笉鐢熸晥 ... ok
 test tests::閫氶厤璇█瀵瑰湪鎵€鏈夋柟鍚戜笂鐢熸晥 ... ok
-test tests::璇█瀵归潪娉曡鎷掔粷 ... ok
 test tests::閲嶅瑙勫垯id琚嫆缁?... ok
 test tests::涓嶅緱panic鍦ㄧ暩褰㈣緭鍏ヤ笂 ... ok
-test terms::tests::涓婇檺浼氭尅浣忓紓甯歌緭鍏?... ok
 test tests::浠庢枃浠跺姞杞借嚜鍔ㄨ瘑鍒袱绉嶆牸寮?... ok
+test terms::tests::涓婇檺浼氭尅浣忓紓甯歌緭鍏?... ok
 
-test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
      Running tests\bench_rules.rs (E:\augenstern\translate\.build\target\debug\deps\bench_rules-fb888ac77aaca431.exe)
 
@@ -640,34 +660,34 @@ test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; fini
 
 running 27 tests
 test config::tests::瓒婄晫鍙傛暟琚嫆缁?... ok
-test protocol::tests::鍐欒秴闄愬抚琚嫆缁?... ok
-test error::tests::鍙湁worker姝绘帀鎵嶅厑璁搁噸鍚悗閲嶈瘯 ... ok
 test model::tests::褰撳墠杩涚▼鑳借鍒皉ss鎴栨槑纭负none ... ok
-test platform::tests::鍏朵粬骞冲彴鏄庣‘鎶ヨ兘鍔涗笉鍙敤鑰屼笉鏄潤榛橀檷绾?... ok
+test error::tests::閿欒鐮佹槧灏勪笌瀹℃煡琛ㄤ竴鑷?... ok
 test platform::tests::linux鏈夊疄娴嬭瘉鎹?... ok
+test error::tests::鍙湁worker姝绘帀鎵嶅厑璁搁噸鍚悗閲嶈瘯 ... ok
+test platform::tests::褰撳墠骞冲彴涓庣紪璇戠洰鏍囦竴鑷?... ok
+test protocol::tests::鍐欒秴闄愬抚琚嫆缁?... ok
 test platform::tests::璇佹嵁琛ㄥ彧鏈塴inux ... ok
 test protocol::tests::鍝嶅簲缂哄け鍙€夊瓧娈典篃鑳借В鏋?... ok
-test error::tests::閿欒鐮佹槧灏勪笌瀹℃煡琛ㄤ竴鑷?... ok
+test platform::tests::鍏朵粬骞冲彴鏄庣‘鎶ヨ兘鍔涗笉鍙敤鑰屼笉鏄潤榛橀檷绾?... ok
 test protocol::tests::甯у彲浠ュ線杩斾笖闀垮害鍓嶇紑姝ｇ‘ ... ok
-test platform::tests::褰撳墠骞冲彴涓庣紪璇戠洰鏍囦竴鑷?... ok
 test protocol::tests::璇锋眰淇″皝甯︽搷浣滃悕涓庡崗璁増鏈?... ok
 test protocol::tests::瓒呴檺鐨勫抚鍦ㄥ垎閰嶅墠琚嫆缁?... ok
-test transport::tests::缂烘枃浠跺湪spawn涔嬪墠灏辫鎷掔粷 ... ok
 test worker::tests::閰嶇疆榛樿鍊艰冻澶熶繚瀹?... ok
+test transport::tests::缂烘枃浠跺湪spawn涔嬪墠灏辫鎷掔粷 ... ok
 test worker::tests::鍚姩涓嶅瓨鍦ㄧ殑绋嬪簭鎶ュ垵濮嬪寲澶辫触 ... ok
-test snapshot::tests::婧愭枃浠舵憳瑕佷笉绗︽椂鎷掔粷澶嶅埗 ... ok
-test snapshot::tests::婧愭枃浠惰鏇挎崲鍚庡揩鐓у唴瀹逛粛鐒舵槸鏍￠獙杩囩殑閭ｄ唤 ... ok
-test snapshot::tests::蹇収閲岀殑鏂囦欢鏄彧璇荤殑 ... ok
-test snapshot::tests::蹇収鎶婃枃浠跺鍒跺埌绉佹湁鐩綍骞剁粰鍑哄壇鏈矾寰?... ok
-test snapshot::tests::杩涚▼娲荤潃鏃朵笉娓呯悊瀹冪殑蹇収 ... ok
 test model::tests::璺緞缂哄け鎶ユ湭瀹夎 ... ok
 test model::tests::缂轰竴涓枃浠舵椂鎶ヤ笉瀹屾暣鑰屼笉鏄瓑鍦╪ative閲屽穿 ... ok
 test model::tests::澶у皬涓嶇鍦ㄧ畻鎽樿涔嬪墠灏辫鎷掔粷 ... ok
 test model::tests::绌烘枃浠朵笉閫氳繃璺緞妫€鏌?... ok
-test model::tests::鍥涙枃浠堕綈鍏ㄦ椂鏍￠獙閫氳繃涓旀憳瑕佺ǔ瀹?... ok
 test model::tests::鏂囦欢琚敼鍔ㄥ悗鎽樿涓嶇 ... ok
+test snapshot::tests::婧愭枃浠舵憳瑕佷笉绗︽椂鎷掔粷澶嶅埗 ... ok
+test snapshot::tests::蹇収閲岀殑鏂囦欢鏄彧璇荤殑 ... ok
+test snapshot::tests::婧愭枃浠惰鏇挎崲鍚庡揩鐓у唴瀹逛粛鐒舵槸鏍￠獙杩囩殑閭ｄ唤 ... ok
+test snapshot::tests::蹇収鎶婃枃浠跺鍒跺埌绉佹湁鐩綍骞剁粰鍑哄壇鏈矾寰?... ok
+test model::tests::鍥涙枃浠堕綈鍏ㄦ椂鏍￠獙閫氳繃涓旀憳瑕佺ǔ瀹?... ok
+test snapshot::tests::杩涚▼娲荤潃鏃朵笉娓呯悊瀹冪殑蹇収 ... ok
 
-test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
 
      Running unittests src\bin\nmt-worker.rs (E:\augenstern\translate\.build\target\debug\deps\nmt_worker-73bd418fa2b04
 eaf.exe)
@@ -725,11 +745,11 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 xe)
 
 running 5 tests
-test tests::绌烘爣绛惧簲琚嫆缁?... ok
+test tests::榛樿绛栫暐涓嶅厑璁歌繙绋?... ok
 test tests::璇█鏍囩搴旇瑙勮寖鍖?... ok
 test tests::鎻掍欢鐗堟湰闇€涓荤増鏈竴鑷?... ok
 test tests::闈炴硶瀛楃搴旇鎷掔粷 ... ok
-test tests::榛樿绛栫暐涓嶅厑璁歌繙绋?... ok
+test tests::绌烘爣绛惧簲琚嫆缁?... ok
 
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -792,7 +812,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 running 1 test
 test crates\translator-resource\src\lib.rs - (line 9) - compile ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
 
    Doc-tests translator_rules
 

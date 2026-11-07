@@ -34,6 +34,7 @@
 - `32_P5开发建议与实施计划（工作区与权限边界）.md` — 外部审查/计划稿归档：唯一可写工作区 `E:\augenstern\translate`、逐项审批、固定 Anaconda Python
 - `47_P8-P11_遗留能力源码核验与开发验收计划.md` — P8～P11 计划归档（权限边界、工作包、M/SM/EP/DI/LID/AND/NC/RM/R 矩阵、里程碑）
 - `50_P9_多语言词典语言识别与词形分析开发建议.md` — P9.0～P9.5 计划归档（资源准入、DI/LID/MOR 矩阵、权限边界）
+- `55_P9.4_SDK集成与跨平台回归报告.md` — LID/lemma 注入、Android JNI v3 词典 44 PASS、EP-02；Linux 417/421、Windows 370/374
 - `54_P9.2_P9.3-A_LID与英语词形分析报告.md` — fastText LID 同集对照（40 条）、RSS/时延、英语轻量 lemmatizer 8 tests
 - `53_P9.1-S_定向覆盖与同音索引修复报告.md` — v3 多值索引（はし 6 条）、额外 30 MiB 定向采样（目标词仍 2/10）、100 条人工评审 PENDING；全量 No-Go
 - `52_P9.1_多语言词库导入报告.md` — P9.1 小样本：Kaikki en→zh 950 条、JMdict ja→en 999 条；DI-01～08 结果与 28.3 MB 下载审计
@@ -675,8 +676,12 @@ Linux 401 tests（all-features 404）、Windows 354 tests（all-features 357）�
 Linux 404/0/60（all 407/0/65）、Windows 357/0/60（all 360/0/65）；Android 词库集成留 P9.4。
 资源仍仅内部研发、`redistribution=pending-review`；全量导入未批准。
 
+**P9.4 已完成（`docs/55`）**：LID/lemmatizer 已接入 Rust `Translator`；Android JNI v3 词典与双实例
+**44 PASS / 0 FAIL / 1 PENDING**；EP-02 规则/术语内容摘要；Linux 417/421、Windows 370/374。
+JNI 尚无 LID 配置，翻译仍保留首义 legacy（文档已记）。
+
 **P9.2/P9.3-A 已完成 PoC（`docs/54`）**：`FastTextIdentifier`（fasttext-pure-rs，MIT）与启发式同集 40 条对照；
-英语 `EnglishLemmatizer` 规则/例外词表 8 tests。均尚未接入 Translator 路由（P9.4）。
+英语 `EnglishLemmatizer` 规则/例外词表 8 tests；P9.4 已接入 `TranslatorBuilder`（见 `docs/55`）。
 Linux 410/413、Windows 363/366。G11/G12 仍 open。
 
 **P9.1-S 已完成（`docs/53`）**：v3 `postings` 多值索引修复 はし→橋/箸/端/梯/愛し/波斯；DI-09～13 通过。
