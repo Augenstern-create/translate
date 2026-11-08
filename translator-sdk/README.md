@@ -34,6 +34,7 @@
 - `32_P5开发建议与实施计划（工作区与权限边界）.md` — 外部审查/计划稿归档：唯一可写工作区 `E:\augenstern\translate`、逐项审批、固定 Anaconda Python
 - `47_P8-P11_遗留能力源码核验与开发验收计划.md` — P8～P11 计划归档（权限边界、工作包、M/SM/EP/DI/LID/AND/NC/RM/R 矩阵、里程碑）
 - `50_P9_多语言词典语言识别与词形分析开发建议.md` — P9.0～P9.5 计划归档（资源准入、DI/LID/MOR 矩阵、权限边界）
+- `59B_P10.1_Windows_ORT连续Soak与崩溃隔离PoC报告.md` — 连续 10k 仅 1,500（PENDING）、子进程崩溃 PoC（非生产隔离）
 - `59A_P10.1-A3-A4_Windows_ORT补充验证报告.md` — 10k 仅 4,000（PENDING）、并发共享、身份切换、预算、NM-09 限制
 - `59_P10.1-A_Windows_ORT真实模型Soak与生命周期报告.md` — 1000 次 Soak（0 错误）、共享会话、RSS/Private Bytes；10k PENDING
 - `58_P10.0_模型运行时与环境预检报告.md` — P10.0：Windows ORT 可用；Bergamot/P10.2/P10.3 阻断；无下载/改码
@@ -679,6 +680,9 @@ Linux 401 tests（all-features 404）、Windows 354 tests（all-features 357）�
 生成 Kaikki en→zh 950 条、JMdict ja→en 999 条；DI-04/05/06/07/08 通过，DI-01 因目标词覆盖不足为 PARTIAL。
 Linux 404/0/60（all 407/0/65）、Windows 357/0/60（all 360/0/65）；Android 词库集成留 P9.4。
 资源仍仅内部研发、`redistribution=pending-review`；全量导入未批准。
+
+**P10.1-A3/A4 补充（`docs/59B`）**：连续 10k 仅完成 1,500（PENDING）；子进程故障 PoC 只证明实验载体，
+NM-09 仍 BLOCKED；A4-1/2/3 通过。
 
 **P10.1-A3/A4 补充（`docs/59A`）**：并发 A/B 各 20 次 0 错误；模型副本内容变化后共享身份改变；
 预算 100 MiB 拒绝/650 MiB 通过；10k 仅完成 4,000（PENDING）；NM-09 同进程无隔离，BLOCKED。

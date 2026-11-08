@@ -1,0 +1,14 @@
+﻿cargo.exe :    Compiling translator-nmt-ort v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-nmt-ort)
+所在位置 E:\augenstern\translate\translator-sdk\tools\p10\run-ort-soak.ps1:9 字符: 1
++ & cargo run -p translator-nmt-ort --features ort-runtime --release -- ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling tr...slator-nmt-ort):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+    Finished `release` profile [optimized] target(s) in 23.54s
+     Running `E:\augenstern\translate\.build\target\release\examples\p10_soak.exe 10000`
+after 500: rss 423.7 MiB private Some(412.796875)
+after 1000: rss 423.9 MiB private Some(412.86328125)
+after 1500: rss 423.8 MiB private Some(412.796875)
+error: process didn't exit successfully: `E:\augenstern\translate\.build\target\release\examples\p10_soak.exe 10000` (e
+xit code: 0xffffffff)

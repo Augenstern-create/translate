@@ -1,0 +1,25 @@
+﻿cargo.exe :    Compiling translator-nmt-ort v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-nmt-ort)
+所在位置 E:\augenstern\translate\.build\staging\p10-crash.ps1:5 字符: 1
++ & cargo run -p translator-nmt-ort --example p10_crash *> $log
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling tr...slator-nmt-ort):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.54s
+     Running `E:\augenstern\translate\.build\target\debug\examples\p10_crash.exe`
+{
+  "crash_child": {
+    "status_debug": "ExitStatus(ExitStatus(3221225477))",
+    "status_ok": false,
+    "stdout": ""
+  },
+  "normal_child": {
+    "status_debug": "ExitStatus(ExitStatus(0))",
+    "status_ok": true,
+    "stdout": "child-ok"
+  },
+  "orphan_possible": false,
+  "parent_survived": true,
+  "schema": "p10.1-crash-poc/v1",
+  "scope": "independent child process; NOT proof of ORT in-process isolation"
+}
