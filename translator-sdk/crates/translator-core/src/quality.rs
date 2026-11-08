@@ -58,6 +58,12 @@ pub enum QualityIssueKind {
     Untranslated,
     /// 输出为空。
     EmptyOutput,
+    /// 源文有条件关系，译文没有条件标记（启发式）。
+    ConditionalDropped,
+    /// 译文相对源文异常短，可能遗漏内容（启发式）。
+    PossibleOmission,
+    /// 译文相对源文异常长，可能追加了不存在的内容（启发式）。
+    PossibleHallucination,
 }
 
 impl QualityIssueKind {
@@ -71,6 +77,9 @@ impl QualityIssueKind {
             Self::TargetLanguageMismatch => "target_language_mismatch",
             Self::Untranslated => "untranslated",
             Self::EmptyOutput => "empty_output",
+            Self::ConditionalDropped => "conditional_dropped",
+            Self::PossibleOmission => "possible_omission",
+            Self::PossibleHallucination => "possible_hallucination",
         }
     }
 }
@@ -218,6 +227,13 @@ pub fn check(
         {
             remaining.remove(pos);
             report.numbers_preserved += 1;
+        } else if chinese_forms(&token.canonical)
+            .iter()
+            .any(|form| output.contains(form))
+        {
+            // 译文用了规范中文数字（两小时三十分钟、百分之十五）：
+            // 数值语义保留，不能因为不是阿拉伯数字就判丢失。
+            report.numbers_preserved += 1;
         } else {
             report.issues.push(QualityIssue {
                 kind: QualityIssueKind::NumberMissing,
@@ -251,6 +267,30 @@ pub fn check(
             kind: QualityIssueKind::NegationDropped,
             severity: QualitySeverity::Major,
             detail: format!("源文有 {negation_cues} 个否定线索，译文没有否定表达"),
+        });
+    }
+
+    let source_words = source.split_whitespace().count();
+    let ratio = output.chars().count() as f32 / source.chars().count().max(1) as f32;
+    if source_words >= 10 && ratio < 0.18 {
+        report.issues.push(QualityIssue {
+            kind: QualityIssueKind::PossibleOmission,
+            severity: QualitySeverity::Major,
+            detail: format!("译文/源文字符比仅 {ratio:.2}，可能遗漏内容"),
+        });
+    }
+    if source_words >= 5 && ratio > 2.5 {
+        report.issues.push(QualityIssue {
+            kind: QualityIssueKind::PossibleHallucination,
+            severity: QualitySeverity::Major,
+            detail: format!("译文/源文字符比 {ratio:.2}，可能追加了内容"),
+        });
+    }
+    if has_conditional_cue(&lower_source) && !has_target_conditional(output) {
+        report.issues.push(QualityIssue {
+            kind: QualityIssueKind::ConditionalDropped,
+            severity: QualitySeverity::Major,
+            detail: "源文有条件关系，译文没有条件标记".to_string(),
         });
     }
 
@@ -552,6 +592,99 @@ fn normalize_number(raw: &str) -> String {
     }
 }
 
+/// 一个数字的常见中文写法（用于数字保真的等价判断）。
+fn chinese_forms(canonical: &str) -> Vec<String> {
+    let (body, percent) = if let Some(stripped) = canonical.strip_suffix('%') {
+        (stripped, true)
+    } else {
+        (canonical, false)
+    };
+    let Ok(value) = body.parse::<u64>() else {
+        return Vec::new();
+    };
+    let mut forms = Vec::new();
+    let standard = chinese_integer(value);
+    if !standard.is_empty() {
+        forms.push(if percent {
+            format!("百分之{standard}")
+        } else {
+            standard
+        });
+    }
+    if value == 2 {
+        forms.push(if percent {
+            "百分之两".to_string()
+        } else {
+            "两".to_string()
+        });
+    }
+    // 年份/编号的逐位读法（二〇二六）
+    if value >= 1000 {
+        let digits: String = value
+            .to_string()
+            .chars()
+            .map(|c| match c {
+                '0' => '零',
+                '1' => '一',
+                '2' => '二',
+                '3' => '三',
+                '4' => '四',
+                '5' => '五',
+                '6' => '六',
+                '7' => '七',
+                '8' => '八',
+                '9' => '九',
+                _ => c,
+            })
+            .collect();
+        forms.push(if percent {
+            format!("百分之{digits}")
+        } else {
+            digits
+        });
+    }
+    forms
+}
+
+fn chinese_integer(mut n: u64) -> String {
+    if n == 0 {
+        return "零".to_string();
+    }
+    if n > 9999 {
+        return String::new();
+    }
+    const DIGITS: [&str; 10] = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+    let units = ["", "十", "百", "千"];
+    let mut parts: Vec<String> = Vec::new();
+    let mut unit = 0usize;
+    let mut zero_pending = false;
+    while n > 0 {
+        let d = (n % 10) as usize;
+        if d == 0 {
+            if !parts.is_empty() {
+                zero_pending = true;
+            }
+        } else {
+            let mut piece = String::new();
+            if zero_pending {
+                piece.push('零');
+                zero_pending = false;
+            }
+            piece.push_str(DIGITS[d]);
+            piece.push_str(units[unit]);
+            parts.push(piece);
+        }
+        n /= 10;
+        unit += 1;
+    }
+    parts.reverse();
+    let mut out = parts.concat();
+    if out.starts_with("一十") {
+        out = out.replacen("一十", "十", 1);
+    }
+    out
+}
+
 fn is_digit(c: char) -> bool {
     c.is_ascii_digit() || ('\u{FF10}'..='\u{FF19}').contains(&c)
 }
@@ -562,6 +695,29 @@ fn to_ascii_digit(c: char) -> char {
     } else {
         char::from_u32(c as u32 - 0xFF10 + '0' as u32).unwrap_or('0')
     }
+}
+
+fn has_conditional_cue(lower_source: &str) -> bool {
+    let padded = format!(" {lower_source} ");
+    [
+        " if ",
+        " unless ",
+        " when ",
+        " once ",
+        " provided ",
+        " as long as ",
+    ]
+    .iter()
+    .any(|cue| padded.contains(cue))
+}
+
+fn has_target_conditional(output: &str) -> bool {
+    [
+        "如果", "若", "假如", "要是", "除非", "当", "一旦", "只要", "只有", "否则", "即使", "时",
+        "后", "一经", "完成", "的话", "则", "便", "就",
+    ]
+    .iter()
+    .any(|cue| output.contains(cue))
 }
 
 fn count_negation_cues(lower_source: &str) -> usize {
@@ -742,6 +898,40 @@ mod tests {
         );
         assert_eq!(repair_output("温度在以上20度。 。"), "温度在20度以上。");
         assert_eq!(repair_output("版本是2.4.1..."), "版本是2.4.1...");
+    }
+
+    #[test]
+    fn 条件关系丢失被报告() {
+        let report = check(
+            "If the token expires, the client must log in again.",
+            "令牌过期，客户端必须重新登录。",
+            &zh(),
+            TranslationMode::Precise,
+        );
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.kind == QualityIssueKind::ConditionalDropped));
+    }
+
+    #[test]
+    fn 中文数字不判为丢失() {
+        assert_eq!(chinese_integer(30), "三十");
+        assert_eq!(chinese_integer(2), "二");
+        assert!(
+            chinese_forms("30").iter().any(|f| f == "三十"),
+            "{:?}",
+            chinese_forms("30")
+        );
+        let report = check(
+            "The job finished in 2 hours and 30 minutes.",
+            "工作在两个小时三十分钟内完成。",
+            &zh(),
+            TranslationMode::Precise,
+        );
+        assert_eq!(report.numbers_in_source, 2);
+        assert_eq!(report.numbers_preserved, 2, "{report:?}");
+        assert!(!report.has_fatal(), "{report:?}");
     }
 
     #[test]

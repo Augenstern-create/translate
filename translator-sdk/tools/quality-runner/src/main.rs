@@ -48,6 +48,14 @@ struct Args {
     threads: usize,
     #[cfg(feature = "ort")]
     beam_width: usize,
+    #[cfg(feature = "ort")]
+    encoder_file: Option<String>,
+    #[cfg(feature = "ort")]
+    decoder_file: Option<String>,
+    #[cfg(feature = "ort")]
+    tokenizer_file: Option<String>,
+    #[cfg(feature = "ort")]
+    model_variant: Option<String>,
     summary: Option<PathBuf>,
 }
 
@@ -81,6 +89,14 @@ impl Default for Args {
             threads: 1,
             #[cfg(feature = "ort")]
             beam_width: 1,
+            #[cfg(feature = "ort")]
+            encoder_file: None,
+            #[cfg(feature = "ort")]
+            decoder_file: None,
+            #[cfg(feature = "ort")]
+            tokenizer_file: None,
+            #[cfg(feature = "ort")]
+            model_variant: None,
             summary: None,
         }
     }
@@ -116,6 +132,10 @@ fn usage() -> &'static str {
   --max-new-tokens <n>    解码上界（默认模型配置 192）
   --threads <n>           intra-op 线程数（默认 1）
   --beam <n>              beam 宽度（1 = 贪心，>1 = 实验性 beam search）
+  --encoder-file <f>      编码器文件名（默认 int8）
+  --decoder-file <f>      解码器文件名
+  --tokenizer-file <f>    分词器文件名
+  --model-variant <v>     int8 | fp16 | fp32（推荐 fp32 做质量对照）
 "
 }
 
@@ -167,6 +187,7 @@ fn parse_args() -> Result<Args, String> {
                     "whole" => translator_api::ParagraphStrategy::Whole,
                     "sentence" => translator_api::ParagraphStrategy::Sentence,
                     "group" => translator_api::ParagraphStrategy::Group,
+                    "best" => translator_api::ParagraphStrategy::Best,
                     other => return Err(format!("未知 paragraph-strategy：{other}")),
                 }
             }
@@ -206,6 +227,14 @@ fn parse_args() -> Result<Args, String> {
             "--threads" => args.threads = value()?.parse().map_err(|e| format!("{e}"))?,
             #[cfg(feature = "ort")]
             "--beam" => args.beam_width = value()?.parse().map_err(|e| format!("{e}"))?,
+            #[cfg(feature = "ort")]
+            "--encoder-file" => args.encoder_file = Some(value()?),
+            #[cfg(feature = "ort")]
+            "--decoder-file" => args.decoder_file = Some(value()?),
+            #[cfg(feature = "ort")]
+            "--tokenizer-file" => args.tokenizer_file = Some(value()?),
+            #[cfg(feature = "ort")]
+            "--model-variant" => args.model_variant = Some(value()?),
             other => return Err(format!("未知参数：{other}")),
         }
     }
@@ -246,6 +275,30 @@ fn build_translator(args: &Args) -> Result<Translator, String> {
         );
         config.threads = args.threads;
         config.beam_width = args.beam_width;
+        if let Some(variant) = &args.model_variant {
+            config = config.with_variant(match variant.as_str() {
+                "int8" => translator_api::nmt_ort::ModelVariant::Int8,
+                "fp16" => translator_api::nmt_ort::ModelVariant::Fp16,
+                "fp32" => translator_api::nmt_ort::ModelVariant::Fp32,
+                other => return Err(format!("未知 model-variant：{other}")),
+            });
+        }
+        if args.encoder_file.is_some()
+            || args.decoder_file.is_some()
+            || args.tokenizer_file.is_some()
+        {
+            config = config.with_files(
+                args.encoder_file
+                    .clone()
+                    .unwrap_or_else(|| translator_api::nmt_ort::ENCODER_FILE.to_string()),
+                args.decoder_file
+                    .clone()
+                    .unwrap_or_else(|| translator_api::nmt_ort::DECODER_FILE.to_string()),
+                args.tokenizer_file
+                    .clone()
+                    .unwrap_or_else(|| translator_api::nmt_ort::TOKENIZER_FILE.to_string()),
+            );
+        }
         if let Some(max_new) = args.max_new_tokens {
             config.max_new_tokens = max_new;
         }

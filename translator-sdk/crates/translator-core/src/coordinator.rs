@@ -728,6 +728,51 @@ impl Coordinator {
         Ok((outcome.text, outcome.applied))
     }
 
+    /// 对聚合后的段落/文档译文做一次术语约束（P13-Q3 上下文术语一致性）。
+    ///
+    /// 源文传入**整段/整篇**：术语规则只在源文出现对应触发词时生效，因此
+    /// 前文出现过的术语可以约束后文译文，而不需要把上下文塞进模型。
+    pub fn enforce_terms_on_text(
+        &self,
+        source_text: &str,
+        target: &translator_types::LanguageTag,
+        text: &str,
+    ) -> (String, Option<TermTrace>) {
+        if !self.config.term_policy.runs() {
+            return (text.to_string(), None);
+        }
+        let Some(guard) = self.config.term_guard.as_ref() else {
+            return (text.to_string(), None);
+        };
+        let source_lang = self
+            .config
+            .language_identifier
+            .as_ref()
+            .and_then(|id| id.identify(source_text, 1).into_iter().next())
+            .map(|g| g.language)
+            .unwrap_or_else(|| translator_types::LanguageTag::new("en").expect("静态语言标签合法"));
+        let outcome = guard.apply_with_context(&TermContext {
+            source_text,
+            target_text: text,
+            source: &source_lang,
+            target,
+        });
+        let applied = self.config.term_policy.applies_text();
+        let result_text = if applied {
+            outcome.text.clone()
+        } else {
+            text.to_string()
+        };
+        let trace = TermTrace {
+            id: guard.id().to_string(),
+            version: guard.version(),
+            policy: self.config.term_policy,
+            replaced: if applied { outcome.violations.len() } else { 0 },
+            violations: outcome.violations,
+        };
+        (result_text, Some(trace))
+    }
+
     /// 输出侧术语约束。返回 `None` 表示"没跑"（未配置或策略为 `Off`）。
     ///
     /// 传入源文，让实现者能按"源文是否触发"决定要不要检查（P2-S / S-03）。

@@ -247,6 +247,7 @@ fn take_global_options(args: &mut Vec<String>) -> Result<GlobalOptions, ExitCode
             "whole" => translator_api::ParagraphStrategy::Whole,
             "sentence" => translator_api::ParagraphStrategy::Sentence,
             "group" => translator_api::ParagraphStrategy::Group,
+            "best" => translator_api::ParagraphStrategy::Best,
             other => {
                 eprintln!("--paragraph-strategy 只能是 auto | whole | sentence | group：{other}");
                 return Err(ExitCode::from(2));

@@ -72,6 +72,47 @@ pub const ENCODER_FILE: &str = "encoder_model_quantized.onnx";
 pub const DECODER_FILE: &str = "decoder_model_merged_quantized.onnx";
 pub const TOKENIZER_FILE: &str = "tokenizer.json";
 
+/// P13 模型精度变体：同一份权重的 int8 / fp16 / fp32 ONNX 导出。
+///
+/// 同集 100 句：int8 chrF 0.4535、fp16 0.4648、fp32 0.4724；fp32 稳态延迟
+/// 反而低于 int8（量化算子开销），但峰值 RSS 约 1.13 GB vs 0.58 GB。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ModelVariant {
+    /// 默认：int8 量化（低内存）。
+    #[default]
+    Int8,
+    /// fp16（CPU 上通常要 upcast，内存最高，暂不推荐）。
+    Fp16,
+    /// fp32：质量最好、稳态最快，内存约为 int8 的 2 倍。
+    Fp32,
+}
+
+impl ModelVariant {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Int8 => "int8",
+            Self::Fp16 => "fp16",
+            Self::Fp32 => "fp32",
+        }
+    }
+
+    pub const fn files(self) -> (&'static str, &'static str, &'static str) {
+        match self {
+            Self::Int8 => (ENCODER_FILE, DECODER_FILE, TOKENIZER_FILE),
+            Self::Fp16 => (
+                "encoder_model_fp16.onnx",
+                "decoder_model_merged_fp16.onnx",
+                TOKENIZER_FILE,
+            ),
+            Self::Fp32 => (
+                "encoder_model.onnx",
+                "decoder_model_merged.onnx",
+                TOKENIZER_FILE,
+            ),
+        }
+    }
+}
+
 // Marian（opus-mt-en-zh）的固定形状：改模型必须改这些常量，或者让它们来自 config。
 #[cfg(feature = "ort-runtime")]
 const LAYERS: usize = 6;
@@ -138,8 +179,16 @@ pub const ORT_STEADY_BYTES: u64 = 600 * 1024 * 1024;
 /// 引擎配置。
 #[derive(Clone, Debug)]
 pub struct OrtNmtConfig {
-    /// 模型目录：`encoder_model_quantized.onnx` + `decoder_model_merged_quantized.onnx` + `tokenizer.json`
+    /// 模型目录。
     pub model_dir: PathBuf,
+    /// 编码器文件名（默认 int8 导出；P13 可换成 fp32/fp16 做同集对照）。
+    pub encoder_file: String,
+    /// 合并解码器文件名。
+    pub decoder_file: String,
+    /// 分词器文件名。
+    pub tokenizer_file: String,
+    /// 模型精度变体（进身份；改变体必须换文件名）。
+    pub variant: ModelVariant,
     pub source: LanguageTag,
     pub target: LanguageTag,
     /// ONNX Runtime 的 intra-op 线程数（解码是逐 token 串行的，加线程收益很小，见 docs/24 §2.4）
@@ -157,6 +206,10 @@ impl OrtNmtConfig {
     pub fn new(model_dir: impl Into<PathBuf>, source: LanguageTag, target: LanguageTag) -> Self {
         Self {
             model_dir: model_dir.into(),
+            encoder_file: ENCODER_FILE.to_string(),
+            decoder_file: DECODER_FILE.to_string(),
+            tokenizer_file: TOKENIZER_FILE.to_string(),
+            variant: ModelVariant::Int8,
             source,
             target,
             threads: 1,
@@ -177,6 +230,29 @@ impl OrtNmtConfig {
         self
     }
 
+    /// 选择 int8/fp16/fp32 变体（同时设置三个文件名）。
+    pub fn with_variant(mut self, variant: ModelVariant) -> Self {
+        let (encoder, decoder, tokenizer) = variant.files();
+        self.encoder_file = encoder.to_string();
+        self.decoder_file = decoder.to_string();
+        self.tokenizer_file = tokenizer.to_string();
+        self.variant = variant;
+        self
+    }
+
+    /// 指定模型文件名（P13 模型候选：int8/fp32/fp16 共用同一套 schema）。
+    pub fn with_files(
+        mut self,
+        encoder: impl Into<String>,
+        decoder: impl Into<String>,
+        tokenizer: impl Into<String>,
+    ) -> Self {
+        self.encoder_file = encoder.into();
+        self.decoder_file = decoder.into();
+        self.tokenizer_file = tokenizer.into();
+        self
+    }
+
     /// Beam 宽度（T3/W2 对照用；1 = 现有贪心路径）。
     pub fn with_beam_width(mut self, width: usize) -> Self {
         self.beam_width = width.max(1);
@@ -184,11 +260,15 @@ impl OrtNmtConfig {
     }
 
     /// 缺文件时一次说清缺哪些，而不是等到加载才报第一个。
-    pub fn missing_files(&self) -> Vec<&'static str> {
-        [ENCODER_FILE, DECODER_FILE, TOKENIZER_FILE]
-            .into_iter()
-            .filter(|name| !self.model_dir.join(name).is_file())
-            .collect()
+    pub fn missing_files(&self) -> Vec<&str> {
+        [
+            self.encoder_file.as_str(),
+            self.decoder_file.as_str(),
+            self.tokenizer_file.as_str(),
+        ]
+        .into_iter()
+        .filter(|name| !self.model_dir.join(name).is_file())
+        .collect()
     }
 }
 
@@ -202,6 +282,7 @@ pub struct OrtIdentity {
     pub threads: usize,
     pub max_new_tokens: usize,
     pub beam_width: usize,
+    pub model_variant: String,
     /// 解码策略标识（`DECODE_POLICY`）：同一权重换策略就是另一个身份。
     pub decode_policy: String,
 }
@@ -236,7 +317,7 @@ fn canonical(path: &std::path::Path) -> String {
 /// 共享键：模型三文件内容 + 所有会影响解码/内存的配置。
 fn pool_key(config: &OrtNmtConfig, revision: &str) -> String {
     format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
         canonical(&config.model_dir),
         revision,
         config.source.as_str(),
@@ -244,6 +325,7 @@ fn pool_key(config: &OrtNmtConfig, revision: &str) -> String {
         config.threads,
         config.max_new_tokens,
         config.beam_width,
+        config.variant.as_str(),
         config.protection.as_str(),
         config.steady_bytes,
         decode_policy_label(config.beam_width),
@@ -522,15 +604,24 @@ impl Loaded {
     fn open(config: &OrtNmtConfig) -> Result<Self, TranslationError> {
         let env = environment()?;
 
-        let encoder = build_session(env, &config.model_dir.join(ENCODER_FILE), config.threads)?;
-        let decoder = build_session(env, &config.model_dir.join(DECODER_FILE), config.threads)?;
-        let tokenizer = tokenizers::Tokenizer::from_file(config.model_dir.join(TOKENIZER_FILE))
-            .map_err(|e| {
-                TranslationError::new(
-                    TranslationErrorCode::RuntimeInitFailed,
-                    format!("分词器 {TOKENIZER_FILE} 加载失败：{e}"),
-                )
-            })?;
+        let encoder = build_session(
+            env,
+            &config.model_dir.join(&config.encoder_file),
+            config.threads,
+        )?;
+        let decoder = build_session(
+            env,
+            &config.model_dir.join(&config.decoder_file),
+            config.threads,
+        )?;
+        let tokenizer =
+            tokenizers::Tokenizer::from_file(config.model_dir.join(&config.tokenizer_file))
+                .map_err(|e| {
+                    TranslationError::new(
+                        TranslationErrorCode::RuntimeInitFailed,
+                        format!("分词器 {} 加载失败：{e}", config.tokenizer_file),
+                    )
+                })?;
 
         let revision = revision_of(config)?;
         Ok(Self {
@@ -548,6 +639,7 @@ impl Loaded {
                 threads: config.threads,
                 max_new_tokens: config.max_new_tokens,
                 beam_width: config.beam_width,
+                model_variant: config.variant.as_str().to_string(),
                 decode_policy: decode_policy_label(config.beam_width),
             },
         })
@@ -1142,8 +1234,12 @@ fn build_session(
 fn revision_of(config: &OrtNmtConfig) -> Result<String, TranslationError> {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
-    for name in [ENCODER_FILE, DECODER_FILE, TOKENIZER_FILE] {
-        let path = config.model_dir.join(name);
+    for name in [
+        &config.encoder_file,
+        &config.decoder_file,
+        &config.tokenizer_file,
+    ] {
+        let path = config.model_dir.join(name.as_str());
         let mut file = std::fs::File::open(&path).map_err(|e| {
             TranslationError::new(
                 TranslationErrorCode::ResourceNotInstalled,
@@ -1219,6 +1315,17 @@ mod tests {
             LanguageTag::new("en").unwrap(),
             LanguageTag::new("zh-Hans").unwrap(),
         )
+    }
+
+    #[test]
+    fn 模型变体切换文件名() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = cfg(dir.path()).with_variant(ModelVariant::Fp32);
+        assert_eq!(config.encoder_file, "encoder_model.onnx");
+        assert_eq!(config.decoder_file, "decoder_model_merged.onnx");
+        assert_eq!(config.variant, ModelVariant::Fp32);
+        let fp16 = cfg(dir.path()).with_variant(ModelVariant::Fp16);
+        assert_eq!(fp16.encoder_file, "encoder_model_fp16.onnx");
     }
 
     #[test]

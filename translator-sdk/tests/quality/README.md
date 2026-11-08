@@ -63,3 +63,18 @@ python3 tools/quality/summarize-quality.py \
 | `reports/p12-summary.md` | 汇总 |
 
 > 人工评审仍未完成；P12 结论保持 Conditional。
+
+## P13-Q 证据
+
+| 文件 | 内容 |
+|---|---|
+| `outputs/sentence-v1-{int8,fp16,fp32}.jsonl` | 100 句模型精度变体 |
+| `outputs/p13-fp32-full.jsonl` | fp32 320 条 |
+| `outputs/paragraph3-best-final.jsonl` / `p13-paragraph-best-fp32.jsonl` | 段落 Best（int8/fp32） |
+| `reports/compare-model-variants*.{json,md}` | 模型变体对照 |
+| `reports/compare-model-320.*` | fp32 vs int8 320 条 |
+| `reports/compare-paragraphs-best*.{json,md}` | 段落 Best |
+| `reports/p13-review-packet.csv` | 44 条人工评审包（PENDING_HUMAN） |
+| `reports/p13-clippy.log` / `p13-test-*.log` | 工具与测试证据 |
+
+> 人工评审未完成；P13 结论保持 Conditional，fp32/Best 不自动成为全局默认。

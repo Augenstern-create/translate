@@ -1,5 +1,28 @@
 # 变更记录
 
+## P13-Q — 真实模型与语义质量（2026-11-08，报告 `docs/64`）
+
+### 新增
+
+- **ModelVariant**：`int8 / fp16 / fp32` 同权重 ONNX 变体；`OrtNmtConfig::with_variant`；
+  `quality-runner --model-variant`。默认仍 int8；fp32 独立 100 句 chrF +0.0189，但 320/段落不一致，不默认。
+- **ParagraphStrategy::Best**：整段+逐句候选按运行时完整性选择；50 段 chrF 0.3987→0.4205、
+  参考句覆盖 0.3848→0.4111；Auto 多句段落使用 Best（约 3× 延迟）。
+- **上下文术语**：`Coordinator::enforce_terms_on_text` 用整段/整篇源文触发术语约束。
+- **语义诊断**：`conditional_dropped`、`possible_omission`、`possible_hallucination`；
+  中文数字（两小时三十分钟/百分之十五）不再误报数字丢失。
+- **评审包**：44 条 Critical/句子/段落/文档，PENDING_HUMAN。
+
+### 结果
+
+- 模型：int8 0.4535 / fp16 0.4648 / fp32 0.4724（100 句）；fp32 320 集 0.4645 vs int8 0.4659。
+- 段落：Best 0.4205 / 覆盖 0.4111；整段 0.3917、逐句 0.3987、句群 0.3909。
+- 旧 4 条 Critical 仍 fatal 0；数字保真 1.0。
+
+### 未做
+
+- 更强架构模型（NLLB/M2M）接入、前一句上下文辅助当前句、真正人工评审。
+
 ## P12-Q — 四级文本架构与英中质量（2026-11-08，报告 `docs/63`，计划 `docs/62`）
 
 ### 新增

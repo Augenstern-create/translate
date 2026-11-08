@@ -113,6 +113,22 @@ fn auto_多句自动按段落处理() {
 }
 
 #[test]
+fn paragraph_best_选择候选并标记策略() {
+    let t = build();
+    let options = TranslateOptions::new(TranslationMode::Precise)
+        .with_text_kind(TextKind::Paragraph)
+        .with_paragraph_strategy(ParagraphStrategy::Best);
+    let out = pollster::block_on(t.translate_with_diagnostics_options(
+        &request("First sentence. Second sentence."),
+        &options,
+    ))
+    .unwrap();
+    assert_eq!(out.diagnostics.strategy, "paragraph-best");
+    assert!(out.result.text.contains("First sentence"));
+    assert!(out.result.text.contains("Second sentence"));
+}
+
+#[test]
 fn document_保留标题列表前缀和代码块() {
     let t = build();
     let input = "# Title\n\n- item one\n- item two\n\n```rust\nfn main() {}\n```\n";

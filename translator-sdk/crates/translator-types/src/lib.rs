@@ -248,6 +248,8 @@ pub enum ParagraphStrategy {
     Sentence,
     /// C：句群翻译（每 2–3 句一组，兼顾上下文与长度）。
     Group,
+    /// 同时跑整段与逐句，按完整性/质量选择（P13-Q3 候选比较）。
+    Best,
 }
 
 impl ParagraphStrategy {
@@ -257,6 +259,7 @@ impl ParagraphStrategy {
             Self::Whole => "whole",
             Self::Sentence => "sentence",
             Self::Group => "group",
+            Self::Best => "best",
         }
     }
 }

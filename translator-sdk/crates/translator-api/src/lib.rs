@@ -378,6 +378,14 @@ impl Translator {
                 "请求文本为空",
             ));
         }
+        let analysis = translator_core::planner::analyze(&req.text, options.text_kind);
+        if analysis.kind == TextKind::Paragraph
+            && (options.paragraph_strategy == ParagraphStrategy::Best
+                || (options.paragraph_strategy == ParagraphStrategy::Auto
+                    && analysis.sentences >= 2))
+        {
+            return self.run_best_paragraph(req, options).await;
+        }
         let plan = translator_core::planner::plan(&req.text, options);
         if plan.units.is_empty() {
             return Err(TranslationError::new(
@@ -400,6 +408,46 @@ impl Translator {
         }
 
         self.run_plan(req, options, &plan).await
+    }
+
+    /// P13-Q3：同一段落跑“整段”和“逐句”，按完整性/质量选择。
+    ///
+    /// 评分只看运行时可得的信息（不偷看参考译文）：
+    /// - fatal/quality issues 越少越好；
+    /// - 输出句数 / 源句数（避免漏句）；
+    /// - 输出字符数 / 源字符数（避免截断；中文通常约为英文的 0.5–0.7）。
+    async fn run_best_paragraph(
+        &self,
+        req: &TranslateRequest,
+        options: &TranslateOptions,
+    ) -> Result<TranslateOutput, TranslationError> {
+        let mut whole_opts = options.clone();
+        whole_opts.paragraph_strategy = ParagraphStrategy::Whole;
+        whole_opts.strategy = None;
+        let mut sentence_opts = options.clone();
+        sentence_opts.paragraph_strategy = ParagraphStrategy::Sentence;
+        sentence_opts.strategy = None;
+
+        let whole = Box::pin(self.run_options(req, &whole_opts)).await;
+        let sentence = Box::pin(self.run_options(req, &sentence_opts)).await;
+        match (whole, sentence) {
+            (Ok(mut w), Ok(mut s)) => {
+                let w_score = paragraph_score(&w, req);
+                let s_score = paragraph_score(&s, req);
+                if s_score >= w_score {
+                    s.diagnostics.route_reason.push_str("；best=逐句");
+                    s.diagnostics.strategy = "paragraph-best".to_string();
+                    Ok(s)
+                } else {
+                    w.diagnostics.route_reason.push_str("；best=整段");
+                    w.diagnostics.strategy = "paragraph-best".to_string();
+                    Ok(w)
+                }
+            }
+            (Ok(w), Err(_)) => Ok(w),
+            (Err(_), Ok(s)) => Ok(s),
+            (Err(e), Err(_)) => Err(e),
+        }
     }
 
     async fn run_plan(
@@ -483,6 +531,13 @@ impl Translator {
             text.push_str(&unit.suffix);
         }
 
+        // P13-Q3：聚合后用整段/整篇源文再过一次术语约束，让前文的术语触发
+        // 约束后文译文（上下文级术语一致性，不依赖模型）。
+        let (term_text, term_trace) =
+            self.coordinator
+                .enforce_terms_on_text(&req.text, &req.target, &text);
+        text = term_text;
+
         let engine_id = if !any_translated {
             "planner.passthrough".to_string()
         } else if mixed_engine {
@@ -505,6 +560,9 @@ impl Translator {
             diagnostics.strategy = plan.strategy.to_string();
             diagnostics.context_id = options.context_id.clone();
             diagnostics.quality = Some(quality);
+            if term_trace.is_some() {
+                diagnostics.term = term_trace;
+            }
             diagnostics.protected_spans.clear();
             let source = first_out.result.source;
             Ok(TranslateOutput {
@@ -568,6 +626,34 @@ impl std::fmt::Debug for Translator {
             .field("memory", &self.budget.report())
             .finish()
     }
+}
+
+fn paragraph_score(out: &TranslateOutput, req: &TranslateRequest) -> f64 {
+    let src_sent = translator_core::planner::split_sentences(&req.text)
+        .len()
+        .max(1);
+    let out_sent = translator_core::planner::split_sentences(&out.result.text).len();
+    let src_chars = req.text.chars().count().max(1);
+    let out_chars = out.result.text.chars().count();
+    let sentence_ratio = (out_sent as f64 / src_sent as f64).min(1.0);
+    let length_ratio = (out_chars as f64 / src_chars as f64).min(1.0);
+    let quality = out.diagnostics.quality.as_ref();
+    let fatal = quality.map(|q| q.has_fatal()).unwrap_or(false);
+    let major = quality
+        .map(|q| q.count(translator_core::quality::QualitySeverity::Major))
+        .unwrap_or(0);
+    let duplicate = quality
+        .map(|q| {
+            q.issues
+                .iter()
+                .filter(|i| i.kind == translator_core::quality::QualityIssueKind::DuplicateSegment)
+                .count()
+        })
+        .unwrap_or(0);
+    sentence_ratio * 2.0 + length_ratio / 0.6
+        - if fatal { 10.0 } else { 0.0 }
+        - major as f64 * 0.2
+        - duplicate as f64 * 0.5
 }
 
 /// 组装器（composition root 的一部分：把插件注入 Coordinator）。

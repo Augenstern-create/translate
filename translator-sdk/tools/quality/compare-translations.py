@@ -109,6 +109,21 @@ def py_numbers(text: str) -> list[str]:
     return out
 
 
+def split_sentences_text(text: str) -> list[str]:
+    parts = re.split(r"(?<=[.!?。！？])\s*", text.strip())
+    return [p for p in (x.strip() for x in parts) if p]
+
+
+def reference_sentence_coverage(output: str, reference: str) -> float:
+    """参考译文每一句在输出中的最佳 chrF；用于区分“真的漏句”与“只是标点合并”。"""
+    refs = split_sentences_text(reference)
+    outs = split_sentences_text(output)
+    if not refs or not outs:
+        return 0.0
+    scores = [max(chrf(out, ref) for out in outs) for ref in refs]
+    return sum(scores) / len(scores)
+
+
 def constraint_results(source: str, output: str, constraints: list[str], reference: str = "") -> dict:
     output = output or ""
     results = {}
@@ -180,6 +195,7 @@ def evaluate(golden: dict[str, dict], output: dict[str, dict]) -> dict:
     errors = 0
     fatal = 0
     critical_issues = 0
+    issue_counts: Counter = Counter()
     number_total = 0
     number_kept = 0
     constraint_total = 0
@@ -198,6 +214,7 @@ def evaluate(golden: dict[str, dict], output: dict[str, dict]) -> dict:
     negation_pass = 0
     target_total = 0
     target_pass = 0
+    ref_coverage_scores: list[float] = []
     for gid, g in golden.items():
         out = output.get(gid)
         if out is None or out.get("error"):
@@ -213,6 +230,7 @@ def evaluate(golden: dict[str, dict], output: dict[str, dict]) -> dict:
         if quality.get("fatal"):
             fatal += 1
         for issue in quality.get("issues") or []:
+            issue_counts[issue.get("kind")] += 1
             if issue.get("severity") == "critical":
                 critical_issues += 1
         number_total += quality.get("numbers_in_source") or 0
@@ -244,6 +262,10 @@ def evaluate(golden: dict[str, dict], output: dict[str, dict]) -> dict:
             if key == "target_language_zh":
                 target_total += 1
                 target_pass += int(ok)
+        coverage = None
+        if g["category"].startswith("paragraph") or g["category"] == "document":
+            coverage = reference_sentence_coverage(hyp, ref)
+            ref_coverage_scores.append(coverage)
         rows.append(
             {
                 "id": gid,
@@ -257,6 +279,7 @@ def evaluate(golden: dict[str, dict], output: dict[str, dict]) -> dict:
                 "fatal": bool(quality.get("fatal")),
                 "constraints": constraints,
                 "quality_issues": quality.get("issues") or [],
+                "ref_sentence_coverage": None if coverage is None else round(coverage, 4),
             }
         )
     scored = [r["chrf"] for r in rows if not r.get("error")]
@@ -266,6 +289,7 @@ def evaluate(golden: dict[str, dict], output: dict[str, dict]) -> dict:
         "error_rate": round(errors / max(1, len(golden)), 4),
         "fatal_integrity": fatal,
         "critical_quality_issues": critical_issues,
+        "issue_counts": dict(sorted(issue_counts.items())),
         "chrf": round(sum(scored) / len(scored), 4) if scored else 0.0,
         "bleu": round(sum(r["bleu"] for r in rows if not r.get("error")) / max(1, len(scored)), 4),
         "exact_match": round(sum(1 for r in rows if not r.get("error") and norm(r["output"]) == norm(r["reference"])) / max(1, len(golden)), 4),
@@ -276,6 +300,7 @@ def evaluate(golden: dict[str, dict], output: dict[str, dict]) -> dict:
         "dictionary_accuracy": round(dictionary_pass / dictionary_total, 4) if dictionary_total else None,
         "paragraph_completeness": round(paragraph_pass / paragraph_total, 4) if paragraph_total else None,
         "document_structure_accuracy": round(document_pass / document_total, 4) if document_total else None,
+        "reference_sentence_coverage": round(sum(ref_coverage_scores) / len(ref_coverage_scores), 4) if ref_coverage_scores else None,
         "negation_accuracy": round(negation_pass / negation_total, 4) if negation_total else None,
         "target_language_accuracy": round(target_pass / target_total, 4) if target_total else None,
         "per_category": {

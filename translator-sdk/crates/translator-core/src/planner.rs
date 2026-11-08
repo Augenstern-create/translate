@@ -330,11 +330,13 @@ fn plan_paragraph(text: &str, requested: ParagraphStrategy) -> TranslationPlan {
         ParagraphStrategy::Whole => "paragraph-whole",
         ParagraphStrategy::Sentence => "paragraph-sentence",
         ParagraphStrategy::Group => "paragraph-group",
+        ParagraphStrategy::Best => "paragraph-sentence",
         ParagraphStrategy::Auto => {
-            // 50 段（3 句/段）对照：逐句 chrF 0.3987 / 完整率 0.58，优于整段
-            // 0.3917 / 0.48 与句群 0.3909 / 0.50（句群在长句上还会截断）。
-            // 因此 3 句以上默认逐句；1–2 句保留整段，避免文档短段失去上下文。
-            if sentences.len() <= 2 {
+            // 50 段（3 句/段）对照：整段 0.3917 / 逐句 0.3987 / 句群 0.3909；
+            // 逐句与整段候选再比较（Best）0.4205、覆盖 0.3848→0.4111。
+            // 因此多句段落在 API 层走 Best（整段+逐句候选）；这里保留逐句作为
+            // 规划标签，单句段落仍整段。
+            if sentences.len() <= 1 {
                 "paragraph-whole"
             } else {
                 "paragraph-sentence"

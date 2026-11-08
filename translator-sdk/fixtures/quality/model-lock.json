@@ -1,7 +1,10 @@
 {
   "schema": "quality-model-lock/v1",
   "purpose": "记录本轮真实 NMT 质量评估使用的模型/运行时坐标；权重不入库，只记录可复现坐标与哈希。",
-  "language_pair": {"source": "en", "target": "zh-Hans"},
+  "language_pair": {
+    "source": "en",
+    "target": "zh-Hans"
+  },
   "model": {
     "name": "Xenova/opus-mt-en-zh (ONNX int8 export of Helsinki-NLP/opus-mt-en-zh)",
     "upstream": "Helsinki-NLP/opus-mt-en-zh",
@@ -10,11 +13,27 @@
     "license": "Apache-2.0 (upstream model card; verify derivative export terms before redistribution)",
     "usage": "local-research (docs/57 §2)",
     "files": [
-      {"path": "encoder_model_quantized.onnx", "bytes": 52899742, "sha256": "d3b7912bf6a9bd27e4c074c2df91d4ff3d5b4bc5f7f6c8d7cc9c805c98fbafee"},
-      {"path": "decoder_model_merged_quantized.onnx", "bytes": 60212804, "sha256": "023be4f841f4c47cd65fffcbaa81c0d99d7f7e0138f7ba0e03fa220a4e688aff"},
-      {"path": "tokenizer.json", "bytes": 6380952, "sha256": "b97d49f6a9866c7cb74a67a5c7fdf228c8c5452b10b4aab89b126d40013b5c56",
-       "note": "本地把 normalizer 的 Precompiled.null charsmap 置空（tokenizers 0.23 不接受 null）；模型文件未改。原始 tokenizer sha256=d0c7da27056e8f42adce9e76d8e792e5daa64e15f5acd2e7aabf0121877dd4c1。"},
-      {"path": "config.json", "bytes": 1503, "sha256": "4727d1229a04f95bf6f39abf949d8080615433d99d6ebd85f81c09edd247d5fa"}
+      {
+        "path": "encoder_model_quantized.onnx",
+        "bytes": 52899742,
+        "sha256": "d3b7912bf6a9bd27e4c074c2df91d4ff3d5b4bc5f7f6c8d7cc9c805c98fbafee"
+      },
+      {
+        "path": "decoder_model_merged_quantized.onnx",
+        "bytes": 60212804,
+        "sha256": "023be4f841f4c47cd65fffcbaa81c0d99d7f7e0138f7ba0e03fa220a4e688aff"
+      },
+      {
+        "path": "tokenizer.json",
+        "bytes": 6380952,
+        "sha256": "b97d49f6a9866c7cb74a67a5c7fdf228c8c5452b10b4aab89b126d40013b5c56",
+        "note": "本地把 normalizer 的 Precompiled.null charsmap 置空（tokenizers 0.23 不接受 null）；模型文件未改。原始 tokenizer sha256=d0c7da27056e8f42adce9e76d8e792e5daa64e15f5acd2e7aabf0121877dd4c1。"
+      },
+      {
+        "path": "config.json",
+        "bytes": 1503,
+        "sha256": "4727d1229a04f95bf6f39abf949d8080615433d99d6ebd85f81c09edd247d5fa"
+      }
     ],
     "identity_in_outputs": "nmt.ort.opus-mt#b0aab38ef9209080 (含 tokenizer/解码策略摘要；改文件会变)"
   },
@@ -28,5 +47,43 @@
   "host": {
     "os": "Linux x86_64",
     "note": "Windows ORT 模型与 encoder/decoder 哈希一致；本机无 Windows 环境，Windows 侧结果沿用 P4/P7/P10 记录。"
+  },
+  "p13_variants": {
+    "int8": [
+      {
+        "path": "encoder_model_quantized.onnx",
+        "sha256": "d3b7912bf6a9bd27e4c074c2df91d4ff3d5b4bc5f7f6c8d7cc9c805c98fbafee",
+        "usage": "local-evaluation"
+      },
+      {
+        "path": "decoder_model_merged_quantized.onnx",
+        "sha256": "023be4f841f4c47cd65fffcbaa81c0d99d7f7e0138f7ba0e03fa220a4e688aff",
+        "usage": "local-evaluation"
+      }
+    ],
+    "fp16": [
+      {
+        "path": "encoder_model_fp16.onnx",
+        "sha256": "3848296c1980f6ae3ccea955a33da9646c538b45dd47bef001c56252667a4376",
+        "usage": "local-evaluation"
+      },
+      {
+        "path": "decoder_model_merged_fp16.onnx",
+        "sha256": "181e3c09302fcb57d5afcdf9cba96058a2584959e55c0811e9f09088a207ad09",
+        "usage": "local-evaluation"
+      }
+    ],
+    "fp32": [
+      {
+        "path": "encoder_model.onnx",
+        "sha256": "6948db6bbc4869581eddf935d8486ca96388e4395c06a86c35e4051cb11373b9",
+        "usage": "local-evaluation"
+      },
+      {
+        "path": "decoder_model_merged.onnx",
+        "sha256": "5cb22f9ac32429b8211ae45e5940d9c05dfd66cf5847fd349ac6e391cd671e1d",
+        "usage": "local-evaluation"
+      }
+    ]
   }
 }
