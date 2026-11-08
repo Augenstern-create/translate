@@ -42,3 +42,11 @@ required-features = ["ort-runtime"]
 [[example]]
 name = "p10_soak"
 required-features = ["ort-runtime"]
+
+[[example]]
+name = "p10_shared"
+required-features = ["ort-runtime"]
+
+[[example]]
+name = "p10_identity"
+required-features = ["ort-runtime"]
