@@ -34,6 +34,7 @@
 - `32_P5开发建议与实施计划（工作区与权限边界）.md` — 外部审查/计划稿归档：唯一可写工作区 `E:\augenstern\translate`、逐项审批、固定 Anaconda Python
 - `47_P8-P11_遗留能力源码核验与开发验收计划.md` — P8～P11 计划归档（权限边界、工作包、M/SM/EP/DI/LID/AND/NC/RM/R 矩阵、里程碑）
 - `50_P9_多语言词典语言识别与词形分析开发建议.md` — P9.0～P9.5 计划归档（资源准入、DI/LID/MOR 矩阵、权限边界）
+- `59_P10.1-A_Windows_ORT真实模型Soak与生命周期报告.md` — 1000 次 Soak（0 错误）、共享会话、RSS/Private Bytes；10k PENDING
 - `58_P10.0_模型运行时与环境预检报告.md` — P10.0：Windows ORT 可用；Bergamot/P10.2/P10.3 阻断；无下载/改码
 - `56_P9.5_P9阶段收口与支持矩阵报告.md` — P9 收口：工程能力 Conditional、en→zh 质量 No-Go、人工评审 PENDING；最终支持矩阵
 - `55_P9.4_SDK集成与跨平台回归报告.md` — LID/lemma 注入、Android JNI v3 词典 44 PASS、EP-02；Linux 417/421、Windows 370/374
@@ -677,6 +678,9 @@ Linux 401 tests（all-features 404）、Windows 354 tests（all-features 357）�
 生成 Kaikki en→zh 950 条、JMdict ja→en 999 条；DI-04/05/06/07/08 通过，DI-01 因目标词覆盖不足为 PARTIAL。
 Linux 404/0/60（all 407/0/65）、Windows 357/0/60（all 360/0/65）；Android 词库集成留 P9.4。
 资源仍仅内部研发、`redistribution=pending-review`；全量导入未批准。
+
+**P10.1-A 已完成 1,000 次（`docs/59`）**：Windows ORT 冷加载 704 ms、p50 186 ms/p95 651 ms、0 错误；
+共享 `Arc`/pool=1；unload 后 Private 413→20 MiB。10,000 次与并发取消/模型切换仍 PENDING。
 
 **P10.0 已完成（`docs/58`）**：Windows ORT 模型三文件哈希/24 用例可用；Bergamot 模型/native 缺失、
 Android 真实 NMT runtime 缺失、ncnn 无实现；P10.1 仅 Windows ORT 可立即执行。无新下载/无功能代码修改。

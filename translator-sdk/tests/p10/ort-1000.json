@@ -1,0 +1,63 @@
+{
+  "b_reload_ms": 2139.3327000000004,
+  "b_reload_ok": true,
+  "cold_load_ms": 704.4043,
+  "errors": 0,
+  "mem_mib": {
+    "after_b": {
+      "peak": 424.6953125,
+      "private": 412.36328125,
+      "rss": 423.03125
+    },
+    "after_drop": {
+      "peak": 424.6953125,
+      "private": 22.0625,
+      "rss": 37.328125
+    },
+    "before": {
+      "peak": 9.15625,
+      "private": 2.328125,
+      "rss": 9.15625
+    },
+    "hot": {
+      "peak": 424.6953125,
+      "private": 413.05078125,
+      "rss": 424.65625
+    },
+    "loaded": {
+      "peak": 289.08984375,
+      "private": 274.9609375,
+      "rss": 287.44921875
+    },
+    "marks": [
+      {
+        "peak": 424.6953125,
+        "private": 413.05078125,
+        "round": 500,
+        "rss": 424.65625
+      },
+      {
+        "peak": 424.6953125,
+        "private": 413.05078125,
+        "round": 1000,
+        "rss": 424.65625
+      }
+    ],
+    "unloaded": {
+      "peak": 424.6953125,
+      "private": 20.1796875,
+      "rss": 34.88671875
+    }
+  },
+  "model_dir": "E:\\augenstern\\translate\\.build\\model-cache\\ort-model",
+  "model_revision": "nmt.ort.opus-mt#15d427e0707533d4",
+  "p50_ms": 185.7569,
+  "p95_ms": 651.0849,
+  "platform": "windows",
+  "rounds": 1000,
+  "runtime": "onnxruntime",
+  "runtime_build": "onnxruntime api 1.31锛坥rt 2.0.0-rc.15 prebuilt锛?,
+  "schema": "p10.1-ort-soak/v1",
+  "shared_arc": true,
+  "shared_pool_count": 1
+}
