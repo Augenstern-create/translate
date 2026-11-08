@@ -1,0 +1,179 @@
+{"headword":"memory leak","pos":"noun","definitions":["内存泄漏"]}
+{"headword":"thread pool","pos":"noun","definitions":["线程池"]}
+{"headword":"garbage collection","pos":"noun","definitions":["垃圾回收"]}
+{"headword":"race condition","pos":"noun","definitions":["竞态条件"]}
+{"headword":"deadlock","pos":"noun","definitions":["死锁"]}
+{"headword":"stack overflow","pos":"noun","definitions":["栈溢出"]}
+{"headword":"buffer overflow","pos":"noun","definitions":["缓冲区溢出"]}
+{"headword":"null pointer","pos":"noun","definitions":["空指针"]}
+{"headword":"dangling pointer","pos":"noun","definitions":["悬空指针"]}
+{"headword":"use after free","pos":"noun","definitions":["释放后使用"]}
+{"headword":"source code","pos":"noun","definitions":["源代码"]}
+{"headword":"open source","pos":"adjective","definitions":["开源"]}
+{"headword":"pull request","pos":"noun","definitions":["拉取请求","合并请求"]}
+{"headword":"code review","pos":"noun","definitions":["代码审查"]}
+{"headword":"unit test","pos":"noun","definitions":["单元测试"]}
+{"headword":"integration test","pos":"noun","definitions":["集成测试"]}
+{"headword":"regression test","pos":"noun","definitions":["回归测试"]}
+{"headword":"command line","pos":"noun","definitions":["命令行"]}
+{"headword":"operating system","pos":"noun","definitions":["操作系统"]}
+{"headword":"file system","pos":"noun","definitions":["文件系统"]}
+{"headword":"database","pos":"noun","definitions":["数据库"]}
+{"headword":"query language","pos":"noun","definitions":["查询语言"]}
+{"headword":"machine learning","pos":"noun","definitions":["机器学习"]}
+{"headword":"deep learning","pos":"noun","definitions":["深度学习"]}
+{"headword":"neural network","pos":"noun","definitions":["神经网络"]}
+{"headword":"artificial intelligence","pos":"noun","definitions":["人工智能"]}
+{"headword":"large language model","pos":"noun","definitions":["大语言模型"]}
+{"headword":"natural language processing","pos":"noun","definitions":["自然语言处理"]}
+{"headword":"computer vision","pos":"noun","definitions":["计算机视觉"]}
+{"headword":"cloud computing","pos":"noun","definitions":["云计算"]}
+{"headword":"edge computing","pos":"noun","definitions":["边缘计算"]}
+{"headword":"distributed system","pos":"noun","definitions":["分布式系统"]}
+{"headword":"load balancer","pos":"noun","definitions":["负载均衡器"]}
+{"headword":"microservice","pos":"noun","definitions":["微服务"]}
+{"headword":"virtual machine","pos":"noun","definitions":["虚拟机"]}
+{"headword":"compiler","pos":"noun","definitions":["编译器"]}
+{"headword":"interpreter","pos":"noun","definitions":["解释器"]}
+{"headword":"runtime","pos":"noun","definitions":["运行时"]}
+{"headword":"garbage collector","pos":"noun","definitions":["垃圾回收器"]}
+{"headword":"heap","pos":"noun","definitions":["堆"]}
+{"headword":"stack","pos":"noun","definitions":["栈"]}
+{"headword":"cache","pos":"noun","definitions":["缓存"]}
+{"headword":"latency","pos":"noun","definitions":["延迟"]}
+{"headword":"throughput","pos":"noun","definitions":["吞吐量"]}
+{"headword":"bandwidth","pos":"noun","definitions":["带宽"]}
+{"headword":"application programming interface","pos":"noun","definitions":["应用程序编程接口"]}
+{"headword":"software development kit","pos":"noun","definitions":["软件开发工具包"]}
+{"headword":"command-line interface","pos":"noun","definitions":["命令行界面"]}
+{"headword":"graphical user interface","pos":"noun","definitions":["图形用户界面"]}
+{"headword":"central processing unit","pos":"noun","definitions":["中央处理器"]}
+{"headword":"graphics processing unit","pos":"noun","definitions":["图形处理器"]}
+{"headword":"random access memory","pos":"noun","definitions":["随机存取存储器"]}
+{"headword":"solid-state drive","pos":"noun","definitions":["固态硬盘"]}
+{"headword":"hard disk drive","pos":"noun","definitions":["硬盘驱动器"]}
+{"headword":"universal serial bus","pos":"noun","definitions":["通用串行总线"]}
+{"headword":"hypertext transfer protocol","pos":"noun","definitions":["超文本传输协议"]}
+{"headword":"domain name system","pos":"noun","definitions":["域名系统"]}
+{"headword":"JavaScript","pos":"noun","definitions":["JavaScript（编程语言）"]}
+{"headword":"TypeScript","pos":"noun","definitions":["TypeScript（编程语言）"]}
+{"headword":"Python","pos":"noun","definitions":["Python（编程语言）"]}
+{"headword":"Rust","pos":"noun","definitions":["Rust（编程语言）"]}
+{"headword":"Java","pos":"noun","definitions":["Java（编程语言）"]}
+{"headword":"Kotlin","pos":"noun","definitions":["Kotlin（编程语言）"]}
+{"headword":"Swift","pos":"noun","definitions":["Swift（编程语言）"]}
+{"headword":"SQL","pos":"noun","definitions":["SQL（结构化查询语言）"]}
+{"headword":"JSON","pos":"noun","definitions":["JSON（数据交换格式）"]}
+{"headword":"XML","pos":"noun","definitions":["XML（可扩展标记语言）"]}
+{"headword":"YAML","pos":"noun","definitions":["YAML（数据序列化格式）"]}
+{"headword":"HTML","pos":"noun","definitions":["HTML（超文本标记语言）"]}
+{"headword":"CSS","pos":"noun","definitions":["CSS（层叠样式表）"]}
+{"headword":"HTTP","pos":"noun","definitions":["HTTP（超文本传输协议）"]}
+{"headword":"HTTPS","pos":"noun","definitions":["HTTPS（安全超文本传输协议）"]}
+{"headword":"TCP","pos":"noun","definitions":["TCP（传输控制协议）"]}
+{"headword":"UDP","pos":"noun","definitions":["UDP（用户数据报协议）"]}
+{"headword":"DNS","pos":"noun","definitions":["DNS（域名系统）"]}
+{"headword":"API","pos":"noun","definitions":["应用程序编程接口"]}
+{"headword":"SDK","pos":"noun","definitions":["软件开发工具包"]}
+{"headword":"CLI","pos":"noun","definitions":["命令行界面"]}
+{"headword":"GUI","pos":"noun","definitions":["图形用户界面"]}
+{"headword":"CPU","pos":"noun","definitions":["中央处理器"]}
+{"headword":"GPU","pos":"noun","definitions":["图形处理器"]}
+{"headword":"RAM","pos":"noun","definitions":["随机存取存储器"]}
+{"headword":"ROM","pos":"noun","definitions":["只读存储器"]}
+{"headword":"SSD","pos":"noun","definitions":["固态硬盘"]}
+{"headword":"HDD","pos":"noun","definitions":["硬盘驱动器"]}
+{"headword":"USB","pos":"noun","definitions":["通用串行总线"]}
+{"headword":"URL","pos":"noun","definitions":["统一资源定位符"]}
+{"headword":"URI","pos":"noun","definitions":["统一资源标识符"]}
+{"headword":"UUID","pos":"noun","definitions":["通用唯一识别码"]}
+{"headword":"UTF-8","pos":"noun","definitions":["UTF-8 编码"]}
+{"headword":"Unicode","pos":"noun","definitions":["Unicode 字符集"]}
+{"headword":"regex","pos":"noun","definitions":["正则表达式"]}
+{"headword":"regular expression","pos":"noun","definitions":["正则表达式"]}
+{"headword":"hash table","pos":"noun","definitions":["哈希表"]}
+{"headword":"linked list","pos":"noun","definitions":["链表"]}
+{"headword":"binary tree","pos":"noun","definitions":["二叉树"]}
+{"headword":"red-black tree","pos":"noun","definitions":["红黑树"]}
+{"headword":"priority queue","pos":"noun","definitions":["优先队列"]}
+{"headword":"dynamic programming","pos":"noun","definitions":["动态规划"]}
+{"headword":"time complexity","pos":"noun","definitions":["时间复杂度"]}
+{"headword":"space complexity","pos":"noun","definitions":["空间复杂度"]}
+{"headword":"design pattern","pos":"noun","definitions":["设计模式"]}
+{"headword":"dependency injection","pos":"noun","definitions":["依赖注入"]}
+{"headword":"continuous integration","pos":"noun","definitions":["持续集成"]}
+{"headword":"continuous delivery","pos":"noun","definitions":["持续交付"]}
+{"headword":"version control","pos":"noun","definitions":["版本控制"]}
+{"headword":"git commit","pos":"noun","definitions":["Git 提交"]}
+{"headword":"merge conflict","pos":"noun","definitions":["合并冲突"]}
+{"headword":"build system","pos":"noun","definitions":["构建系统"]}
+{"headword":"package manager","pos":"noun","definitions":["包管理器"]}
+{"headword":"dependency graph","pos":"noun","definitions":["依赖图"]}
+{"headword":"static analysis","pos":"noun","definitions":["静态分析"]}
+{"headword":"linter","pos":"noun","definitions":["代码检查工具"]}
+{"headword":"formatter","pos":"noun","definitions":["格式化工具"]}
+{"headword":"debugger","pos":"noun","definitions":["调试器"]}
+{"headword":"profiler","pos":"noun","definitions":["性能分析器"]}
+{"headword":"benchmark","pos":"noun","definitions":["基准测试"]}
+{"headword":"fuzz testing","pos":"noun","definitions":["模糊测试"]}
+{"headword":"property testing","pos":"noun","definitions":["属性测试"]}
+{"headword":"end-to-end test","pos":"noun","definitions":["端到端测试"]}
+{"headword":"as soon as possible","pos":"adverb","definitions":["尽快"]}
+{"headword":"in order to","pos":"preposition","definitions":["为了"]}
+{"headword":"by the way","pos":"adverb","definitions":["顺便说一下"]}
+{"headword":"at least","pos":"adverb","definitions":["至少"]}
+{"headword":"at most","pos":"adverb","definitions":["至多"]}
+{"headword":"for example","pos":"adverb","definitions":["例如"]}
+{"headword":"such as","pos":"preposition","definitions":["例如"]}
+{"headword":"instead of","pos":"preposition","definitions":["而不是"]}
+{"headword":"according to","pos":"preposition","definitions":["根据"]}
+{"headword":"due to","pos":"preposition","definitions":["由于"]}
+{"headword":"in spite of","pos":"preposition","definitions":["尽管"]}
+{"headword":"as well as","pos":"conjunction","definitions":["以及"]}
+{"headword":"on behalf of","pos":"preposition","definitions":["代表"]}
+{"headword":"take care of","pos":"verb","definitions":["照顾","处理"]}
+{"headword":"look forward to","pos":"verb","definitions":["期待"]}
+{"headword":"make sure","pos":"verb","definitions":["确保"]}
+{"headword":"find out","pos":"verb","definitions":["查明"]}
+{"headword":"give up","pos":"verb","definitions":["放弃"]}
+{"headword":"carry out","pos":"verb","definitions":["执行"]}
+{"headword":"point out","pos":"verb","definitions":["指出"]}
+{"headword":"come up with","pos":"verb","definitions":["想出"]}
+{"headword":"turn on","pos":"verb","definitions":["打开"]}
+{"headword":"turn off","pos":"verb","definitions":["关闭"]}
+{"headword":"set up","pos":"verb","definitions":["设置"]}
+{"headword":"shut down","pos":"verb","definitions":["关闭"]}
+{"headword":"log in","pos":"verb","definitions":["登录"]}
+{"headword":"log out","pos":"verb","definitions":["退出登录"]}
+{"headword":"sign in","pos":"verb","definitions":["登录"]}
+{"headword":"sign up","pos":"verb","definitions":["注册"]}
+{"headword":"back up","pos":"verb","definitions":["备份"]}
+{"headword":"break down","pos":"verb","definitions":["故障","分解"]}
+{"headword":"bring up","pos":"verb","definitions":["提出","抚养"]}
+{"headword":"call back","pos":"verb","definitions":["回电"]}
+{"headword":"check out","pos":"verb","definitions":["查看","结账"]}
+{"headword":"come across","pos":"verb","definitions":["偶然遇到"]}
+{"headword":"cut down","pos":"verb","definitions":["削减"]}
+{"headword":"drop off","pos":"verb","definitions":["放下","下车"]}
+{"headword":"figure out","pos":"verb","definitions":["弄清楚"]}
+{"headword":"fill in","pos":"verb","definitions":["填写"]}
+{"headword":"get along","pos":"verb","definitions":["相处"]}
+{"headword":"get rid of","pos":"verb","definitions":["摆脱"]}
+{"headword":"go over","pos":"verb","definitions":["复习","检查"]}
+{"headword":"grow up","pos":"verb","definitions":["长大"]}
+{"headword":"hang out","pos":"verb","definitions":["闲逛"]}
+{"headword":"hold on","pos":"verb","definitions":["稍等"]}
+{"headword":"keep up","pos":"verb","definitions":["保持"]}
+{"headword":"look after","pos":"verb","definitions":["照顾"]}
+{"headword":"look into","pos":"verb","definitions":["调查"]}
+{"headword":"pick up","pos":"verb","definitions":["拿起","接人"]}
+{"headword":"put off","pos":"verb","definitions":["推迟"]}
+{"headword":"run out","pos":"verb","definitions":["用完"]}
+{"headword":"show up","pos":"verb","definitions":["出现"]}
+{"headword":"take off","pos":"verb","definitions":["起飞","脱下"]}
+{"headword":"try out","pos":"verb","definitions":["尝试"]}
+{"headword":"work out","pos":"verb","definitions":["解决","锻炼"]}
+{"headword":"write down","pos":"verb","definitions":["写下"]}
+{"headword":"hello world","pos":"noun","definitions":["你好，世界"]}
+{"headword":"good morning","pos":"interjection","definitions":["早上好"]}
+{"headword":"thank you","pos":"interjection","definitions":["谢谢"]}

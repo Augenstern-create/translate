@@ -19,8 +19,9 @@
 //! （URL、邮箱、`{变量}`）。诊断对象只应回给发起请求的调用方，
 //! 不要原样写进集中式日志——设计文档 §4.1 明确禁止把用户原文写进日志。
 
-use translator_types::Capability;
+use translator_types::{Capability, TranslationMode};
 
+use crate::quality::QualityReport;
 use crate::terms::{TermPolicy, TermViolation};
 use crate::text::ProtectedSpan;
 
@@ -57,6 +58,10 @@ pub struct TranslationDiagnostics {
     pub source_assumed: bool,
     pub rules_version: u32,
     pub resource_fingerprint: String,
+    /// 实际使用的翻译模式（Precise / Fast）。
+    pub mode: TranslationMode,
+    /// 译后完整性检查结果；每次翻译都会跑（Fast 只跑数字/占位符）。
+    pub quality: Option<QualityReport>,
     /// 规则包存在时才有。
     pub rules: Option<RuleTrace>,
     /// 进入引擎前被保护的跨度（偏移基于**发送给引擎的文本**）。
@@ -70,11 +75,10 @@ pub struct TranslationDiagnostics {
 impl TranslationDiagnostics {
     /// 人类可读摘要，一行。
     pub fn summary(&self) -> String {
-        let mut parts = vec![format!(
-            "引擎={} 能力={}",
-            self.engine_id,
-            self.capability.as_str()
-        )];
+        let mut parts = vec![
+            format!("引擎={} 能力={}", self.engine_id, self.capability.as_str()),
+            format!("模式={}", self.mode),
+        ];
         if self.cache_hit {
             parts.push("缓存命中".to_string());
         }
@@ -98,6 +102,15 @@ impl TranslationDiagnostics {
         }
         if !self.restore_missing.is_empty() {
             parts.push(format!("还原失败 {} 处", self.restore_missing.len()));
+        }
+        if let Some(quality) = &self.quality {
+            if !quality.issues.is_empty() {
+                parts.push(format!(
+                    "译后检查={} 条（critical {}）",
+                    quality.issues.len(),
+                    quality.count(crate::quality::QualitySeverity::Critical)
+                ));
+            }
         }
         if let Some(term) = &self.term {
             if term.violations.is_empty() {

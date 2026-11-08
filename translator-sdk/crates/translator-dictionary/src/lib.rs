@@ -502,15 +502,45 @@ impl DictionaryPackage {
     /// v1/v2 一个键最多一条；v3 通过 `postings(key, rank, entry_id)` 返回同音/同形
     /// 的全部词条（例如 はし → 橋/箸/端）。排序由 `rank` 保证稳定。
     pub fn lookup_exact_all(&self, term: &str) -> Result<Vec<DictionaryEntry>, DictionaryError> {
-        let Some(_first) = self.index.get(term.as_bytes()) else {
-            return Ok(Vec::new());
+        let ids = if self.index.get(term.as_bytes()).is_some() {
+            self.entry_ids_for_key(term)?
+        } else {
+            // 英语查询大小写不敏感：包里的 headword 可能是 `I` / `January` /
+            // `JavaScript`，用户输入小写不应查不到。中文/日文不做这一步
+            // （CJK 没有大小写，按原样匹配更可预测）。
+            self.casefold_entry_ids(term)?
         };
-        let ids = self.entry_ids_for_key(term)?;
         let mut out = Vec::with_capacity(ids.len());
         for id in ids {
             out.push(self.load_entry(id)?);
         }
         Ok(out)
+    }
+
+    /// 英语 headword 的大小写不敏感回退。
+    ///
+    /// 用 SQLite 的 `lower(headword)` 表达式索引（打包工具会建），只在前缀/精确
+    /// FST 查询失败时走；不是每次查词都扫表。
+    fn casefold_entry_ids(&self, term: &str) -> Result<Vec<u64>, DictionaryError> {
+        if !self.language.as_str().eq_ignore_ascii_case("en") {
+            return Ok(Vec::new());
+        }
+        let lower = term.trim().to_lowercase();
+        if lower.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self
+            .db
+            .lock()
+            .map_err(|_| DictionaryError::InvalidPackage("数据库连接锁被污染".to_string()))?;
+        let mut stmt = conn
+            .prepare_cached("SELECT id FROM entries WHERE lower(headword) = ?1 ORDER BY id ASC")?;
+        let rows = stmt.query_map([lower], |row| row.get::<_, i64>(0))?;
+        let mut ids = Vec::new();
+        for id in rows {
+            ids.push(id? as u64);
+        }
+        Ok(ids)
     }
 
     fn entry_ids_for_key(&self, key: &str) -> Result<Vec<u64>, DictionaryError> {
@@ -563,6 +593,14 @@ impl DictionaryPackage {
             && push_ids(self.entry_ids_for_key(term)?, &mut out)?
         {
             return Ok(out);
+        }
+
+        // 大小写不敏感精确匹配（英语）：`i` → `I`、`january` → `January`。
+        if self.index.get(term.as_bytes()).is_none() {
+            let ids = self.casefold_entry_ids(term)?;
+            if !ids.is_empty() && push_ids(ids, &mut out)? {
+                return Ok(out);
+            }
         }
 
         // 前缀检索：仅在精确命中不足时补充。v3 的每个键可能对应多条记录。

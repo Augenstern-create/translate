@@ -1,0 +1,1924 @@
+{
+  "schema": "dictionary-quality/v1",
+  "dictionaries": [
+    "resources/en-zh-ecdict"
+  ],
+  "runner": "target/release/quality-runner",
+  "lookup_words": 10142,
+  "lookup_results": 10142,
+  "elapsed_seconds": 0.51,
+  "coverage": {
+    "target_total": 10000,
+    "found": 9898,
+    "missing": 102,
+    "rate": 0.9898,
+    "missing_words": [
+      "sitemap",
+      "hentai",
+      "pubmed",
+      "tripadvisor",
+      "permalink",
+      "verzeichnis",
+      "epinions",
+      "holdem",
+      "dont",
+      "sexcam",
+      "milfhunter",
+      "uniprotkb",
+      "beastiality",
+      "milfs",
+      "pmid",
+      "livecam",
+      "postposted",
+      "vbulletin",
+      "citysearch",
+      "twiki",
+      "urw",
+      "cumshots",
+      "trembl",
+      "showtimes",
+      "nutten",
+      "latinas",
+      "dealtime",
+      "gamecube",
+      "titten",
+      "jelsoft",
+      "oclc",
+      "thats",
+      "expansys",
+      "phpbb",
+      "upskirts",
+      "ebooks",
+      "bizrate",
+      "gamespot",
+      "travesti",
+      "kijiji",
+      "starsmerchant",
+      "meetup",
+      "ampland",
+      "shopzilla",
+      "transexuales",
+      "prostores",
+      "thumbzilla",
+      "pichunter",
+      "thehun",
+      "livesex",
+      "worldsex",
+      "zope",
+      "webshots",
+      "msgid",
+      "msgstr",
+      "adipex",
+      "kelkoo",
+      "ipaq",
+      "sublimedirectory",
+      "viewpicture",
+      "endif",
+      "trackbacks",
+      "findlaw",
+      "shemales",
+      "weblogs",
+      "voyeurweb",
+      "gratuit",
+      "mailto",
+      "acdbentity",
+      "whats",
+      "zshops",
+      "worldcat",
+      "bangbus",
+      "muze",
+      "listprice",
+      "pk",
+      "sagem",
+      "knowledgestorm",
+      "findarticles",
+      "mysimon",
+      "firewire",
+      "vsnet",
+      "msie",
+      "techrepublic",
+      "filme",
+      "feof",
+      "enb",
+      "invision",
+      "basename",
+      "bufing",
+      "mpegs",
+      "sbjct",
+      "powerseller",
+      "changelog",
+      "fioricet",
+      "apnic",
+      "looksmart",
+      "gtk",
+      "voyuer",
+      "beastality",
+      "telecharger",
+      "mediawiki"
+    ],
+    "avg_senses_found": 1.69,
+    "multi_sense_found": 4908
+  },
+  "ambiguity": {
+    "total": 10,
+    "passed": 10,
+    "items": [
+      {
+        "word": "bank",
+        "min_senses": 2,
+        "senses": [
+          "银行, 堤, 岸",
+          "[医] 库"
+        ],
+        "sense_count": 2,
+        "groups": [
+          {
+            "terms": [
+              "银行"
+            ],
+            "hit": true
+          },
+          {
+            "terms": [
+              "岸",
+              "堤"
+            ],
+            "hit": true
+          }
+        ],
+        "pass": true
+      },
+      {
+        "word": "spring",
+        "min_senses": 3,
+        "senses": [
+          "春天, 弹簧, 跳跃, 弹性, 活力, 泉, 源泉",
+          "春天的",
+          "跳, 弹跳, 涌出, 生长, 裂开, 高耸",
+          "使跳起, 使爆炸, 突然提出"
+        ],
+        "sense_count": 4,
+        "groups": [
+          {
+            "terms": [
+              "春天",
+              "春季"
+            ],
+            "hit": true
+          },
+          {
+            "terms": [
+              "泉",
+              "温泉"
+            ],
+            "hit": true
+          },
+          {
+            "terms": [
+              "弹簧"
+            ],
+            "hit": true
+          }
+        ],
+        "pass": true
+      },
+      {
+        "word": "charge",
+        "min_senses": 3,
+        "senses": [
+          "指控, 费用, 冲锋, 电荷, 炸药, 主管, 被托管人, 命令",
+          "控诉, 加罪于, 使充满, 使充电, 使承担",
+          "冲锋, 要价, 收费"
+        ],
+        "sense_count": 3,
+        "groups": [
+          {
+            "terms": [
+              "指控",
+              "控诉"
+            ],
+            "hit": true
+          },
+          {
+            "terms": [
+              "费用",
+              "收费",
+              "要价"
+            ],
+            "hit": true
+          },
+          {
+            "terms": [
+              "电荷",
+              "充电"
+            ],
+            "hit": true
+          }
+        ],
+        "pass": true
+      },
+      {
+        "word": "run",
+        "min_senses": 3,
+        "senses": [
+          "跑, 赛跑, 奔跑, 奔跑的路程, 趋向, 流出, 运转时间, 连续",
+          "跑, 奔跑, 跑步, 赛跑, 竞赛, 行驶, 运转, 进行, 蔓延",
+          "使跑, 参赛, 追究, 驾驶, 开动, 管理, 经营, 使流出, 运行",
+          "熔化的, 融化的, 浇铸的",
+          "run的过去式和过去分词",
+          "[计] 运行"
+        ],
+        "sense_count": 6,
+        "groups": [
+          {
+            "terms": [
+              "跑",
+              "奔跑"
+            ],
+            "hit": true
+          },
+          {
+            "terms": [
+              "运行",
+              "运转"
+            ],
+            "hit": true
+          },
+          {
+            "terms": [
+              "经营",
+              "管理"
+            ],
+            "hit": true
+          }
+        ],
+        "pass": true
+      },
+      {
+        "word": "match",
+        "min_senses": 3,
+        "senses": [
+          "比赛, 火柴, 对手",
+          "使相配, 使比赛, 与...竞争",
+          "结婚, 相配",
+          "[计] 比较"
+        ],
+        "sense_count": 4,
+        "groups": [
+          {
+            "terms": [
+              "比赛",
+              "竞赛"
+            ],
+            "hit": true
+          },
+          {
+            "terms": [
+              "火柴"
+            ],
+            "hit": true
+          },
+          {
+            "terms": [
+              "相配",
+              "匹配",
+              "对手"
+            ],
+            "hit": true
+          }
+        ],
+        "pass": true
+      },
+      {
+        "word": "right",
+        "min_senses": 3,
+        "senses": [
+          "权利, 右边, 正义, 右派, 公正",
+          "正确的, 对的, 恰当的, 正常的, 正直的, 正面的, 右方的",
+          "正确地, 以有利结果, 一直, 直接, 向右",
+          "扶直, 整理, 纠正, 伸冤, 使昭雪",
+          "恢复平衡",
+          "[计] 右, 权利"
+        ],
+        "sense_count": 6,
+        "groups": [
+          {
+            "terms": [
+              "右",
+              "右边"
+            ],
+            "hit": true
+          },
+          {
+            "terms": [
+              "权利"
+            ],
+            "hit": true
+          },
+          {
+            "terms": [
+              "正确",
+              "对的"
+            ],
+            "hit": true
+          }
+        ],
+        "pass": true
+      },
+      {
+        "word": "book",
+        "min_senses": 2,
+        "senses": [
+          "书, 书籍, 帐簿, 名册, 工作簿",
+          "登记, 预订",
+          "[计] 工作簿"
+        ],
+        "sense_count": 3,
+        "groups": [
+          {
+            "terms": [
+              "书",
+              "书籍"
+            ],
+            "hit": true
+          },
+          {
+            "terms": [
+              "预订",
+              "预定",
+              "登记"
+            ],
+            "hit": true
+          }
+        ],
+        "pass": true
+      },
+      {
+        "word": "present",
+        "min_senses": 3,
+        "senses": [
+          "现在, 礼品, 瞄准",
+          "现在的, 出席的",
+          "介绍, 引见, 赠送, 提出, 呈现, 上演",
+          "举枪瞄准"
+        ],
+        "sense_count": 4,
+        "groups": [
+          {
+            "terms": [
+              "现在",
+              "目前"
+            ],
+            "hit": true
+          },
+          {
+            "terms": [
+              "礼物",
+              "礼品"
+            ],
+            "hit": true
+          },
+          {
+            "terms": [
+              "出席",
+              "介绍",
+              "提出",
+              "展示"
+            ],
+            "hit": true
+          }
+        ],
+        "pass": true
+      },
+      {
+        "word": "light",
+        "min_senses": 3,
+        "senses": [
+          "光, 光亮, 灯, 日光, 发光体, 光源, 杰出人物, 火花, 眼光",
+          "轻的, 少量的, 轻微的, 轻快的, 轻浮的, 明亮的, 淡色的, 容易的",
+          "点燃, 照亮",
+          "点着, 变亮, 突降, 偶然碰到",
+          "轻地"
+        ],
+        "sense_count": 5,
+        "groups": [
+          {
+            "terms": [
+              "光",
+              "光线",
+              "灯"
+            ],
+            "hit": true
+          },
+          {
+            "terms": [
+              "轻"
+            ],
+            "hit": true
+          },
+          {
+            "terms": [
+              "点燃",
+              "照亮"
+            ],
+            "hit": true
+          }
+        ],
+        "pass": true
+      },
+      {
+        "word": "close",
+        "min_senses": 3,
+        "senses": [
+          "结束, 完结",
+          "靠近的, 亲近的, 亲密的, 严密的, 关闭的, 狭窄的, 秘密的",
+          "关, 结束, 使靠近, 封闭, 使接近",
+          "关闭, 结束, 靠近",
+          "接近地, 紧密地",
+          "[计] 关闭"
+        ],
+        "sense_count": 6,
+        "groups": [
+          {
+            "terms": [
+              "关",
+              "关闭",
+              "结束"
+            ],
+            "hit": true
+          },
+          {
+            "terms": [
+              "亲近",
+              "亲密",
+              "靠近"
+            ],
+            "hit": true
+          },
+          {
+            "terms": [
+              "接近",
+              "紧密"
+            ],
+            "hit": true
+          }
+        ],
+        "pass": true
+      }
+    ]
+  },
+  "phrases": {
+    "total": 179,
+    "passed": 179,
+    "items": [
+      {
+        "phrase": "memory leak",
+        "expected": "内存泄漏",
+        "senses": [
+          "内存泄漏"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "thread pool",
+        "expected": "线程池",
+        "senses": [
+          "线程池"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "garbage collection",
+        "expected": "垃圾回收",
+        "senses": [
+          "垃圾回收"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "race condition",
+        "expected": "竞态条件",
+        "senses": [
+          "竞态条件"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "deadlock",
+        "expected": "死锁",
+        "senses": [
+          "死锁"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "stack overflow",
+        "expected": "栈溢出",
+        "senses": [
+          "栈溢出"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "buffer overflow",
+        "expected": "缓冲区溢出",
+        "senses": [
+          "缓冲区溢出"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "null pointer",
+        "expected": "空指针",
+        "senses": [
+          "空指针"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "dangling pointer",
+        "expected": "悬空指针",
+        "senses": [
+          "悬空指针"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "use after free",
+        "expected": "释放后使用",
+        "senses": [
+          "释放后使用"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "source code",
+        "expected": "源代码",
+        "senses": [
+          "源代码"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "open source",
+        "expected": "开源",
+        "senses": [
+          "开源"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "pull request",
+        "expected": "拉取请求",
+        "senses": [
+          "拉取请求",
+          "合并请求"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "code review",
+        "expected": "代码审查",
+        "senses": [
+          "代码审查"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "unit test",
+        "expected": "单元测试",
+        "senses": [
+          "单元测试"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "integration test",
+        "expected": "集成测试",
+        "senses": [
+          "集成测试"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "regression test",
+        "expected": "回归测试",
+        "senses": [
+          "回归测试"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "command line",
+        "expected": "命令行",
+        "senses": [
+          "命令行"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "operating system",
+        "expected": "操作系统",
+        "senses": [
+          "操作系统"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "file system",
+        "expected": "文件系统",
+        "senses": [
+          "文件系统"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "database",
+        "expected": "数据库",
+        "senses": [
+          "数据库"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "query language",
+        "expected": "查询语言",
+        "senses": [
+          "查询语言"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "machine learning",
+        "expected": "机器学习",
+        "senses": [
+          "机器学习"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "deep learning",
+        "expected": "深度学习",
+        "senses": [
+          "深度学习"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "neural network",
+        "expected": "神经网络",
+        "senses": [
+          "神经网络"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "artificial intelligence",
+        "expected": "人工智能",
+        "senses": [
+          "人工智能"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "large language model",
+        "expected": "大语言模型",
+        "senses": [
+          "大语言模型"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "natural language processing",
+        "expected": "自然语言处理",
+        "senses": [
+          "自然语言处理"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "computer vision",
+        "expected": "计算机视觉",
+        "senses": [
+          "计算机视觉"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "cloud computing",
+        "expected": "云计算",
+        "senses": [
+          "云计算"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "edge computing",
+        "expected": "边缘计算",
+        "senses": [
+          "边缘计算"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "distributed system",
+        "expected": "分布式系统",
+        "senses": [
+          "分布式系统"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "load balancer",
+        "expected": "负载均衡器",
+        "senses": [
+          "负载均衡器"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "microservice",
+        "expected": "微服务",
+        "senses": [
+          "微服务"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "virtual machine",
+        "expected": "虚拟机",
+        "senses": [
+          "虚拟机"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "compiler",
+        "expected": "编译器",
+        "senses": [
+          "编译器"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "interpreter",
+        "expected": "解释器",
+        "senses": [
+          "解释器"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "runtime",
+        "expected": "运行时",
+        "senses": [
+          "运行时"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "garbage collector",
+        "expected": "垃圾回收器",
+        "senses": [
+          "垃圾回收器"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "heap",
+        "expected": "堆",
+        "senses": [
+          "堆"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "stack",
+        "expected": "栈",
+        "senses": [
+          "栈"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "cache",
+        "expected": "缓存",
+        "senses": [
+          "缓存"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "latency",
+        "expected": "延迟",
+        "senses": [
+          "延迟"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "throughput",
+        "expected": "吞吐量",
+        "senses": [
+          "吞吐量"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "bandwidth",
+        "expected": "带宽",
+        "senses": [
+          "带宽"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "application programming interface",
+        "expected": "应用程序编程接口",
+        "senses": [
+          "应用程序编程接口"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "software development kit",
+        "expected": "软件开发工具包",
+        "senses": [
+          "软件开发工具包"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "command-line interface",
+        "expected": "命令行界面",
+        "senses": [
+          "命令行界面"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "graphical user interface",
+        "expected": "图形用户界面",
+        "senses": [
+          "图形用户界面"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "central processing unit",
+        "expected": "中央处理器",
+        "senses": [
+          "中央处理器"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "graphics processing unit",
+        "expected": "图形处理器",
+        "senses": [
+          "图形处理器"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "random access memory",
+        "expected": "随机存取存储器",
+        "senses": [
+          "随机存取存储器"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "solid-state drive",
+        "expected": "固态硬盘",
+        "senses": [
+          "固态硬盘"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "hard disk drive",
+        "expected": "硬盘驱动器",
+        "senses": [
+          "硬盘驱动器"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "universal serial bus",
+        "expected": "通用串行总线",
+        "senses": [
+          "通用串行总线"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "hypertext transfer protocol",
+        "expected": "超文本传输协议",
+        "senses": [
+          "超文本传输协议"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "domain name system",
+        "expected": "域名系统",
+        "senses": [
+          "域名系统"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "JavaScript",
+        "expected": "JavaScript（编程语言）",
+        "senses": [
+          "JavaScript（编程语言）"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "TypeScript",
+        "expected": "TypeScript（编程语言）",
+        "senses": [
+          "TypeScript（编程语言）"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "Python",
+        "expected": "Python（编程语言）",
+        "senses": [
+          "Python（编程语言）"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "Rust",
+        "expected": "Rust（编程语言）",
+        "senses": [
+          "Rust（编程语言）"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "Java",
+        "expected": "Java（编程语言）",
+        "senses": [
+          "Java（编程语言）"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "Kotlin",
+        "expected": "Kotlin（编程语言）",
+        "senses": [
+          "Kotlin（编程语言）"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "Swift",
+        "expected": "Swift（编程语言）",
+        "senses": [
+          "Swift（编程语言）"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "SQL",
+        "expected": "SQL（结构化查询语言）",
+        "senses": [
+          "SQL（结构化查询语言）"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "JSON",
+        "expected": "JSON（数据交换格式）",
+        "senses": [
+          "JSON（数据交换格式）"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "XML",
+        "expected": "XML（可扩展标记语言）",
+        "senses": [
+          "XML（可扩展标记语言）"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "YAML",
+        "expected": "YAML（数据序列化格式）",
+        "senses": [
+          "YAML（数据序列化格式）"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "HTML",
+        "expected": "HTML（超文本标记语言）",
+        "senses": [
+          "HTML（超文本标记语言）"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "CSS",
+        "expected": "CSS（层叠样式表）",
+        "senses": [
+          "CSS（层叠样式表）"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "HTTP",
+        "expected": "HTTP（超文本传输协议）",
+        "senses": [
+          "HTTP（超文本传输协议）"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "HTTPS",
+        "expected": "HTTPS（安全超文本传输协议）",
+        "senses": [
+          "HTTPS（安全超文本传输协议）"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "TCP",
+        "expected": "TCP（传输控制协议）",
+        "senses": [
+          "TCP（传输控制协议）"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "UDP",
+        "expected": "UDP（用户数据报协议）",
+        "senses": [
+          "UDP（用户数据报协议）"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "DNS",
+        "expected": "DNS（域名系统）",
+        "senses": [
+          "DNS（域名系统）"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "API",
+        "expected": "应用程序编程接口",
+        "senses": [
+          "应用程序编程接口"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "SDK",
+        "expected": "软件开发工具包",
+        "senses": [
+          "软件开发工具包"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "CLI",
+        "expected": "命令行界面",
+        "senses": [
+          "命令行界面"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "GUI",
+        "expected": "图形用户界面",
+        "senses": [
+          "图形用户界面"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "CPU",
+        "expected": "中央处理器",
+        "senses": [
+          "中央处理器"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "GPU",
+        "expected": "图形处理器",
+        "senses": [
+          "图形处理器"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "RAM",
+        "expected": "随机存取存储器",
+        "senses": [
+          "随机存取存储器"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "ROM",
+        "expected": "只读存储器",
+        "senses": [
+          "只读存储器"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "SSD",
+        "expected": "固态硬盘",
+        "senses": [
+          "固态硬盘"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "HDD",
+        "expected": "硬盘驱动器",
+        "senses": [
+          "硬盘驱动器"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "USB",
+        "expected": "通用串行总线",
+        "senses": [
+          "通用串行总线"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "URL",
+        "expected": "统一资源定位符",
+        "senses": [
+          "统一资源定位符"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "URI",
+        "expected": "统一资源标识符",
+        "senses": [
+          "统一资源标识符"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "UUID",
+        "expected": "通用唯一识别码",
+        "senses": [
+          "通用唯一识别码"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "UTF-8",
+        "expected": "UTF-8 编码",
+        "senses": [
+          "UTF-8 编码"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "Unicode",
+        "expected": "Unicode 字符集",
+        "senses": [
+          "Unicode 字符集"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "regex",
+        "expected": "正则表达式",
+        "senses": [
+          "正则表达式"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "regular expression",
+        "expected": "正则表达式",
+        "senses": [
+          "正则表达式"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "hash table",
+        "expected": "哈希表",
+        "senses": [
+          "哈希表"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "linked list",
+        "expected": "链表",
+        "senses": [
+          "链表"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "binary tree",
+        "expected": "二叉树",
+        "senses": [
+          "二叉树"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "red-black tree",
+        "expected": "红黑树",
+        "senses": [
+          "红黑树"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "priority queue",
+        "expected": "优先队列",
+        "senses": [
+          "优先队列"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "dynamic programming",
+        "expected": "动态规划",
+        "senses": [
+          "动态规划"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "time complexity",
+        "expected": "时间复杂度",
+        "senses": [
+          "时间复杂度"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "space complexity",
+        "expected": "空间复杂度",
+        "senses": [
+          "空间复杂度"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "design pattern",
+        "expected": "设计模式",
+        "senses": [
+          "设计模式"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "dependency injection",
+        "expected": "依赖注入",
+        "senses": [
+          "依赖注入"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "continuous integration",
+        "expected": "持续集成",
+        "senses": [
+          "持续集成"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "continuous delivery",
+        "expected": "持续交付",
+        "senses": [
+          "持续交付"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "version control",
+        "expected": "版本控制",
+        "senses": [
+          "版本控制"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "git commit",
+        "expected": "Git 提交",
+        "senses": [
+          "Git 提交"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "merge conflict",
+        "expected": "合并冲突",
+        "senses": [
+          "合并冲突"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "build system",
+        "expected": "构建系统",
+        "senses": [
+          "构建系统"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "package manager",
+        "expected": "包管理器",
+        "senses": [
+          "包管理器"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "dependency graph",
+        "expected": "依赖图",
+        "senses": [
+          "依赖图"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "static analysis",
+        "expected": "静态分析",
+        "senses": [
+          "静态分析"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "linter",
+        "expected": "代码检查工具",
+        "senses": [
+          "代码检查工具"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "formatter",
+        "expected": "格式化工具",
+        "senses": [
+          "格式化工具"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "debugger",
+        "expected": "调试器",
+        "senses": [
+          "调试器"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "profiler",
+        "expected": "性能分析器",
+        "senses": [
+          "性能分析器"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "benchmark",
+        "expected": "基准测试",
+        "senses": [
+          "基准测试"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "fuzz testing",
+        "expected": "模糊测试",
+        "senses": [
+          "模糊测试"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "property testing",
+        "expected": "属性测试",
+        "senses": [
+          "属性测试"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "end-to-end test",
+        "expected": "端到端测试",
+        "senses": [
+          "端到端测试"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "as soon as possible",
+        "expected": "尽快",
+        "senses": [
+          "尽快"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "in order to",
+        "expected": "为了",
+        "senses": [
+          "为了"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "by the way",
+        "expected": "顺便说一下",
+        "senses": [
+          "顺便说一下"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "at least",
+        "expected": "至少",
+        "senses": [
+          "至少"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "at most",
+        "expected": "至多",
+        "senses": [
+          "至多"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "for example",
+        "expected": "例如",
+        "senses": [
+          "例如"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "such as",
+        "expected": "例如",
+        "senses": [
+          "例如"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "instead of",
+        "expected": "而不是",
+        "senses": [
+          "而不是"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "according to",
+        "expected": "根据",
+        "senses": [
+          "根据"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "due to",
+        "expected": "由于",
+        "senses": [
+          "由于"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "in spite of",
+        "expected": "尽管",
+        "senses": [
+          "尽管"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "as well as",
+        "expected": "以及",
+        "senses": [
+          "以及"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "on behalf of",
+        "expected": "代表",
+        "senses": [
+          "代表"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "take care of",
+        "expected": "照顾",
+        "senses": [
+          "照顾",
+          "处理"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "look forward to",
+        "expected": "期待",
+        "senses": [
+          "期待"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "make sure",
+        "expected": "确保",
+        "senses": [
+          "确保"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "find out",
+        "expected": "查明",
+        "senses": [
+          "查明"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "give up",
+        "expected": "放弃",
+        "senses": [
+          "放弃"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "carry out",
+        "expected": "执行",
+        "senses": [
+          "执行"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "point out",
+        "expected": "指出",
+        "senses": [
+          "指出"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "come up with",
+        "expected": "想出",
+        "senses": [
+          "想出"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "turn on",
+        "expected": "打开",
+        "senses": [
+          "打开"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "turn off",
+        "expected": "关闭",
+        "senses": [
+          "关闭"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "set up",
+        "expected": "设置",
+        "senses": [
+          "设置"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "shut down",
+        "expected": "关闭",
+        "senses": [
+          "关闭"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "log in",
+        "expected": "登录",
+        "senses": [
+          "登录"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "log out",
+        "expected": "退出登录",
+        "senses": [
+          "退出登录"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "sign in",
+        "expected": "登录",
+        "senses": [
+          "登录"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "sign up",
+        "expected": "注册",
+        "senses": [
+          "注册"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "back up",
+        "expected": "备份",
+        "senses": [
+          "备份"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "break down",
+        "expected": "故障",
+        "senses": [
+          "故障",
+          "分解"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "bring up",
+        "expected": "提出",
+        "senses": [
+          "提出",
+          "抚养"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "call back",
+        "expected": "回电",
+        "senses": [
+          "回电"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "check out",
+        "expected": "查看",
+        "senses": [
+          "查看",
+          "结账"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "come across",
+        "expected": "偶然遇到",
+        "senses": [
+          "偶然遇到"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "cut down",
+        "expected": "削减",
+        "senses": [
+          "削减"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "drop off",
+        "expected": "放下",
+        "senses": [
+          "放下",
+          "下车"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "figure out",
+        "expected": "弄清楚",
+        "senses": [
+          "弄清楚"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "fill in",
+        "expected": "填写",
+        "senses": [
+          "填写"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "get along",
+        "expected": "相处",
+        "senses": [
+          "相处"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "get rid of",
+        "expected": "摆脱",
+        "senses": [
+          "摆脱"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "go over",
+        "expected": "复习",
+        "senses": [
+          "复习",
+          "检查"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "grow up",
+        "expected": "长大",
+        "senses": [
+          "长大"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "hang out",
+        "expected": "闲逛",
+        "senses": [
+          "闲逛"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "hold on",
+        "expected": "稍等",
+        "senses": [
+          "稍等"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "keep up",
+        "expected": "保持",
+        "senses": [
+          "保持"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "look after",
+        "expected": "照顾",
+        "senses": [
+          "照顾"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "look into",
+        "expected": "调查",
+        "senses": [
+          "调查"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "pick up",
+        "expected": "拿起",
+        "senses": [
+          "拿起",
+          "接人"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "put off",
+        "expected": "推迟",
+        "senses": [
+          "推迟"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "run out",
+        "expected": "用完",
+        "senses": [
+          "用完"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "show up",
+        "expected": "出现",
+        "senses": [
+          "出现"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "take off",
+        "expected": "起飞",
+        "senses": [
+          "起飞",
+          "脱下"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "try out",
+        "expected": "尝试",
+        "senses": [
+          "尝试"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "work out",
+        "expected": "解决",
+        "senses": [
+          "解决",
+          "锻炼"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "write down",
+        "expected": "写下",
+        "senses": [
+          "写下"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "hello world",
+        "expected": "你好，世界",
+        "senses": [
+          "你好，世界"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "good morning",
+        "expected": "早上好",
+        "senses": [
+          "早上好"
+        ],
+        "pass": true
+      },
+      {
+        "phrase": "thank you",
+        "expected": "谢谢",
+        "senses": [
+          "谢谢"
+        ],
+        "pass": true
+      }
+    ]
+  },
+  "supplement": {
+    "total": 179,
+    "passed": 179,
+    "missing": []
+  },
+  "review_status": "PENDING_HUMAN"
+}

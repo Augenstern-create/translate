@@ -183,7 +183,8 @@ fn 引擎命中时返回词典译文() {
     let req = TranslateRequest::new("你好", en()).with_source(zh());
     let result = pollster::block_on(engine.translate(&req)).unwrap();
 
-    assert_eq!(result.text, "hello");
+    // T1.4：多个义项不再只返回第一义，而是用分号连接（最多 3 条）。
+    assert_eq!(result.text, "hello；hi");
     assert_eq!(result.engine_id, "dictionary.package:dictionary.test.zh-en");
     assert_eq!(
         result.model_id.as_deref(),

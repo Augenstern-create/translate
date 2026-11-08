@@ -9,12 +9,13 @@ use std::time::Instant;
 use translator_plugin_api::{BoxFuture, PluginRegistry};
 use translator_types::{
     CancelToken, Capability, CapabilityInfo, DictionaryEntry, LookupRequest, RouteDecision,
-    TranslateRequest, TranslationError, TranslationErrorCode, TranslationPolicy, TranslationResult,
-    TranslationWarning,
+    TranslateRequest, TranslationError, TranslationErrorCode, TranslationMode, TranslationPolicy,
+    TranslationResult, TranslationWarning,
 };
 
 use crate::cache::{CacheEntry, CacheKey, QueryCache};
 use crate::diagnostics::{RuleTrace, TermTrace, TranslateOutput, TranslationDiagnostics};
+use crate::quality;
 use crate::routing;
 use crate::rules::{RulePreview, TextRules};
 use crate::terms::{TargetTermGuard, TermContext, TermOutcome, TermPolicy};
@@ -52,6 +53,13 @@ pub struct CoordinatorConfig {
     pub language_identifier: Option<Arc<dyn translator_analysis::LanguageIdentifier>>,
     /// 可选形态分析器；只用于**查词未命中后的候选**，不改写翻译输入。
     pub lemmatizer: Option<Arc<dyn translator_analysis::MorphologyAnalyzer>>,
+    /// 默认翻译模式（docs/57 §4）。默认 [`TranslationMode::Precise`]。
+    pub default_mode: TranslationMode,
+    /// 关键完整性检查失败时是否拒绝返回译文。
+    ///
+    /// 默认 `true`：关键数字丢失、受保护标记残留、空译文都返回 `IntegrityFailure`，
+    /// 而不是把一份缺内容的译文交给宿主。设 `false` 时这些问题只进诊断。
+    pub strict_integrity: bool,
 }
 
 impl std::fmt::Debug for CoordinatorConfig {
@@ -75,6 +83,8 @@ impl std::fmt::Debug for CoordinatorConfig {
                 &self.language_identifier.as_ref().map(|x| x.name()),
             )
             .field("lemmatizer", &self.lemmatizer.as_ref().map(|x| x.name()))
+            .field("default_mode", &self.default_mode)
+            .field("strict_integrity", &self.strict_integrity)
             .finish()
     }
 }
@@ -98,6 +108,8 @@ impl Default for CoordinatorConfig {
             term_policy: TermPolicy::default(),
             language_identifier: None,
             lemmatizer: None,
+            default_mode: TranslationMode::Precise,
+            strict_integrity: true,
         }
     }
 }
@@ -137,6 +149,11 @@ impl Coordinator {
     /// 术语约束策略（诊断用）。
     pub fn term_policy(&self) -> TermPolicy {
         self.config.term_policy
+    }
+
+    /// 默认翻译模式。
+    pub fn default_mode(&self) -> TranslationMode {
+        self.config.default_mode
     }
 
     /// 绑定已挂载资源的指纹（`id@version` 用 `;` 连接）。
@@ -237,15 +254,28 @@ impl Coordinator {
         Ok(outcome.decision)
     }
 
-    /// 仅返回译文（对外主路径）。
+    /// 仅返回译文（对外主路径，使用默认模式）。
     pub fn translate<'a>(
         &'a self,
         req: &'a TranslateRequest,
     ) -> BoxFuture<'a, Result<TranslationResult, TranslationError>> {
-        Box::pin(async move { self.run(req).await.map(|out| out.result) })
+        Box::pin(async move {
+            self.run(req, self.default_mode())
+                .await
+                .map(|out| out.result)
+        })
     }
 
-    /// 可取消的译文入口。
+    /// 指定模式翻译（单请求覆盖 Builder 默认值）。
+    pub fn translate_with_mode<'a>(
+        &'a self,
+        req: &'a TranslateRequest,
+        mode: TranslationMode,
+    ) -> BoxFuture<'a, Result<TranslationResult, TranslationError>> {
+        Box::pin(async move { self.run(req, mode).await.map(|out| out.result) })
+    }
+
+    /// 可取消的译文入口（默认模式）。
     ///
     /// 取消在阶段边界检查；引擎若能中断（Bergamot worker）会在执行中返回
     /// `Cancelled`，否则最迟在本次引擎调用返回后生效。取消不写缓存。
@@ -255,13 +285,27 @@ impl Coordinator {
         cancel: &'a CancelToken,
     ) -> BoxFuture<'a, Result<TranslationResult, TranslationError>> {
         Box::pin(async move {
-            self.run_inner(req, Some(cancel))
+            self.run_inner(req, Some(cancel), self.default_mode())
                 .await
                 .map(|out| out.result)
         })
     }
 
-    /// 返回译文 + 结构化诊断（P2.4）。
+    /// 可取消 + 指定模式。
+    pub fn translate_cancellable_with_mode<'a>(
+        &'a self,
+        req: &'a TranslateRequest,
+        cancel: &'a CancelToken,
+        mode: TranslationMode,
+    ) -> BoxFuture<'a, Result<TranslationResult, TranslationError>> {
+        Box::pin(async move {
+            self.run_inner(req, Some(cancel), mode)
+                .await
+                .map(|out| out.result)
+        })
+    }
+
+    /// 返回译文 + 结构化诊断（P2.4，默认模式）。
     ///
     /// 与 [`Self::translate`] 走**同一条**实现路径，只是多带出一份诊断，
     /// 因此两者不可能给出不同译文。
@@ -269,7 +313,16 @@ impl Coordinator {
         &'a self,
         req: &'a TranslateRequest,
     ) -> BoxFuture<'a, Result<TranslateOutput, TranslationError>> {
-        Box::pin(async move { self.run(req).await })
+        Box::pin(async move { self.run(req, self.default_mode()).await })
+    }
+
+    /// 指定模式的诊断入口。
+    pub fn translate_with_diagnostics_mode<'a>(
+        &'a self,
+        req: &'a TranslateRequest,
+        mode: TranslationMode,
+    ) -> BoxFuture<'a, Result<TranslateOutput, TranslationError>> {
+        Box::pin(async move { self.run(req, mode).await })
     }
 
     /// 带诊断的可取消入口（与 [`Self::translate_cancellable`] 同一实现）。
@@ -278,7 +331,17 @@ impl Coordinator {
         req: &'a TranslateRequest,
         cancel: &'a CancelToken,
     ) -> BoxFuture<'a, Result<TranslateOutput, TranslationError>> {
-        Box::pin(async move { self.run_inner(req, Some(cancel)).await })
+        Box::pin(async move { self.run_inner(req, Some(cancel), self.default_mode()).await })
+    }
+
+    /// 带诊断的可取消入口 + 指定模式。
+    pub fn translate_with_diagnostics_cancellable_mode<'a>(
+        &'a self,
+        req: &'a TranslateRequest,
+        cancel: &'a CancelToken,
+        mode: TranslationMode,
+    ) -> BoxFuture<'a, Result<TranslateOutput, TranslationError>> {
+        Box::pin(async move { self.run_inner(req, Some(cancel), mode).await })
     }
 
     pub fn lookup<'a>(
@@ -379,14 +442,19 @@ impl Coordinator {
         })
     }
 
-    async fn run(&self, req: &TranslateRequest) -> Result<TranslateOutput, TranslationError> {
-        self.run_inner(req, None).await
+    async fn run(
+        &self,
+        req: &TranslateRequest,
+        mode: TranslationMode,
+    ) -> Result<TranslateOutput, TranslationError> {
+        self.run_inner(req, None, mode).await
     }
 
     async fn run_inner(
         &self,
         req: &TranslateRequest,
         cancel: Option<&CancelToken>,
+        mode: TranslationMode,
     ) -> Result<TranslateOutput, TranslationError> {
         check_cancelled(cancel)?;
         // 1) 校验 + 规范化
@@ -418,12 +486,18 @@ impl Coordinator {
         }
 
         check_cancelled(cancel)?;
-        // 4) 占位符保护
-        let protected = text::protect(&work_text);
-        let spans = text::protected_spans(&work_text);
+        // 4) 路由（用的是规则处理后的文本）。先选引擎，才知道该由谁做保护：
+        //    真实 NMT 后端自己按 `ProtectionPlan` 分段，协调器再打一次标记会破坏它。
+        let outcome = routing::select(&self.registry, req, &source, &work_text)?;
 
-        // 5) 路由（用的是规则处理后的文本）
-        let outcome = routing::select(&self.registry, req, &source, &protected.text)?;
+        // 5) 占位符保护。结构化后端拿原文；通用后端拿标记化文本。
+        let spans = text::protected_spans(&work_text);
+        let (masked, protected) = if outcome.engine.handles_protected_spans() {
+            (None, work_text.clone())
+        } else {
+            let p = text::protect(&work_text);
+            (Some(p.clone()), p.text)
+        };
 
         let rules_trace = self.config.rules.as_ref().map(|rules| RuleTrace {
             id: rules.id().to_string(),
@@ -431,15 +505,16 @@ impl Coordinator {
             applied: rule_applied,
         });
 
-        // 6) 缓存查询
-        let key = CacheKey::new(
-            &protected.text,
+        // 6) 缓存查询（模式必须进键：Precise 与 Fast 不得互相复用）
+        let key = CacheKey::new_with_mode(
+            &protected,
             req,
             source.as_str(),
             &outcome.decision.engine_id,
             outcome.engine.cache_identity().as_deref(),
             self.effective_rules_version,
             &self.resource_fingerprint,
+            mode,
         );
 
         if let Ok(cache) = self.cache.lock() {
@@ -462,7 +537,7 @@ impl Coordinator {
 
         // 7) 交给引擎的请求：文本已保护、源语言已确定
         let resolved = TranslateRequest {
-            text: protected.text.clone(),
+            text: protected.clone(),
             source: Some(source.clone()),
             ..req.clone()
         };
@@ -493,8 +568,11 @@ impl Coordinator {
         };
         check_cancelled(cancel)?;
 
-        // 8) 占位符还原；丢失必须告警，不得静默
-        let (restored, missing) = text::restore(&protected, &result.text);
+        // 8) 占位符还原；结构化后端已经还原过，不能再走一遍标记替换。
+        let (restored, missing) = match &masked {
+            Some(protected) => text::restore(protected, &result.text),
+            None => (result.text.clone(), Vec::new()),
+        };
         if !missing.is_empty() && self.config.strict_placeholder_restore {
             // 严格模式：宁可不给译文，也不返回缺内容的译文
             return Err(TranslationError::new(
@@ -520,6 +598,16 @@ impl Coordinator {
         // 9) 输出侧术语约束（P2.4）：只在译文上做，且不得触碰受保护跨度
         let term_trace = self.apply_term_guard(&work_text, &source, &req.target, &mut result);
 
+        // 9.5) 译后完整性检查（T2）。Fast 只查数字/占位符/空输出；Precise 再加
+        //      否定、重复、目标语言、原文原样返回等启发式。
+        let quality = quality::check(&work_text, &result.text, &req.target, mode);
+        if self.config.strict_integrity && quality.has_fatal() {
+            return Err(TranslationError::new(
+                TranslationErrorCode::IntegrityFailure,
+                format!("译后完整性检查未通过：{}", quality.summary()),
+            ));
+        }
+
         // 10) 补全结果元信息
         result.source = source;
         result.target = req.target.clone();
@@ -533,6 +621,8 @@ impl Coordinator {
             source_assumed,
             rules_version: self.effective_rules_version,
             resource_fingerprint: self.resource_fingerprint.clone(),
+            mode,
+            quality: Some(quality),
             rules: rules_trace,
             protected_spans: spans,
             restore_missing: missing,

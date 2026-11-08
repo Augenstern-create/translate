@@ -116,6 +116,11 @@ impl MorphologyAnalyzer for EnglishLemmatizer {
             return Vec::new();
         }
         let mut out = Vec::new();
+        // 大小写归一本身就是一个候选：词典包通常以小写 headword 建索引，
+        // "Hello" 不应因为句首大写就查不到 "hello"。
+        if lower != word.trim() {
+            out.push(lower.clone());
+        }
         if let Some(lemma) = self.irregular.get(lower.as_str()) {
             out.push((*lemma).to_string());
         }

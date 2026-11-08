@@ -1,0 +1,784 @@
+{
+  "schema_version": 1,
+  "id": "rules.en-zh.contractions.experimental",
+  "version": 1,
+  "pipeline_version": 2,
+  "license": "Apache-2.0 OR MIT",
+  "sample_pair": [
+    "en",
+    "zh-Hans"
+  ],
+  "rules": [
+    {
+      "id": "norm.nfkc",
+      "priority": 10,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "nfkc"
+      },
+      "samples": [
+        {
+          "input": "ｃａｔ",
+          "expect": "cat",
+          "source": "en",
+          "target": "zh-Hans"
+        },
+        {
+          "input": "ＡＢＣ １２３",
+          "expect": "ABC 123",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "norm.curly-apostrophe",
+      "priority": 20,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "’",
+        "to": "'",
+        "whole_word": false
+      },
+      "samples": [
+        {
+          "input": "don’t stop",
+          "expect": "don't stop",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "norm.curly-quote-open",
+      "priority": 21,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "“",
+        "to": "\"",
+        "whole_word": false
+      },
+      "samples": [
+        {
+          "input": "say “hello now",
+          "expect": "say \"hello now",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "norm.curly-quote-close",
+      "priority": 22,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "”",
+        "to": "\"",
+        "whole_word": false
+      },
+      "samples": [
+        {
+          "input": "say hello” now",
+          "expect": "say hello\" now",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "abbr.eg",
+      "priority": 25,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "e.g.",
+        "to": "for example",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "e.g. this one",
+          "expect": "for example this one",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "abbr.ie",
+      "priority": 26,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "i.e.",
+        "to": "that is",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "i.e. the first one",
+          "expect": "that is the first one",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "abbr.etc",
+      "priority": 27,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "etc.",
+        "to": "and so on",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "cats, dogs, etc.",
+          "expect": "cats, dogs, and so on",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "contract.dont",
+      "priority": 40,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "don't",
+        "to": "do not",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "don't ready",
+          "expect": "do not ready",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "contract.doesnt",
+      "priority": 41,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "doesn't",
+        "to": "does not",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "doesn't ready",
+          "expect": "does not ready",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "contract.didnt",
+      "priority": 42,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "didn't",
+        "to": "did not",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "didn't ready",
+          "expect": "did not ready",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "contract.isnt",
+      "priority": 43,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "isn't",
+        "to": "is not",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "isn't ready",
+          "expect": "is not ready",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "contract.arent",
+      "priority": 44,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "aren't",
+        "to": "are not",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "aren't ready",
+          "expect": "are not ready",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "contract.wasnt",
+      "priority": 45,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "wasn't",
+        "to": "was not",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "wasn't ready",
+          "expect": "was not ready",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "contract.werent",
+      "priority": 46,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "weren't",
+        "to": "were not",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "weren't ready",
+          "expect": "were not ready",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "contract.cant",
+      "priority": 47,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "can't",
+        "to": "cannot",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "can't ready",
+          "expect": "cannot ready",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "contract.couldnt",
+      "priority": 48,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "couldn't",
+        "to": "could not",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "couldn't ready",
+          "expect": "could not ready",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "contract.shouldnt",
+      "priority": 49,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "shouldn't",
+        "to": "should not",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "shouldn't ready",
+          "expect": "should not ready",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "contract.wouldnt",
+      "priority": 50,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "wouldn't",
+        "to": "would not",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "wouldn't ready",
+          "expect": "would not ready",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "contract.havent",
+      "priority": 51,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "haven't",
+        "to": "have not",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "haven't ready",
+          "expect": "have not ready",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "contract.hasnt",
+      "priority": 52,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "hasn't",
+        "to": "has not",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "hasn't ready",
+          "expect": "has not ready",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "contract.hadnt",
+      "priority": 53,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "hadn't",
+        "to": "had not",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "hadn't ready",
+          "expect": "had not ready",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "contract.im",
+      "priority": 54,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "I'm",
+        "to": "I am",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "I'm ready",
+          "expect": "I am ready",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "contract.youre",
+      "priority": 55,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "you're",
+        "to": "you are",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "you're ready",
+          "expect": "you are ready",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "contract.theyre",
+      "priority": 56,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "they're",
+        "to": "they are",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "they're ready",
+          "expect": "they are ready",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "contract.thats",
+      "priority": 57,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "that's",
+        "to": "that is",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "that's ready",
+          "expect": "that is ready",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "contract.theres",
+      "priority": 58,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "there's",
+        "to": "there is",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "there's ready",
+          "expect": "there is ready",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "contract.ive",
+      "priority": 59,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "I've",
+        "to": "I have",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "I've ready",
+          "expect": "I have ready",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "contract.youve",
+      "priority": 60,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "you've",
+        "to": "you have",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "you've ready",
+          "expect": "you have ready",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "contract.weve",
+      "priority": 61,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "we've",
+        "to": "we have",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "we've ready",
+          "expect": "we have ready",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "contract.theyve",
+      "priority": 62,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "they've",
+        "to": "they have",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "they've ready",
+          "expect": "they have ready",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "contract.youll",
+      "priority": 63,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "you'll",
+        "to": "you will",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "you'll ready",
+          "expect": "you will ready",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    },
+    {
+      "id": "contract.theyll",
+      "priority": 64,
+      "language_pairs": [
+        [
+          "en",
+          "zh-Hans"
+        ]
+      ],
+      "action": {
+        "kind": "replace",
+        "from": "they'll",
+        "to": "they will",
+        "whole_word": true
+      },
+      "samples": [
+        {
+          "input": "they'll ready",
+          "expect": "they will ready",
+          "source": "en",
+          "target": "zh-Hans"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "schema": "quality-data-lock/v1",
+  "generated_at": "2026-11-08",
+  "resources": [
+    {
+      "name": "ECDICT",
+      "source": "https://github.com/skywind3000/ECDICT",
+      "file": "ecdict.csv",
+      "bytes": 66009548,
+      "sha256": "d1ecbdf9ee2b920afb6f430ca6b6bb9f559588cf0dff86e04bd255f9390843cc",
+      "rows": 770611,
+      "license": "MIT (repository LICENSE; upstream gloss provenance not independently audited)",
+      "usage": "local-research",
+      "imported_subset": 30200,
+      "note": "高频/考试/技术短语子集 + fixtures/dictionary/en-zh.supplement.jsonl；包内保留每个 sense 的 source_id=ecdict 与许可。"
+    },
+    {
+      "name": "Google 10000 English (USA)",
+      "source": "https://github.com/first20hours/google-10000-english",
+      "file": "google-10000-english-usa.txt",
+      "sha256": "981c776dc7e8996accb256e5fea9d241331b9602efe0c977285734890e1ae729",
+      "rows": 9999,
+      "license": "未单独声明（词表，用作本地覆盖度目标）",
+      "usage": "local-research/coverage-target"
+    },
+    {
+      "name": "dictionary.ecdict.en-zh package",
+      "path": "resources/en-zh-ecdict",
+      "manifest_sha256": "b71d6285a5626cc9a91af1e0c2b51cda60f762e7487544470f446796882a8437",
+      "entries": 30200,
+      "license": "MIT",
+      "usage": "local-research"
+    }
+  ]
+}

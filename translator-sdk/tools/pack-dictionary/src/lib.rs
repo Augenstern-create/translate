@@ -414,7 +414,8 @@ pub fn pack(
                      idx INTEGER NOT NULL,
                      definition TEXT NOT NULL,
                      PRIMARY KEY (entry_id, idx)
-                 );",
+                 );
+                 CREATE INDEX entries_lower_headword ON entries(lower(headword));",
             )?,
             PayloadKind::V2 | PayloadKind::V3 => tx.execute_batch(
                 "CREATE TABLE entries (
@@ -428,7 +429,8 @@ pub fn pack(
                      source_license TEXT NOT NULL,
                      confidence REAL NOT NULL,
                      senses TEXT NOT NULL
-                 );",
+                 );
+                 CREATE INDEX entries_lower_headword ON entries(lower(headword));",
             )?,
         }
 
@@ -587,7 +589,8 @@ fn pack_v3(
                  entry_id INTEGER NOT NULL,
                  PRIMARY KEY (key, rank)
              );
-             CREATE INDEX postings_entry ON postings(entry_id);",
+             CREATE INDEX postings_entry ON postings(entry_id);
+             CREATE INDEX entries_lower_headword ON entries(lower(headword));",
         )?;
         let source_id = opts.provenance.name.to_lowercase().replace(' ', "-");
         for (idx, (entry, definitions)) in records.iter().enumerate() {

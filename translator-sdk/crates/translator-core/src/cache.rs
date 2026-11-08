@@ -12,7 +12,7 @@ use std::collections::hash_map::{DefaultHasher, Entry};
 use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
 
-use translator_types::{TranslateRequest, TranslationPolicy, TranslationResult};
+use translator_types::{TranslateRequest, TranslationMode, TranslationPolicy, TranslationResult};
 
 use crate::diagnostics::TranslationDiagnostics;
 
@@ -40,6 +40,8 @@ pub struct CacheKey {
     pub model_id: Option<String>,
     pub glossary_id: Option<String>,
     pub rules_version: u32,
+    /// 翻译模式（Precise / Fast）。两种模式的执行配置不同，结果不得互相复用。
+    pub mode: TranslationMode,
     pub decode_config: String,
     /// 隐私隔离域：不同隐私上下文不得共享缓存。
     pub privacy_domain: String,
@@ -51,6 +53,10 @@ pub struct CacheKey {
 }
 
 impl CacheKey {
+    /// 旧签名：默认按 [`TranslationMode::Precise`] 建键。
+    ///
+    /// 保留它是因为 P0～P10 的测试与宿主代码直接调用过这个函数；真正的翻译
+    /// 路径必须走 [`CacheKey::new_with_mode`]，否则 Fast 结果会污染 Precise 缓存。
     pub fn new(
         normalized_text: &str,
         req: &TranslateRequest,
@@ -59,6 +65,29 @@ impl CacheKey {
         engine_cache_identity: Option<&str>,
         rules_version: u32,
         resource_fingerprint: &str,
+    ) -> Self {
+        Self::new_with_mode(
+            normalized_text,
+            req,
+            source,
+            engine_id,
+            engine_cache_identity,
+            rules_version,
+            resource_fingerprint,
+            TranslationMode::Precise,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_mode(
+        normalized_text: &str,
+        req: &TranslateRequest,
+        source: &str,
+        engine_id: &str,
+        engine_cache_identity: Option<&str>,
+        rules_version: u32,
+        resource_fingerprint: &str,
+        mode: TranslationMode,
     ) -> Self {
         let mut hasher = DefaultHasher::new();
         normalized_text.hash(&mut hasher);
@@ -72,6 +101,7 @@ impl CacheKey {
             model_id: None,
             glossary_id: req.glossary_id.clone(),
             rules_version,
+            mode,
             decode_config: "default".to_string(),
             // P8.3 / EP-04：远程策略与本地策略不得共享缓存。
             // 显式 engine:<id> 的隐私域由宿主负责；这里只隔离明确的 RemoteOnly。
@@ -236,6 +266,37 @@ mod tests {
     }
 
     #[test]
+    fn 不同模式不得共享缓存() {
+        let req = TranslateRequest::new("hi", LanguageTag::new("zh-Hans").unwrap());
+        let precise = CacheKey::new_with_mode(
+            "hi",
+            &req,
+            "en",
+            "mock.nmt",
+            None,
+            1,
+            "",
+            TranslationMode::Precise,
+        );
+        let fast = CacheKey::new_with_mode(
+            "hi",
+            &req,
+            "en",
+            "mock.nmt",
+            None,
+            1,
+            "",
+            TranslationMode::Fast,
+        );
+        assert_ne!(
+            precise, fast,
+            "Precise 与 Fast 不得共享缓存（docs/57 §4.2）"
+        );
+        assert_eq!(precise.mode, TranslationMode::Precise);
+        assert_eq!(fast.mode, TranslationMode::Fast);
+    }
+
+    #[test]
     fn 不同术语表不得共享缓存() {
         let base = TranslateRequest::new("hi", LanguageTag::new("zh-Hans").unwrap());
         let with_glossary = base.clone().with_glossary("g1");
@@ -267,6 +328,8 @@ mod tests {
                 source_assumed: false,
                 rules_version: 1,
                 resource_fingerprint: String::new(),
+                mode: TranslationMode::Precise,
+                quality: None,
                 rules: None,
                 protected_spans: Vec::new(),
                 restore_missing: Vec::new(),

@@ -1,0 +1,32 @@
+{
+  "manifest_schema_version": 2,
+  "payload_schema_version": "dictionary.sqlite.v2",
+  "id": "dictionary.ecdict.en-zh",
+  "version": "0.1.0",
+  "kind": "dictionary",
+  "language": "en",
+  "target_languages": [
+    "zh-Hans"
+  ],
+  "entry_count": 30200,
+  "provenance": {
+    "name": "ECDICT",
+    "source_url": "https://github.com/skywind3000/ECDICT",
+    "revision": "snapshot-2026-11-08+supplement-1",
+    "license_spdx": "MIT",
+    "license_file": "LICENSE.txt",
+    "retrieved_at": "2026-11-08"
+  },
+  "files": [
+    {
+      "path": "index.fst",
+      "sha256": "665a3d303b54c7f94a65269a1070a5268a3a5607afa50bbcecf699d4d7b7ccd6",
+      "bytes": 269432
+    },
+    {
+      "path": "entries.sqlite",
+      "sha256": "ee329cfaf091162a827e46e0ea9cf305521d0d0bf733c9548bdc454129a08b39",
+      "bytes": 3260416
+    }
+  ]
+}

@@ -34,6 +34,9 @@
 - `32_P5开发建议与实施计划（工作区与权限边界）.md` — 外部审查/计划稿归档：唯一可写工作区 `E:\augenstern\translate`、逐项审批、固定 Anaconda Python
 - `47_P8-P11_遗留能力源码核验与开发验收计划.md` — P8～P11 计划归档（权限边界、工作包、M/SM/EP/DI/LID/AND/NC/RM/R 矩阵、里程碑）
 - `50_P9_多语言词典语言识别与词形分析开发建议.md` — P9.0～P9.5 计划归档（资源准入、DI/LID/MOR 矩阵、权限边界）
+- `60_P11_质量优先连续开发实施报告.md` — **本轮**：Precise/Fast、ECDICT 英中词典、规则/术语、译后检查、320 条金样本与真实 ORT 同集对照；人工评审 PENDING
+- `61_P11_英中翻译质量评估报告.md` — **本轮**：词典覆盖 98.98%、多义词 10/10、短语 179/179、真实模型基线/配置对照与回归样本
+- `known-issues.md` — 集中问题清单（Q-001～Q-024），含质量回归集合与 PENDING 项
 - `59B_P10.1_Windows_ORT连续Soak与崩溃隔离PoC报告.md` — 连续 10k 仅 1,500（PENDING）、子进程崩溃 PoC（非生产隔离）
 - `59A_P10.1-A3-A4_Windows_ORT补充验证报告.md` — 10k 仅 4,000（PENDING）、并发共享、身份切换、预算、NM-09 限制
 - `59_P10.1-A_Windows_ORT真实模型Soak与生命周期报告.md` — 1000 次 Soak（0 错误）、共享会话、RSS/Private Bytes；10k PENDING
@@ -62,6 +65,15 @@
 - `33_P5.1_工作区与环境只读核验报告.md` — P5.1 只读预检（Rust 1.99.1 / Anaconda 3.13.5 / VC 17.14 / 工作区空且 E: 133.7 GiB）、`dsh-win-env/v1` 采集脚本、D-101～D-107
 
 ---
+
+## 当前状态：P11 质量优先开发（2026-11-08）
+
+**P11 已完成一轮质量优先连续开发**（`docs/60` / `docs/61`）：默认 **Precise** 模式、
+英中词典 `resources/en-zh-ecdict`（30,200 条 / 46,805 义项 / 高频覆盖 98.98%）、
+10 个多义词检查全过、179 条技术/固定短语全过、320 条英中金样本与 10 组真实 ORT 配置对照。
+**人工评审仍为 PENDING_HUMAN**，因此本轮质量结论是 **Conditional**：自动指标与确定性约束可复核，
+但 320 条人工语义/自然度评审尚未完成，不能写成 PASS。已知问题集中记录在 `docs/known-issues.md`。
+跨平台扩展、ncnn、极限性能与正式发行按 `docs/57` 暂停；G11/G12 未关闭。
 
 ## 当前状态：P0～P3 完成并**已冻结**（`p3.4` / 分支 `p3-frozen`），**P3 = Conditional**：功能可验收，含权重的发行被 release-blockers（G12 等五项）阻断。P4 工作包全部交付（P4-01～P4-07，`p4.3`），裁定 **`conditional-go`**：插件替换可行 = go，替换 P3 后端 = **no-go**；**门禁闭合情况是 6 项通过 + G05/G06 部分满足**（未闭合项已进机器可查台账 `fixtures/p4/acceptance.json`，由 `check-release.py` 的 C9 盯）。**P6 已收口**（`p6.2`）：`bindings/translator-jni` 让完整 Rust SDK 经 JNI 在 Android x86_64 模拟器上真实可用（23/23 断言，含真词典/并发关闭）；Linux 379 / Windows 337 passed 无倒退；J-07/J-14/J-15 与 APK 载体、真实 Android NMT、ARM64 运行仍 pending。**P5**（`p5.7`）：裁定 **Conditional**——Windows 实体机 W1–W10 全绿（333 passed / 0 failed / 60 ignored，含 ORT 24 条真实模型、6 条跨进程不变量、5 个崩溃注入点），Linux 375/0/60 无回退；Android x86_64 模拟器上真 SDK 跑通（词典/资源/CLI），ARM64 仅编译合规、运行不可得、物理性能**未验证**；5 条发行阻断项仍 open。见 `docs/37`
 

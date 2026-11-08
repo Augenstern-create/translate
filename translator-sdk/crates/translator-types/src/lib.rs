@@ -151,6 +151,43 @@ impl CancelToken {
     }
 }
 
+/// 翻译模式（P11 / docs/57 §4）。
+///
+/// - [`TranslationMode::Precise`]：默认模式。允许更完整的语言分析、候选比较、
+///   术语约束与译后检查，目标是准确、完整、自然。
+/// - [`TranslationMode::Fast`]：为后续实时翻译预留。走更短的执行路径，但仍必须
+///   保证占位符、数字和格式安全；**不会**因为“快”而放弃完整性检查。
+///
+/// 模式与具体 NMT Runtime 解耦：同一种模式可以跑在 Dictionary / ORT / Bergamot
+/// / Remote 任意引擎上。模式必须进入缓存身份，Precise 与 Fast 的结果不得互相复用。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum TranslationMode {
+    /// 精准模式（默认）。
+    #[default]
+    Precise,
+    /// 快速模式（必须显式选择）。
+    Fast,
+}
+
+impl TranslationMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Precise => "precise",
+            Self::Fast => "fast",
+        }
+    }
+
+    pub const fn is_precise(self) -> bool {
+        matches!(self, Self::Precise)
+    }
+}
+
+impl fmt::Display for TranslationMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// 引擎选择策略。
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub enum TranslationPolicy {

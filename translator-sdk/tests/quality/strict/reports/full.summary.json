@@ -1,0 +1,9 @@
+{
+  "cache_hits": 0,
+  "errors": 4,
+  "label": "full",
+  "mode": "precise",
+  "resource_fingerprint": "dictionary.ecdict.en-zh@0.1.0#8fbab236d4394b01;rules.en-zh.quality@2#ba904a404902d0b140f55a25f39a79cf23106e85df8115d8862761dfcea47e24;terms.en-zh.technical@1#5cf4c974fdaa9e18ee5b14f7627f42ba282c7d4af764675ed398164a67694830",
+  "success": 316,
+  "total_wall_ms": 58536
+}

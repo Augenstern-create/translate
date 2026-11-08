@@ -1,5 +1,37 @@
 # 变更记录
 
+## P11 — 质量优先连续开发（2026-11-08，报告 `docs/60` `docs/61`，问题清单 `docs/known-issues.md`）
+
+### 新增
+
+- **Precise / Fast 模式契约**（`TranslationMode`）：默认 Precise；Builder `translation_mode()`、
+  单请求 `translate_with_mode()` / `translate_with_diagnostics_mode()`；模式进入缓存键与诊断；
+  `TranslateRequest` 字段不变，旧结构体字面量仍编译。CLI 增加 `--mode`。
+- **译后完整性检查**（`translator-core::quality`）：数字多重集、占位符标记残留、空输出、
+  否定丢失、连续重复句段、目标语言、原文原样返回；关键数字/标记残留默认返回 `IntegrityFailure`
+  （`TranslatorBuilder::strict_integrity(false)` 可关闭）。
+- **结构化保护交接**：`TranslationEngine::handles_protected_spans()`；Bergamot/ORT 自己用
+  `ProtectionPlan` 分段，协调器不再二次打 `⟦Pn⟧` 标记（修复标记被模型吞掉的真实风险）。
+- **英中词典**：ECDICT 导入工具、30,200 条词典包 `resources/en-zh-ecdict`（46,805 义项、
+  179 条项目补充技术/短语）、大小写不敏感查询、词形候选回退、单词直译返回多义项。
+- **规则/术语**：默认无损规则包 `fixtures/rules/en-zh.quality.json`（NFKC + 弯引号）；
+  49 条英中技术术语表；缩写展开实验包保留但默认不加载（对照出现退化）。
+- **质量体系**：320 条金样本、10 个多义词检查、179 条短语、`tools/quality-runner`
+  （JSONL 批量翻译/查词）、Python 覆盖/对照/汇总/人工评审模板脚本、模型与数据锁文件。
+
+### 测试
+
+- 新增 `translation_mode` 6 条、`protection_handshake` 3 条、`quality_gate` 3 条、
+  `dictionary_senses` 4 条、`quality` 10 条单元测试；规则/术语/词典既有回归保持。
+- 真实 ORT：320 条金样本 × 10 配置（含 max_new_tokens 96/256、术语 Enforce）完成；
+  自动指标与回归样本见 `docs/61`；人工评审 **PENDING_HUMAN**。
+
+### 明确没有做
+
+- beam search、长句句级切分、更强的通用架构模型（NLLB/M2M）、Windows 10k soak 补跑；
+- 320 条人工评审（仅生成抽样模板）；
+- 发行门禁 G11/G12 未关闭，模型/词典不随发行物分发。
+
 版本号策略：P3 期间一律 `0.1.0`（**不发布**，`publish = false`）；每次阶段结束打 tag，
 tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `p3.2` `p3.3` `p3.4` `p4.0` `p4.1` `p4.2` `p4.3` `p5.0` `p5.1` `p5.2` `p5.3` `p5.4` `p5.5` `p5.6` `p5.7` `p6.0` `p6.1` `p6.2` `p7.0`）。
 真正的语义化版本从 P7（SDK 发行）开始。

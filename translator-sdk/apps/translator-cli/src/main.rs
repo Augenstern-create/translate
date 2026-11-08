@@ -55,6 +55,7 @@ translator-cli —— 轻量跨平台翻译 SDK 调试工具
   --dict-id <资源 id> 从资源仓库挂载该资源的**激活版本**
   --store <仓库目录>  资源仓库根目录（默认 .resources）
   --memory-budget <MiB>  峰值内存上限；超限时 build() 直接 OutOfBudget
+  --mode <m>         翻译模式：precise（默认）| fast
   --terms <术语表>   输出侧术语表（JSON，P2.4）
   --term-policy <p>  术语策略：off | warn | enforce（默认 warn：只报告不改写）
   --rules <规则文件>  挂载规则包（JSON 或已编译的二进制）
@@ -141,6 +142,8 @@ struct GlobalOptions {
     /// 输出侧术语表文件。
     terms: Option<String>,
     term_policy: translator_api::TermPolicy,
+    /// 翻译模式（docs/57 §4）：默认 Precise。
+    mode: translator_api::TranslationMode,
     /// 真实本地 NMT 选项（`--nmt*`）。
     nmt: NmtOptions,
 }
@@ -182,6 +185,7 @@ fn take_global_options(args: &mut Vec<String>) -> Result<GlobalOptions, ExitCode
         memory_budget: None,
         terms: None,
         term_policy: translator_api::TermPolicy::default(),
+        mode: translator_api::TranslationMode::Precise,
         nmt: NmtOptions::default(),
     };
 
@@ -204,6 +208,16 @@ fn take_global_options(args: &mut Vec<String>) -> Result<GlobalOptions, ExitCode
         options.store = store;
     }
     options.terms = take(args, "--terms");
+    if let Some(raw) = take(args, "--mode") {
+        options.mode = match raw.as_str() {
+            "precise" => translator_api::TranslationMode::Precise,
+            "fast" => translator_api::TranslationMode::Fast,
+            other => {
+                eprintln!("--mode 只能是 precise | fast：{other}");
+                return Err(ExitCode::from(2));
+            }
+        };
+    }
     if let Some(raw) = take(args, "--term-policy") {
         options.term_policy = match raw.as_str() {
             "off" => translator_api::TermPolicy::Off,
@@ -294,6 +308,7 @@ fn build_translator(
         // 远程 LLM：默认【无】联网授权，用于验证 ADR-004
         .engine(MockRemoteEngine::new(false))
         .backend(MockBackend::new())
+        .translation_mode(options.mode)
         .cache_capacity(64);
 
     // 真实本地 NMT：显式传 `--nmt` 才挂载；未编译该特性时给出明确提示而不是静默降级

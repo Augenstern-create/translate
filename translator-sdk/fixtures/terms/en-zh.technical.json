@@ -1,0 +1,586 @@
+{
+  "schema_version": 1,
+  "id": "terms.en-zh.technical",
+  "version": 1,
+  "terms": [
+    {
+      "target": "zh-Hans",
+      "preferred": "内存泄漏",
+      "variants": [
+        "内存泄露",
+        "记忆体泄漏"
+      ],
+      "source_variants": [
+        "memory leak",
+        "memory leaks"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "线程池",
+      "variants": [
+        "线程集区",
+        "线程池化"
+      ],
+      "source_variants": [
+        "thread pool",
+        "thread pools"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "垃圾回收",
+      "variants": [
+        "垃圾收集",
+        "无用单元收集",
+        "垃圾回收机制"
+      ],
+      "source_variants": [
+        "garbage collection",
+        "GC"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "竞态条件",
+      "variants": [
+        "竞争条件"
+      ],
+      "source_variants": [
+        "race condition",
+        "race conditions"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "死锁",
+      "variants": [
+        "死结",
+        "死锁状态"
+      ],
+      "source_variants": [
+        "deadlock",
+        "deadlocks"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "栈溢出",
+      "variants": [
+        "堆栈溢出",
+        "堆栈溢位"
+      ],
+      "source_variants": [
+        "stack overflow"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "缓冲区溢出",
+      "variants": [
+        "缓冲溢出",
+        "缓冲区溢位"
+      ],
+      "source_variants": [
+        "buffer overflow"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "空指针",
+      "variants": [
+        "空指针异常",
+        "空指标"
+      ],
+      "source_variants": [
+        "null pointer",
+        "null pointers"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "悬空指针",
+      "variants": [
+        "悬挂指针",
+        "野指针"
+      ],
+      "source_variants": [
+        "dangling pointer",
+        "dangling pointers"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "释放后使用",
+      "variants": [
+        "释放后重用",
+        "使用后释放"
+      ],
+      "source_variants": [
+        "use after free",
+        "use-after-free"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "源代码",
+      "variants": [
+        "源码",
+        "原始码"
+      ],
+      "source_variants": [
+        "source code"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "开源",
+      "variants": [
+        "开放源代码",
+        "开放源码"
+      ],
+      "source_variants": [
+        "open source",
+        "open-source"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "拉取请求",
+      "variants": [
+        "合并请求",
+        "拉取要求"
+      ],
+      "source_variants": [
+        "pull request",
+        "pull requests"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "代码审查",
+      "variants": [
+        "代码评审",
+        "代码复查"
+      ],
+      "source_variants": [
+        "code review",
+        "code reviews"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "单元测试",
+      "variants": [
+        "单位测试",
+        "单元测试用例"
+      ],
+      "source_variants": [
+        "unit test",
+        "unit tests"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "集成测试",
+      "variants": [
+        "整合测试",
+        "集成测试用例"
+      ],
+      "source_variants": [
+        "integration test",
+        "integration tests"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "回归测试",
+      "variants": [
+        "回归测验",
+        "退化测试"
+      ],
+      "source_variants": [
+        "regression test",
+        "regression tests"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "命令行",
+      "variants": [
+        "命令列",
+        "命令行模式"
+      ],
+      "source_variants": [
+        "command line",
+        "command-line"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "操作系统",
+      "variants": [
+        "作业系统",
+        "操作系统软件"
+      ],
+      "source_variants": [
+        "operating system",
+        "operating systems"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "文件系统",
+      "variants": [
+        "档案系统",
+        "文件系统结构"
+      ],
+      "source_variants": [
+        "file system",
+        "file systems",
+        "filesystem"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "数据库",
+      "variants": [
+        "资料库",
+        "数据基"
+      ],
+      "source_variants": [
+        "database",
+        "databases"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "机器学习",
+      "variants": [
+        "机器学习法",
+        "机械学习"
+      ],
+      "source_variants": [
+        "machine learning"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "深度学习",
+      "variants": [
+        "深层学习",
+        "深度机器学习"
+      ],
+      "source_variants": [
+        "deep learning"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "神经网络",
+      "variants": [
+        "神经网路",
+        "类神经网络"
+      ],
+      "source_variants": [
+        "neural network",
+        "neural networks"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "人工智能",
+      "variants": [
+        "人工智慧",
+        "人工职能"
+      ],
+      "source_variants": [
+        "artificial intelligence",
+        "AI"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "大语言模型",
+      "variants": [
+        "大型语言模型",
+        "大语言模型系统"
+      ],
+      "source_variants": [
+        "large language model",
+        "large language models",
+        "LLM"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "自然语言处理",
+      "variants": [
+        "自然语言处理技术",
+        "自然语言理解"
+      ],
+      "source_variants": [
+        "natural language processing",
+        "NLP"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "云计算",
+      "variants": [
+        "云端运算",
+        "云端计算"
+      ],
+      "source_variants": [
+        "cloud computing"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "分布式系统",
+      "variants": [
+        "分散式系统",
+        "分布式体系"
+      ],
+      "source_variants": [
+        "distributed system",
+        "distributed systems"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "负载均衡器",
+      "variants": [
+        "负载平衡器"
+      ],
+      "source_variants": [
+        "load balancer",
+        "load balancers"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "微服务",
+      "variants": [
+        "微服务架构",
+        "微型服务"
+      ],
+      "source_variants": [
+        "microservice",
+        "microservices"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "虚拟机",
+      "variants": [
+        "虚拟机器",
+        "虚拟主机"
+      ],
+      "source_variants": [
+        "virtual machine",
+        "virtual machines"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "编译器",
+      "variants": [
+        "编译程序",
+        "编译工具"
+      ],
+      "source_variants": [
+        "compiler",
+        "compilers"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "解释器",
+      "variants": [
+        "直译器",
+        "解释程序"
+      ],
+      "source_variants": [
+        "interpreter",
+        "interpreters"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "运行时",
+      "variants": [
+        "运行环境",
+        "执行时"
+      ],
+      "source_variants": [
+        "runtime"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "缓存",
+      "variants": [
+        "快取",
+        "高速缓存"
+      ],
+      "source_variants": [
+        "cache",
+        "caches"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "延迟",
+      "variants": [
+        "时延",
+        "延时"
+      ],
+      "source_variants": [
+        "latency"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "吞吐量",
+      "variants": [
+        "吞吐率",
+        "吞吐能力"
+      ],
+      "source_variants": [
+        "throughput"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "带宽",
+      "variants": [
+        "频宽",
+        "带宽值"
+      ],
+      "source_variants": [
+        "bandwidth"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "应用程序编程接口",
+      "variants": [
+        "应用编程接口",
+        "应用程序接口"
+      ],
+      "source_variants": [
+        "API",
+        "application programming interface"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "软件开发工具包",
+      "variants": [
+        "软体开发工具包",
+        "软件开发套件"
+      ],
+      "source_variants": [
+        "SDK",
+        "software development kit"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "命令行界面",
+      "variants": [
+        "命令行接口",
+        "命令列界面"
+      ],
+      "source_variants": [
+        "CLI",
+        "command-line interface"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "图形用户界面",
+      "variants": [
+        "图形界面",
+        "图形使用者界面"
+      ],
+      "source_variants": [
+        "GUI",
+        "graphical user interface"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "中央处理器",
+      "variants": [
+        "中央处理单元",
+        "中央处理器芯片"
+      ],
+      "source_variants": [
+        "CPU",
+        "central processing unit"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "图形处理器",
+      "variants": [
+        "图形处理单元",
+        "显示处理器"
+      ],
+      "source_variants": [
+        "GPU",
+        "graphics processing unit"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "随机存取存储器",
+      "variants": [
+        "随机访问存储器",
+        "随机存取记忆体"
+      ],
+      "source_variants": [
+        "RAM",
+        "random access memory"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "只读存储器",
+      "variants": [
+        "唯读存储器",
+        "只读记忆体"
+      ],
+      "source_variants": [
+        "ROM",
+        "read-only memory"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "统一资源定位符",
+      "variants": [
+        "统一资源定位器",
+        "统一资源地址"
+      ],
+      "source_variants": [
+        "URL",
+        "uniform resource locator"
+      ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "超文本传输协议",
+      "variants": [
+        "超文字传输协议",
+        "超文本传送协议"
+      ],
+      "source_variants": [
+        "HTTP",
+        "hypertext transfer protocol"
+      ]
+    }
+  ]
+}

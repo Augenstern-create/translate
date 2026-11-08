@@ -90,22 +90,32 @@ impl TranslationEngine for DictionaryEngine {
                 )
             })?;
 
-            let entry = self
+            let term = req.text.trim();
+            let mut entry = self
                 .package
-                .lookup_exact(req.text.trim())
-                .map_err(TranslationError::from)?
-                .ok_or_else(|| {
-                    TranslationError::new(
-                        TranslationErrorCode::CapabilityUnavailable,
-                        "词典未命中：无精确词条",
-                    )
-                })?;
+                .lookup_exact(term)
+                .map_err(TranslationError::from)?;
+            if entry.is_none() {
+                // 英语查询大小写不敏感：包里的 headword 可能是小写，用户输入
+                // 句首大写（"Hello"）不应因此绕过词典直译。
+                let lower = term.to_lowercase();
+                if lower != term {
+                    entry = self
+                        .package
+                        .lookup_exact(&lower)
+                        .map_err(TranslationError::from)?;
+                }
+            }
+            let entry = entry.ok_or_else(|| {
+                TranslationError::new(
+                    TranslationErrorCode::CapabilityUnavailable,
+                    "词典未命中：无精确词条",
+                )
+            })?;
 
-            let text = entry
-                .senses
-                .first()
-                .map(|s| s.definition.clone())
-                .unwrap_or_default();
+            // T1.4：不能机械取第一义。单词直译返回**前几个不同义项**，
+            // 让宿主/用户看到多义性；整句翻译仍由 NMT 承担，不做词典拼接。
+            let text = compose_senses(&entry.senses, 3);
 
             if text.is_empty() {
                 return Err(TranslationError::new(
@@ -125,6 +135,61 @@ impl TranslationEngine for DictionaryEngine {
             })
         })
     }
+}
+
+/// 把多个义项拼成一段可读的直译文本。
+///
+/// - 去重时忽略领域前缀（`[计] 操作系统` 与 `操作系统` 视为同一条）；
+/// - 最多 `limit` 条，用中文分号连接；
+/// - 总长度按字符截断，避免一个长释义把结果撑爆。
+fn compose_senses(senses: &[translator_types::Sense], limit: usize) -> String {
+    const MAX_CHARS: usize = 160;
+    let mut picked: Vec<&str> = Vec::new();
+    let mut normalized: Vec<String> = Vec::new();
+    for sense in senses {
+        let text = sense.definition.trim();
+        if text.is_empty() {
+            continue;
+        }
+        let key = strip_domain_prefix(text);
+        if normalized.iter().any(|existing| existing == &key) {
+            continue;
+        }
+        normalized.push(key);
+        picked.push(text);
+        if picked.len() >= limit {
+            break;
+        }
+    }
+
+    let mut out = String::new();
+    for part in picked {
+        let part = part.trim_end_matches(['。', '.', ' ']);
+        if part.is_empty() {
+            continue;
+        }
+        if !out.is_empty() {
+            out.push('；');
+        }
+        out.push_str(part);
+        if out.chars().count() >= MAX_CHARS {
+            break;
+        }
+    }
+    if out.chars().count() > MAX_CHARS {
+        out = out.chars().take(MAX_CHARS).collect();
+        out.push('…');
+    }
+    out
+}
+
+fn strip_domain_prefix(text: &str) -> String {
+    if let Some(rest) = text.strip_prefix('[') {
+        if let Some(end) = rest.find(']') {
+            return rest[end + 1..].trim().to_string();
+        }
+    }
+    text.to_string()
 }
 
 /// 基于词典包的查词提供者。

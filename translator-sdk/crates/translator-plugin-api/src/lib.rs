@@ -61,6 +61,20 @@ pub trait TranslationEngine: Send + Sync {
     fn cache_identity(&self) -> Option<String> {
         None
     }
+
+    /// 引擎是否**自己**完成受保护跨度的切分与还原（结构化保护）。
+    ///
+    /// 默认 `false`：协调器会把 URL / 邮箱 / `{变量}` / 反引号代码替换成
+    /// `⟦Pn⟧` 标记，再交给引擎翻译，最后按标记还原。这是 P0 的通用做法。
+    ///
+    /// 真实 NMT 后端（Bergamot / ORT）实现的是 `ProtectionPlan` 分段策略：
+    /// 受保护片段**根本不进模型**。如果协调器先把原文换成标记，模型看到的
+    /// 就是 `⟦P0⟧` 这种它不认识的符号，P3.0 已实测标记会被吞掉——于是
+    /// 同一层保护被做了两次，第二次反而破坏了第一次。这些后端必须覆盖本方法
+    /// 返回 `true`，让协调器把**原始文本**交给它。
+    fn handles_protected_spans(&self) -> bool {
+        false
+    }
 }
 
 /// 词典/语言学提供者。与翻译引擎分开建模，

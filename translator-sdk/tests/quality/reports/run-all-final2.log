@@ -1,0 +1,81 @@
+[rules] /home/nan/deepseek-harness/translate-workspace/translator-sdk/target/release/quality-runner --input /home/nan/deepseek-harness/translate-workspace/translator-sdk/fixtures/quality/golden-v1.jsonl --output /home/nan/deepseek-harness/translate-workspace/translator-sdk/tests/quality/outputs/rules.jsonl --label rules --mode precise --policy local --source en --target zh-Hans --strict-integrity false --summary /home/nan/deepseek-harness/translate-workspace/translator-sdk/tests/quality/reports/rules.summary.json --ort-model-dir /home/nan/deepseek-harness/translate-workspace/translator-sdk/.build/model-cache/ort-model-linux --rules /home/nan/deepseek-harness/translate-workspace/translator-sdk/fixtures/rules/en-zh.quality.json
+  已完成 50 条（错误 0）
+  已完成 100 条（错误 0）
+  已完成 150 条（错误 0）
+  已完成 200 条（错误 0）
+  已完成 250 条（错误 0）
+  已完成 300 条（错误 0）
+翻译完成：320 条，成功 320，错误 0，缓存命中 0
+{"cache_hits":0,"errors":0,"label":"rules","mode":"precise","resource_fingerprint":"rules.en-zh.quality@2#ba904a404902d0b140f55a25f39a79cf23106e85df8115d8862761dfcea47e24","success":320,"total_wall_ms":59662}
+[rules] 完成，耗时 60.5s
+[terms] /home/nan/deepseek-harness/translate-workspace/translator-sdk/target/release/quality-runner --input /home/nan/deepseek-harness/translate-workspace/translator-sdk/fixtures/quality/golden-v1.jsonl --output /home/nan/deepseek-harness/translate-workspace/translator-sdk/tests/quality/outputs/terms.jsonl --label terms --mode precise --policy local --source en --target zh-Hans --strict-integrity false --summary /home/nan/deepseek-harness/translate-workspace/translator-sdk/tests/quality/reports/terms.summary.json --ort-model-dir /home/nan/deepseek-harness/translate-workspace/translator-sdk/.build/model-cache/ort-model-linux --terms /home/nan/deepseek-harness/translate-workspace/translator-sdk/fixtures/terms/en-zh.technical.json
+  已完成 50 条（错误 0）
+  已完成 100 条（错误 0）
+  已完成 150 条（错误 0）
+  已完成 200 条（错误 0）
+  已完成 250 条（错误 0）
+  已完成 300 条（错误 0）
+翻译完成：320 条，成功 320，错误 0，缓存命中 0
+{"cache_hits":0,"errors":0,"label":"terms","mode":"precise","resource_fingerprint":"terms.en-zh.technical@1#5cf4c974fdaa9e18ee5b14f7627f42ba282c7d4af764675ed398164a67694830","success":320,"total_wall_ms":59484}
+[terms] 完成，耗时 60.3s
+[full] /home/nan/deepseek-harness/translate-workspace/translator-sdk/target/release/quality-runner --input /home/nan/deepseek-harness/translate-workspace/translator-sdk/fixtures/quality/golden-v1.jsonl --output /home/nan/deepseek-harness/translate-workspace/translator-sdk/tests/quality/outputs/full.jsonl --label full --mode precise --policy auto --source en --target zh-Hans --strict-integrity false --summary /home/nan/deepseek-harness/translate-workspace/translator-sdk/tests/quality/reports/full.summary.json --ort-model-dir /home/nan/deepseek-harness/translate-workspace/translator-sdk/.build/model-cache/ort-model-linux --dict /home/nan/deepseek-harness/translate-workspace/translator-sdk/resources/en-zh-ecdict --rules /home/nan/deepseek-harness/translate-workspace/translator-sdk/fixtures/rules/en-zh.quality.json --terms /home/nan/deepseek-harness/translate-workspace/translator-sdk/fixtures/terms/en-zh.technical.json
+  已完成 50 条（错误 0）
+  已完成 100 条（错误 0）
+  已完成 150 条（错误 0）
+  已完成 200 条（错误 0）
+  已完成 250 条（错误 0）
+  已完成 300 条（错误 0）
+翻译完成：320 条，成功 320，错误 0，缓存命中 0
+{"cache_hits":0,"errors":0,"label":"full","mode":"precise","resource_fingerprint":"dictionary.ecdict.en-zh@0.1.0#8fbab236d4394b01;rules.en-zh.quality@2#ba904a404902d0b140f55a25f39a79cf23106e85df8115d8862761dfcea47e24;terms.en-zh.technical@1#5cf4c974fdaa9e18ee5b14f7627f42ba282c7d4af764675ed398164a67694830","success":320,"total_wall_ms":60263}
+[full] 完成，耗时 61.1s
+[full-fast] /home/nan/deepseek-harness/translate-workspace/translator-sdk/target/release/quality-runner --input /home/nan/deepseek-harness/translate-workspace/translator-sdk/fixtures/quality/golden-v1.jsonl --output /home/nan/deepseek-harness/translate-workspace/translator-sdk/tests/quality/outputs/full-fast.jsonl --label full-fast --mode fast --policy auto --source en --target zh-Hans --strict-integrity false --summary /home/nan/deepseek-harness/translate-workspace/translator-sdk/tests/quality/reports/full-fast.summary.json --ort-model-dir /home/nan/deepseek-harness/translate-workspace/translator-sdk/.build/model-cache/ort-model-linux --dict /home/nan/deepseek-harness/translate-workspace/translator-sdk/resources/en-zh-ecdict --rules /home/nan/deepseek-harness/translate-workspace/translator-sdk/fixtures/rules/en-zh.quality.json --terms /home/nan/deepseek-harness/translate-workspace/translator-sdk/fixtures/terms/en-zh.technical.json
+  已完成 50 条（错误 0）
+  已完成 100 条（错误 0）
+  已完成 150 条（错误 0）
+  已完成 200 条（错误 0）
+  已完成 250 条（错误 0）
+  已完成 300 条（错误 0）
+翻译完成：320 条，成功 320，错误 0，缓存命中 0
+{"cache_hits":0,"errors":0,"label":"full-fast","mode":"fast","resource_fingerprint":"dictionary.ecdict.en-zh@0.1.0#8fbab236d4394b01;rules.en-zh.quality@2#ba904a404902d0b140f55a25f39a79cf23106e85df8115d8862761dfcea47e24;terms.en-zh.technical@1#5cf4c974fdaa9e18ee5b14f7627f42ba282c7d4af764675ed398164a67694830","success":320,"total_wall_ms":61513}
+[full-fast] 完成，耗时 62.4s
+[baseline-96] /home/nan/deepseek-harness/translate-workspace/translator-sdk/target/release/quality-runner --input /home/nan/deepseek-harness/translate-workspace/translator-sdk/fixtures/quality/golden-v1.jsonl --output /home/nan/deepseek-harness/translate-workspace/translator-sdk/tests/quality/outputs/baseline-96.jsonl --label baseline-96 --mode precise --policy local --source en --target zh-Hans --strict-integrity false --summary /home/nan/deepseek-harness/translate-workspace/translator-sdk/tests/quality/reports/baseline-96.summary.json --ort-model-dir /home/nan/deepseek-harness/translate-workspace/translator-sdk/.build/model-cache/ort-model-linux --max-new-tokens 96
+  已完成 50 条（错误 0）
+  已完成 100 条（错误 0）
+  已完成 150 条（错误 0）
+  已完成 200 条（错误 0）
+  已完成 250 条（错误 0）
+  已完成 300 条（错误 0）
+翻译完成：320 条，成功 320，错误 0，缓存命中 0
+{"cache_hits":0,"errors":0,"label":"baseline-96","mode":"precise","resource_fingerprint":"","success":320,"total_wall_ms":63655}
+[baseline-96] 完成，耗时 64.5s
+[baseline-256] /home/nan/deepseek-harness/translate-workspace/translator-sdk/target/release/quality-runner --input /home/nan/deepseek-harness/translate-workspace/translator-sdk/fixtures/quality/golden-v1.jsonl --output /home/nan/deepseek-harness/translate-workspace/translator-sdk/tests/quality/outputs/baseline-256.jsonl --label baseline-256 --mode precise --policy local --source en --target zh-Hans --strict-integrity false --summary /home/nan/deepseek-harness/translate-workspace/translator-sdk/tests/quality/reports/baseline-256.summary.json --ort-model-dir /home/nan/deepseek-harness/translate-workspace/translator-sdk/.build/model-cache/ort-model-linux --max-new-tokens 256
+  已完成 50 条（错误 0）
+  已完成 100 条（错误 0）
+  已完成 150 条（错误 0）
+  已完成 200 条（错误 0）
+  已完成 250 条（错误 0）
+  已完成 300 条（错误 0）
+翻译完成：320 条，成功 320，错误 0，缓存命中 0
+{"cache_hits":0,"errors":0,"label":"baseline-256","mode":"precise","resource_fingerprint":"","success":320,"total_wall_ms":59465}
+[baseline-256] 完成，耗时 60.3s
+[terms-enforce] /home/nan/deepseek-harness/translate-workspace/translator-sdk/target/release/quality-runner --input /home/nan/deepseek-harness/translate-workspace/translator-sdk/fixtures/quality/golden-v1.jsonl --output /home/nan/deepseek-harness/translate-workspace/translator-sdk/tests/quality/outputs/terms-enforce.jsonl --label terms-enforce --mode precise --policy local --source en --target zh-Hans --strict-integrity false --summary /home/nan/deepseek-harness/translate-workspace/translator-sdk/tests/quality/reports/terms-enforce.summary.json --ort-model-dir /home/nan/deepseek-harness/translate-workspace/translator-sdk/.build/model-cache/ort-model-linux --terms /home/nan/deepseek-harness/translate-workspace/translator-sdk/fixtures/terms/en-zh.technical.json --term-policy enforce
+  已完成 50 条（错误 0）
+  已完成 100 条（错误 0）
+  已完成 150 条（错误 0）
+  已完成 200 条（错误 0）
+  已完成 250 条（错误 0）
+  已完成 300 条（错误 0）
+翻译完成：320 条，成功 320，错误 0，缓存命中 0
+{"cache_hits":0,"errors":0,"label":"terms-enforce","mode":"precise","resource_fingerprint":"terms.en-zh.technical@1#5cf4c974fdaa9e18ee5b14f7627f42ba282c7d4af764675ed398164a67694830","success":320,"total_wall_ms":59804}
+[terms-enforce] 完成，耗时 60.7s
+[full-enforce] /home/nan/deepseek-harness/translate-workspace/translator-sdk/target/release/quality-runner --input /home/nan/deepseek-harness/translate-workspace/translator-sdk/fixtures/quality/golden-v1.jsonl --output /home/nan/deepseek-harness/translate-workspace/translator-sdk/tests/quality/outputs/full-enforce.jsonl --label full-enforce --mode precise --policy auto --source en --target zh-Hans --strict-integrity false --summary /home/nan/deepseek-harness/translate-workspace/translator-sdk/tests/quality/reports/full-enforce.summary.json --ort-model-dir /home/nan/deepseek-harness/translate-workspace/translator-sdk/.build/model-cache/ort-model-linux --dict /home/nan/deepseek-harness/translate-workspace/translator-sdk/resources/en-zh-ecdict --rules /home/nan/deepseek-harness/translate-workspace/translator-sdk/fixtures/rules/en-zh.quality.json --terms /home/nan/deepseek-harness/translate-workspace/translator-sdk/fixtures/terms/en-zh.technical.json --term-policy enforce
+  已完成 50 条（错误 0）
+  已完成 100 条（错误 0）
+  已完成 150 条（错误 0）
+  已完成 200 条（错误 0）
+  已完成 250 条（错误 0）
+  已完成 300 条（错误 0）
+翻译完成：320 条，成功 320，错误 0，缓存命中 0
+{"cache_hits":0,"errors":0,"label":"full-enforce","mode":"precise","resource_fingerprint":"dictionary.ecdict.en-zh@0.1.0#8fbab236d4394b01;rules.en-zh.quality@2#ba904a404902d0b140f55a25f39a79cf23106e85df8115d8862761dfcea47e24;terms.en-zh.technical@1#5cf4c974fdaa9e18ee5b14f7627f42ba282c7d4af764675ed398164a67694830","success":320,"total_wall_ms":59793}
+[full-enforce] 完成，耗时 60.7s
+全部完成：8 组，总耗时 490.5s

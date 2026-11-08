@@ -449,6 +449,11 @@ impl TranslationEngine for OrtNmtEngine {
     }
 
     #[cfg(feature = "ort-runtime")]
+    /// 本后端用 `ProtectionPlan` 自己处理受保护跨度，协调器必须交出原文。
+    fn handles_protected_spans(&self) -> bool {
+        true
+    }
+
     fn cache_identity(&self) -> Option<String> {
         if let Some(id) = self
             .cache_identity

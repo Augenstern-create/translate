@@ -11,3 +11,11 @@
 .vscode/
 .idea/
 *.swp
+
+# P11 质量工具中间产物（可由 run-dictionary-quality.py 重新生成；报告 JSON/MD 保留）
+/tests/quality/reports/lookup-results.jsonl
+/tests/quality/reports/lookup-words.txt
+
+# Python 缓存
+__pycache__/
+*.pyc

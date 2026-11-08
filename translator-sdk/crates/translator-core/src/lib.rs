@@ -26,6 +26,7 @@ pub mod diagnostics;
 pub mod plan;
 pub mod plan_cache;
 pub mod protection;
+pub mod quality;
 pub mod routing;
 pub mod rules;
 pub mod terms;
@@ -35,6 +36,7 @@ pub use budget::{BudgetError, BudgetReservation, MemoryBudget, MemoryReport};
 pub use cache::{CacheEntry, CacheKey, QueryCache};
 pub use coordinator::{Coordinator, CoordinatorConfig};
 pub use diagnostics::{RuleTrace, TermTrace, TranslateOutput, TranslationDiagnostics};
+pub use quality::{QualityIssue, QualityIssueKind, QualityReport, QualitySeverity};
 pub use routing::RouteOutcome;
 pub use rules::{NoRules, RuleOutcome, RulePreview, TextRules};
 pub use terms::{

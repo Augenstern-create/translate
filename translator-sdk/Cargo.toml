@@ -15,6 +15,7 @@ members = [
     "tools/pack-dictionary",
     "tools/p33-bench",
     "tools/migrate-rules",
+    "tools/quality-runner",
     "apps/translator-cli",
     "bindings/translator-jni",
 ]
@@ -45,6 +46,7 @@ translator-nmt-ort = { path = "crates/translator-nmt-ort" }
 pack-dictionary = { path = "tools/pack-dictionary" }
 p33-bench = { path = "tools/p33-bench" }
 migrate-rules = { path = "tools/migrate-rules" }
+quality-runner = { path = "tools/quality-runner" }
 
 # 外部依赖（P1 新增，全部为轻量或按 feature 隔离）
 pollster = "0.4"                  # 仅 CLI / 测试：同步驱动 async

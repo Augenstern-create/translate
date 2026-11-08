@@ -77,6 +77,28 @@ impl Translator {
         self.coordinator.translate(req).await
     }
 
+    /// 指定模式翻译（单请求覆盖 Builder 默认值）。
+    ///
+    /// 模式会进入缓存键：同一句话的 Precise 结果不会被 Fast 请求命中，反之亦然。
+    pub async fn translate_with_mode(
+        &self,
+        req: &TranslateRequest,
+        mode: TranslationMode,
+    ) -> Result<TranslationResult, TranslationError> {
+        self.coordinator.translate_with_mode(req, mode).await
+    }
+
+    /// 带诊断的指定模式翻译。
+    pub async fn translate_with_diagnostics_mode(
+        &self,
+        req: &TranslateRequest,
+        mode: TranslationMode,
+    ) -> Result<TranslateOutput, TranslationError> {
+        self.coordinator
+            .translate_with_diagnostics_mode(req, mode)
+            .await
+    }
+
     /// 可取消的翻译入口（G06）。
     ///
     /// 令牌可在任意线程 `cancel()`；取消后返回 `Cancelled`，不写缓存。
@@ -191,6 +213,11 @@ impl Translator {
         }
 
         Ok(guesses)
+    }
+
+    /// 当前默认翻译模式。
+    pub fn translation_mode(&self) -> TranslationMode {
+        self.coordinator.default_mode()
     }
 
     pub fn capabilities(&self) -> Vec<CapabilityInfo> {
@@ -333,6 +360,8 @@ pub struct TranslatorBuilder {
     lemmatizer: Option<Arc<dyn MorphologyAnalyzer>>,
     /// 峰值内存上限（字节）。`None` 表示不限制但仍记账。
     memory_limit: Option<u64>,
+    /// 默认翻译模式（docs/57 §4）：默认 Precise。
+    translation_mode: TranslationMode,
     /// 已登记的资源租约，`build()` 时移交给 `Translator`。
     #[cfg(feature = "resource")]
     leases: Vec<translator_resource::ResourceLease>,
@@ -367,6 +396,7 @@ impl TranslatorBuilder {
             language_identifier: None,
             lemmatizer: None,
             memory_limit: None,
+            translation_mode: TranslationMode::Precise,
             #[cfg(feature = "resource")]
             leases: Vec::new(),
             #[cfg(feature = "nmt-bergamot")]
@@ -560,6 +590,24 @@ impl TranslatorBuilder {
         self
     }
 
+    /// 默认翻译模式（docs/57 §4）。默认 [`TranslationMode::Precise`]；
+    /// Fast 必须显式选择，且两种模式不会共用缓存。
+    ///
+    /// 单请求覆盖用 [`Translator::translate_with_mode`] 等入口，
+    /// 因此**不需要**给 `TranslateRequest` 增加字段，旧的结构体字面量仍然编译。
+    pub fn translation_mode(mut self, mode: TranslationMode) -> Self {
+        self.translation_mode = mode;
+        self
+    }
+
+    /// 关键完整性检查失败时是否拒绝返回译文（默认 `true`）。
+    ///
+    /// 关闭后，数字丢失/标记残留只写入诊断，译文照常返回——仅在宿主自己做修复时使用。
+    pub fn strict_integrity(mut self, strict: bool) -> Self {
+        self.config.strict_integrity = strict;
+        self
+    }
+
     /// 峰值内存上限（字节）。`None` 之外还想表达"不限制"，用 `MemoryBudget::unlimited` 的语义，
     /// 这里传 `None` 即可。
     ///
@@ -733,6 +781,7 @@ impl TranslatorBuilder {
         self.config.term_policy = self.term_policy;
         self.config.language_identifier = self.language_identifier.take();
         self.config.lemmatizer = self.lemmatizer.take();
+        self.config.default_mode = self.translation_mode;
 
         let mut coordinator = Coordinator::new(Arc::new(self.registry), self.config);
         coordinator.bind_resource_fingerprint(fingerprint.join(";"));
@@ -775,6 +824,6 @@ pub mod prelude {
     };
     pub use translator_types::{
         Capability, LanguageTag, LookupRequest, TranslateRequest, TranslationError,
-        TranslationErrorCode, TranslationPolicy, TranslationResult,
+        TranslationErrorCode, TranslationMode, TranslationPolicy, TranslationResult,
     };
 }
