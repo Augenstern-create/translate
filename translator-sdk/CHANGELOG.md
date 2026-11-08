@@ -19,6 +19,13 @@ tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `
 - 冻结 J-07/J-10/J-14/J-15 的注入方法与期望错误码（含 J-15c `.so` 重载标 PENDING：ART 类加载器限制）。
 - 两处待批资源（360.9 MB ORT 旧缓存、3.1 GB arm64 镜像 + AVD）**未删未移未改**。
 
+## P10.0 — 模型/运行时/环境预检（报告 `docs/58`）
+
+- 基线 `18592bf`；Linux 419/0/60 复跑通过。
+- Windows ORT 模型三文件（encoder/decoder/tokenizer）大小与 SHA-256 已记录；ORT 24 用例沿用 P4/P7 证据。
+- Bergamot 模型/native 不在本机；Android 无真实 NMT runtime；ncnn 无实现。P10.1 仅 Windows ORT 可立即执行。
+- 未下载模型、未改功能代码、未写工作区外；G11/G12 仍 open。
+
 ## P9.5 — P9 收口与支持矩阵（报告 `docs/56`）
 
 - P9.5-A：JNI 可选 fastText LID（路径白名单）、Android 真实识别/lemma/en→zh 样本、直接 Arc 指纹；
