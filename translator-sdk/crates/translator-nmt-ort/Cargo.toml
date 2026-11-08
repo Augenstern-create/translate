@@ -24,6 +24,7 @@ sha2.workspace = true
 [dev-dependencies]
 pollster.workspace = true
 tempfile.workspace = true
+serde_json.workspace = true
 
 # 两个示例都要真实 ORT 运行时；没开 feature 时直接不编，避免 `cargo test` 被它们拖挂。
 [[example]]
@@ -36,4 +37,8 @@ required-features = ["ort-runtime"]
 
 [[example]]
 name = "p4_soak"
+required-features = ["ort-runtime"]
+
+[[example]]
+name = "p10_soak"
 required-features = ["ort-runtime"]
