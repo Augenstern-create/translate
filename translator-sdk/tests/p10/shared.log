@@ -1,0 +1,22 @@
+﻿cargo.exe :    Compiling translator-nmt-ort v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-nmt-ort)
+所在位置 E:\augenstern\translate\.build\staging\p10-a4.ps1:6 字符: 1
++ & cargo run -p translator-nmt-ort --features ort-runtime --release -- ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling tr...slator-nmt-ort):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+    Finished `release` profile [optimized] target(s) in 28.71s
+     Running `E:\augenstern\translate\.build\target\release\examples\p10_shared.exe`
+{
+  "a_err": 0,
+  "a_ok": 20,
+  "b_err": 0,
+  "b_ok": 20,
+  "elapsed_ms": 12324.497,
+  "pool_count": 1,
+  "reload_ms": 212.59120000000001,
+  "reload_ok": true,
+  "schema": "p10.1-ort-shared/v1",
+  "shared_arc": true,
+  "unload_ok": true
+}

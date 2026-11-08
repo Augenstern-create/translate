@@ -1,0 +1,18 @@
+﻿cargo.exe :    Compiling translator-nmt-ort v0.1.0 (E:\augenstern\translate\translator-sdk\crates\translator-nmt-ort)
+所在位置 E:\augenstern\translate\.build\staging\p10-a4.ps1:9 字符: 1
++ & cargo run -p translator-nmt-ort --features ort-runtime --release -- ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling tr...slator-nmt-ort):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+    Finished `release` profile [optimized] target(s) in 4.68s
+     Running `E:\augenstern\translate\.build\target\release\examples\p10_identity.exe`
+{
+  "a_cache_identity": "nmt.ort.opus-mt|nmt.ort.opus-mt#15d427e0707533d4|onnxruntime|1|192|protect-seg-v1|greedy;no-repeat-3gram=3;stop-on-3-run;tail-collapse(>=3 cycles,period<=4);len-cap=min(max_new_tokens,src*8/5+12)",
+  "b_cache_identity": "nmt.ort.opus-mt|nmt.ort.opus-mt#cc4220b9e741a3ca|onnxruntime|1|192|protect-seg-v1|greedy;no-repeat-3gram=3;stop-on-3-run;tail-collapse(>=3 cycles,period<=4);len-cap=min(max_new_tokens,src*8/5+12)",
+  "experiment_copy": "E:\\augenstern\\translate\\.build\\model-cache\\p10-identity-copy",
+  "identity_changed": true,
+  "original_model_dir": "E:\\augenstern\\translate\\.build\\model-cache\\ort-model",
+  "same_arc": false,
+  "schema": "p10.1-ort-identity/v1"
+}

@@ -19,6 +19,14 @@ tag 名就是阶段名（`p0` `p1` `p2` `p2s` `p3.0` `p3.1a` `p3.1b` `p3.1cde` `
 - 冻结 J-07/J-10/J-14/J-15 的注入方法与期望错误码（含 J-15c `.so` 重载标 PENDING：ART 类加载器限制）。
 - 两处待批资源（360.9 MB ORT 旧缓存、3.1 GB arm64 镜像 + AVD）**未删未移未改**。
 
+## P10.1-A3/A4 — 补充验证（报告 `docs/59A`）
+
+- 10,000 次：实际完成 **4,000**，Private 稳定 412.9–413.1 MiB；未完成，NM-03 PENDING。
+- A4-1：A/B 各 20 次并发 0 错误，A unload 后 B 重载 212.6 ms，pool=1。
+- A4-2：独立副本 tokenizer 变化后 shared Arc=false、cache identity 改变；原模型未改。
+- A4-3：100 MiB 拒绝 / 650 MiB 通过；估计 600 MiB vs 实测 Private 413.1 MiB。
+- NM-09 BLOCKED（同进程无隔离）；NM-07 N/A（无取消点）。
+
 ## P10.1-A — Windows ORT 真实模型 Soak（报告 `docs/59`）
 
 - 新增 `p10_soak` example（共享 ORT、内存采样、unload/reload）。

@@ -1,0 +1,16 @@
+﻿cargo.exe :     Finished `release` profile [optimized] target(s) in 0.13s
+所在位置 E:\augenstern\translate\.build\staging\p10-ort.ps1:7 字符: 1
++ & cargo run -p translator-nmt-ort --features ort-runtime --release -- ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (    Finished `r...get(s) in 0.13s:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+     Running `E:\augenstern\translate\.build\target\release\examples\p10_soak.exe 10000`
+after 500: rss 423.7 MiB private Some(412.8671875)
+after 1000: rss 423.8 MiB private Some(412.8671875)
+after 1500: rss 423.9 MiB private Some(412.8671875)
+after 2000: rss 424.0 MiB private Some(413.03125)
+after 2500: rss 424.1 MiB private Some(413.05859375)
+after 3000: rss 424.1 MiB private Some(413.05859375)
+after 3500: rss 424.1 MiB private Some(413.05859375)
+after 4000: rss 424.1 MiB private Some(413.05859375)
