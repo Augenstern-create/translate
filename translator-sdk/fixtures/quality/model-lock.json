@@ -85,5 +85,37 @@
         "usage": "local-evaluation"
       }
     ]
+  },
+  "p15_candidates": {
+    "shiqing_opus_mt_en_zh": {
+      "source": "https://huggingface.co/shiqing/opus-mt-en-zh-finetuned-en-to-zh",
+      "license": "Apache-2.0",
+      "architecture": "MarianMT 6/6",
+      "export": "optimum 2.x + torch 2.15 CPU",
+      "files": [
+        {
+          "path": "encoder_model.onnx",
+          "sha256": "468614b0485db0e255ca9d90294cd531cbb82b11ff8b28e577163fde67b2c67d"
+        },
+        {
+          "path": "decoder_model_merged.onnx",
+          "sha256": "75970e490539ab9f37288ebad59ecafd352e84e25912d70fd163e3586bc7d410"
+        }
+      ],
+      "usage": "local-screening",
+      "quality": "100 句 chrF 0.4302 vs base int8 0.4535（更差，不采用）"
+    },
+    "m2m100_418m": {
+      "source": "https://huggingface.co/facebook/m2m100_418M",
+      "license": "MIT",
+      "usage": "screen-only",
+      "quality": "20 句 chrF 0.4277 vs base int8 0.4679（更差，不接入）"
+    },
+    "nllb_200_distilled_600m": {
+      "source": "https://huggingface.co/facebook/nllb-200-distilled-600M",
+      "license": "CC-BY-NC-4.0",
+      "usage": "screen-only",
+      "quality": "10 句 chrF 0.3392 vs base int8 0.3485（更差，不接入；非商业条款）"
+    }
   }
 }

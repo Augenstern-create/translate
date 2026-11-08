@@ -59,6 +59,12 @@
 | Q-052 | Selector | Best 选择器离线性准确率 62%、平均 regret 0.0224 chrF；简单规则未找到稳定更优方案 | B | 中 | Open（需人工 A/B） |
 | Q-053 | Context | 前一句上下文实验 chrF +0.0133/覆盖 +0.0141，但 29/50 段发生 2 次回退（模型常把上下文与当前句合成一段），只作实验不默认 | B | 中 | Open（实验失败为主） |
 | Q-054 | Review | P14 盲评 50 段候选 A/B 已生成，人工未评分 | B | 高 | PENDING_HUMAN |
+| Q-055 | Model | 不同权重筛选：shiqing 100 句 0.4302、M2M 20 句 0.4277、NLLB 10 句 0.3392，均低于 base int8（0.4535/0.4679/0.3485） | B | 高 | Blocked（无更优候选） |
+| Q-056 | Auto | P15 校准：混合 40 段 Auto 0.4484 > 强制 Best 0.4449，且 wall 26.7s vs 31.5s；2 句段落逐句 0.3918 > 整段 0.3663 | C | 中 | Fixed（Auto 2 句逐句、≥3 句 Best） |
+| Q-057 | Review | 12 条 AI 辅助初步评审已生成（明确标记 AI_ASSISTED_PRELIMINARY），94 条人工评审仍未完成 | B | 高 | PENDING_HUMAN |
+| Q-058 | Model | 本地 torch/optimum 导出的 shiqing ONNX 与 M2M/NLLB 缓存均在 `.build`（gitignore）；模型不入库 | C | 低 | Open（本地研究） |
+| Q-059 | Model | NLLB/M2M 只做少量句子筛选，样本小、架构不同，不能作最终模型结论 | C | 中 | Open |
+| Q-060 | Context | Context 仍是实验：29/50 段两次回退；真实上下文/指代未解决 | B | 中 | Open（等强模型） |
 
 
 ## 质量回归集合（必须持续跑）

@@ -92,3 +92,16 @@ python3 tools/quality/summarize-quality.py \
 | `reports/p14-test-*.log` / `p14-clippy.log` | 测试与静态检查 |
 
 > 94 条人工评审（44 重点 + 50 盲评 A/B）PENDING_HUMAN；P14 结论 Conditional。
+
+## P15-Q 证据
+
+| 文件 | 内容 |
+|---|---|
+| `outputs/p15-budget-auto-v2.jsonl` / `p15-budget-best.jsonl` | 40 段混合预算 Auto vs Best |
+| `outputs/sentence-v1-{shiqing,m2m100-screen,nllb-screen}.jsonl` | 不同权重/架构筛选 |
+| `reports/compare-budget-v2.*` | Auto 0.4484 vs Best 0.4449 |
+| `reports/compare-model-different.*` | 不同权重模型对照 |
+| `reports/p15-ai-preliminary-review.md` | 12 条 AI 辅助初步评审（非人工） |
+| `reports/p15-test-*.log` / `p15-clippy.log` | 测试与静态检查 |
+
+> 94 条人工评审仍 PENDING_HUMAN；AI 辅助评审不计入人工验收。

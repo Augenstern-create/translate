@@ -1,5 +1,27 @@
 # 变更记录
 
+## P15-Q — 模型候选与默认策略校准（2026-11-08，报告 `docs/66`）
+
+### 新增
+
+- **Auto 默认校准**：2 句段落逐句、≥3 句/高风险 Best；混合 40 段 Auto 0.4484，
+  强制 Best 0.4449，wall 26.7s vs 31.5s。
+- **不同权重/架构筛选**：shiqing fine-tuned opus-mt（本地 ONNX 导出）、M2M100 418M、
+  NLLB-200 600M 少量真实译文；均未超过 base int8。
+- **ModelVariant / 文件名配置**：int8/fp16/fp32（P13 延续）。
+- **AI 辅助初步评审**：12 条，明确 `AI_ASSISTED_PRELIMINARY`；94 条人工仍 PENDING。
+- **模型锁**：`fixtures/quality/model-lock.json` 记录 shiqing/M2M/NLLB 筛选与哈希。
+
+### 结果
+
+- 320 句 int8 0.4659 / fatal 0；100 句 0.4535 / fatal 0；50 段 Best 0.4205 / 覆盖 0.4111。
+- 无优于 base 的不同权重模型；fp32/Context 均不默认。
+- 默认 473 / 全特性 477 tests。
+
+### 未做
+
+- 94 条真实人工评审；NLLB/M2M 架构接入；可靠上下文/指代。
+
 ## P14-Q — 候选选择与上下文优化（2026-11-08，报告 `docs/65`）
 
 ### 新增
