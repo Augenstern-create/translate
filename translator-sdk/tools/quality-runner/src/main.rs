@@ -188,6 +188,7 @@ fn parse_args() -> Result<Args, String> {
                     "sentence" => translator_api::ParagraphStrategy::Sentence,
                     "group" => translator_api::ParagraphStrategy::Group,
                     "best" => translator_api::ParagraphStrategy::Best,
+                    "context" => translator_api::ParagraphStrategy::Context,
                     other => return Err(format!("未知 paragraph-strategy：{other}")),
                 }
             }

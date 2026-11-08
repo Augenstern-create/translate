@@ -331,6 +331,7 @@ fn plan_paragraph(text: &str, requested: ParagraphStrategy) -> TranslationPlan {
         ParagraphStrategy::Sentence => "paragraph-sentence",
         ParagraphStrategy::Group => "paragraph-group",
         ParagraphStrategy::Best => "paragraph-sentence",
+        ParagraphStrategy::Context => "paragraph-context",
         ParagraphStrategy::Auto => {
             // 50 段（3 句/段）对照：整段 0.3917 / 逐句 0.3987 / 句群 0.3909；
             // 逐句与整段候选再比较（Best）0.4205、覆盖 0.3848→0.4111。

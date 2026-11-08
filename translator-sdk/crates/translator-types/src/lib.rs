@@ -250,6 +250,8 @@ pub enum ParagraphStrategy {
     Group,
     /// 同时跑整段与逐句，按完整性/质量选择（P13-Q3 候选比较）。
     Best,
+    /// 前一句作为上下文提示，只输出当前句（P14-Q4 实验 B）。
+    Context,
 }
 
 impl ParagraphStrategy {
@@ -260,6 +262,7 @@ impl ParagraphStrategy {
             Self::Sentence => "sentence",
             Self::Group => "group",
             Self::Best => "best",
+            Self::Context => "context",
         }
     }
 }

@@ -380,9 +380,14 @@ impl Translator {
         }
         let analysis = translator_core::planner::analyze(&req.text, options.text_kind);
         if analysis.kind == TextKind::Paragraph
+            && options.paragraph_strategy == ParagraphStrategy::Context
+        {
+            return self.run_context_paragraph(req, options).await;
+        }
+        if analysis.kind == TextKind::Paragraph
             && (options.paragraph_strategy == ParagraphStrategy::Best
                 || (options.paragraph_strategy == ParagraphStrategy::Auto
-                    && analysis.sentences >= 2))
+                    && needs_best(&req.text, &analysis)))
         {
             return self.run_best_paragraph(req, options).await;
         }
@@ -408,6 +413,118 @@ impl Translator {
         }
 
         self.run_plan(req, options, &plan).await
+    }
+
+    /// P14-Q4 实验 B：前一句作为上下文提示，只取当前句译文。
+    ///
+    /// 这是**实验路径**，不默认启用：Marian 并不保证支持上下文拼接；如果模型
+    /// 把上一句也译进输出，本实现只取最后一个句段；若输出没有形成两个句段，
+    /// 则判定该句上下文实验失败并回退到独立翻译，绝不把回退伪装成成功。
+    async fn run_context_paragraph(
+        &self,
+        req: &TranslateRequest,
+        options: &TranslateOptions,
+    ) -> Result<TranslateOutput, TranslationError> {
+        let sentences = translator_core::planner::split_sentences(&req.text);
+        if sentences.len() <= 1 {
+            let mut single = options.clone();
+            single.paragraph_strategy = ParagraphStrategy::Sentence;
+            return Box::pin(self.run_options(req, &single)).await;
+        }
+
+        let mut text = String::new();
+        let mut warnings: Vec<TranslationWarning> = Vec::new();
+        let mut quality = QualityReport {
+            mode: options.mode,
+            ..QualityReport::default()
+        };
+        let mut first: Option<TranslateOutput> = None;
+        let mut elapsed = 0u64;
+        let mut fallbacks = 0usize;
+
+        for (idx, sentence) in sentences.iter().enumerate() {
+            text.push_str(&sentence.separator);
+            let mut seg_opts = options.clone();
+            seg_opts.text_kind = TextKind::Sentence;
+            seg_opts.paragraph_strategy = ParagraphStrategy::Sentence;
+            seg_opts.strategy = Some("paragraph-context".to_string());
+            let input = if idx == 0 {
+                sentence.text.clone()
+            } else {
+                format!("{} {}", sentences[idx - 1].text, sentence.text)
+            };
+            let mut sub_req = req.clone();
+            sub_req.text = input.clone();
+            let out = self
+                .coordinator
+                .translate_with_diagnostics_options(&sub_req, &seg_opts)
+                .await?;
+            let mut translated = if idx == 0 {
+                out.result.text.clone()
+            } else {
+                let parts = translator_core::planner::split_sentences(&out.result.text);
+                if parts.len() >= 2 {
+                    parts.last().map(|p| p.text.clone()).unwrap_or_default()
+                } else {
+                    fallbacks += 1;
+                    let mut alone_req = req.clone();
+                    alone_req.text = sentence.text.clone();
+                    let mut alone_opts = seg_opts.clone();
+                    alone_opts.strategy = Some("paragraph-context-fallback".to_string());
+                    let alone = self
+                        .coordinator
+                        .translate_with_diagnostics_options(&alone_req, &alone_opts)
+                        .await?;
+                    alone.result.text
+                }
+            };
+            if translated.trim().is_empty() {
+                translated = sentence.text.clone();
+                fallbacks += 1;
+                warnings.push(TranslationWarning::SegmentFailed(format!(
+                    "context sentence {} empty",
+                    idx + 1
+                )));
+            }
+            text.push_str(&translated);
+            elapsed = elapsed.saturating_add(out.result.elapsed_ms);
+            warnings.extend(out.result.warnings.iter().cloned());
+            if let Some(q) = &out.diagnostics.quality {
+                quality.merge(q.clone());
+            }
+            if first.is_none() {
+                first = Some(out);
+            }
+        }
+
+        let quality = translator_core::quality::check(&req.text, &text, &req.target, options.mode);
+        let mut diagnostics = first
+            .map(|o| o.diagnostics)
+            .ok_or_else(|| TranslationError::new(TranslationErrorCode::InvalidRequest, "无句子"))?;
+        diagnostics.route_reason = format!(
+            "planner:paragraph-context sentences={} fallbacks={}",
+            sentences.len(),
+            fallbacks
+        );
+        diagnostics.strategy = "paragraph-context".to_string();
+        diagnostics.quality = Some(quality);
+        diagnostics.cache_hit = false;
+        let source = req
+            .source
+            .clone()
+            .unwrap_or_else(|| LanguageTag::new("en").expect("静态语言标签合法"));
+        Ok(TranslateOutput {
+            result: TranslationResult {
+                text,
+                source,
+                target: req.target.clone(),
+                engine_id: diagnostics.engine_id.clone(),
+                model_id: None,
+                elapsed_ms: elapsed,
+                warnings,
+            },
+            diagnostics,
+        })
     }
 
     /// P13-Q3：同一段落跑“整段”和“逐句”，按完整性/质量选择。
@@ -626,6 +743,30 @@ impl std::fmt::Debug for Translator {
             .field("memory", &self.budget.report())
             .finish()
     }
+}
+
+/// P14-Q2 质量预算：只有“高风险/较长”的段落才跑整段+逐句两个候选。
+///
+/// 2 句以内的普通段落保持单次推理；3 句以上、超长、含数字/条件/否定时
+/// 才增加候选。这样不会为了几个点的 chrF 让所有短段落都付 3× 延迟。
+fn needs_best(text: &str, analysis: &translator_core::planner::TextAnalysis) -> bool {
+    if analysis.sentences >= 3 || analysis.chars > 500 {
+        return true;
+    }
+    let lower = text.to_lowercase();
+    if text.chars().any(|c| c.is_ascii_digit()) {
+        return true;
+    }
+    [
+        " if ",
+        " unless ",
+        " when ",
+        " not ",
+        " never ",
+        " because ",
+    ]
+    .iter()
+    .any(|cue| format!(" {lower} ").contains(cue))
 }
 
 fn paragraph_score(out: &TranslateOutput, req: &TranslateRequest) -> f64 {

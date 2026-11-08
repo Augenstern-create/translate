@@ -78,3 +78,17 @@ python3 tools/quality/summarize-quality.py \
 | `reports/p13-clippy.log` / `p13-test-*.log` | 工具与测试证据 |
 
 > 人工评审未完成；P13 结论保持 Conditional，fp32/Best 不自动成为全局默认。
+
+## P14-Q 证据
+
+| 文件 | 内容 |
+|---|---|
+| `outputs/p14-context-final.jsonl` | 前一句上下文实验（50 段） |
+| `outputs/p14-best-final.jsonl` | Best 最终质量（50 段） |
+| `reports/compare-selector-final.{json,md}` | Best 选择器 vs oracle（准确率/regret） |
+| `reports/compare-context-final.*` | Context vs 逐句 |
+| `reports/compare-best-final.*` | Best vs 逐句 |
+| `reports/p14-candidate-review.csv` + `p14-candidate-key.json` | 50 段盲评 A/B 与密钥 |
+| `reports/p14-test-*.log` / `p14-clippy.log` | 测试与静态检查 |
+
+> 94 条人工评审（44 重点 + 50 盲评 A/B）PENDING_HUMAN；P14 结论 Conditional。

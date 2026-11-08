@@ -108,8 +108,24 @@ fn auto_多句自动按段落处理() {
     .unwrap();
     assert_eq!(out.diagnostics.text_kind, TextKind::Paragraph);
     assert!(out.diagnostics.strategy.starts_with("paragraph-"));
+    assert_ne!(
+        out.diagnostics.strategy, "paragraph-best",
+        "2 句普通段落不应为候选比较付 3× 延迟"
+    );
     assert!(out.result.text.contains("First sentence"));
     assert!(out.result.text.contains("Second sentence"));
+}
+
+#[test]
+fn auto_三句段落使用_quality_budget() {
+    let t = build();
+    let options = TranslateOptions::new(TranslationMode::Precise);
+    let out = pollster::block_on(t.translate_with_diagnostics_options(
+        &request("First sentence. Second sentence. Third sentence."),
+        &options,
+    ))
+    .unwrap();
+    assert_eq!(out.diagnostics.strategy, "paragraph-best");
 }
 
 #[test]
@@ -125,6 +141,21 @@ fn paragraph_best_选择候选并标记策略() {
     .unwrap();
     assert_eq!(out.diagnostics.strategy, "paragraph-best");
     assert!(out.result.text.contains("First sentence"));
+    assert!(out.result.text.contains("Second sentence"));
+}
+
+#[test]
+fn paragraph_context_只取当前句并标记策略() {
+    let t = build();
+    let options = TranslateOptions::new(TranslationMode::Precise)
+        .with_text_kind(TextKind::Paragraph)
+        .with_paragraph_strategy(ParagraphStrategy::Context);
+    let out = pollster::block_on(t.translate_with_diagnostics_options(
+        &request("First sentence. Second sentence."),
+        &options,
+    ))
+    .unwrap();
+    assert_eq!(out.diagnostics.strategy, "paragraph-context");
     assert!(out.result.text.contains("Second sentence"));
 }
 

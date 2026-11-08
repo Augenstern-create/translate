@@ -50,11 +50,15 @@
 | Q-043 | Model | fp32 在 100 句独立集 chrF +0.0189，但 320 集 -0.0014、50 段 -0.0020；精度提升不是全局一致 | B | 中 | Open（不默认切换） |
 | Q-044 | Model | fp32 峰值 RSS 约 1.13 GB（int8 0.58 GB）、冷加载 6.6s；fp16 更慢且内存 1.34 GB | C | 中 | Open（桌面可选） |
 | Q-045 | Paragraph | Best 候选（整段+逐句）chrF +0.0218、覆盖 0.3848→0.4111，但延迟约 3×，完整率仍 0.60 | B | 中 | Open |
-| Q-046 | Context | P13 只实现“整段/整篇源文触发术语约束”；前一句上下文辅助当前句、指代/篇章模型上下文未实现 | B | 中 | Open |
+| Q-046 | Context | 已实现前一句上下文实验（P14），但多数段落回退；真正可靠的指代/篇章上下文仍未实现 | B | 中 | Partially fixed（实验） |
 | Q-047 | Quality | 条件/遗漏/臆造仍是启发式；条件标记表放宽后可能漏报，需人工校准 | C | 中 | Open |
 | Q-048 | Review | P13 评审包 44 条（Critical/句子/段落/文档）仍 PENDING_HUMAN | B | 高 | PENDING_HUMAN |
 | Q-049 | Paragraph | Best 评分用句数/长度/quality 启发式，不偷看参考；可能选到“更长但更差”的候选 | C | 中 | Open |
 | Q-050 | Model | fp32 320 集 35 条回归/37 条改善，类别差异大（否定/条件更好，basic/daily 更差） | B | 中 | Open |
+| Q-051 | Model | 未找到不同权重的可运行 ONNX en→zh 候选：onnx-community/skillsafe/Xenova 均为同一 Helsinki opus-mt；liam168 无 ONNX 且许可未声明；NLLB/M2M 需通用架构 | B | 高 | Blocked（待导出/架构） |
+| Q-052 | Selector | Best 选择器离线性准确率 62%、平均 regret 0.0224 chrF；简单规则未找到稳定更优方案 | B | 中 | Open（需人工 A/B） |
+| Q-053 | Context | 前一句上下文实验 chrF +0.0133/覆盖 +0.0141，但 29/50 段发生 2 次回退（模型常把上下文与当前句合成一段），只作实验不默认 | B | 中 | Open（实验失败为主） |
+| Q-054 | Review | P14 盲评 50 段候选 A/B 已生成，人工未评分 | B | 高 | PENDING_HUMAN |
 
 
 ## 质量回归集合（必须持续跑）
