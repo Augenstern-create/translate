@@ -65,6 +65,15 @@
 | Q-058 | Model | 本地 torch/optimum 导出的 shiqing ONNX 与 M2M/NLLB 缓存均在 `.build`（gitignore）；模型不入库 | C | 低 | Open（本地研究） |
 | Q-059 | Model | NLLB/M2M 只做少量句子筛选，样本小、架构不同，不能作最终模型结论 | C | 中 | Open |
 | Q-060 | Context | Context 仍是实验：29/50 段两次回退；真实上下文/指代未解决 | B | 中 | Open（等强模型） |
+| Q-061 | Templates | 只支持 40 条完整句精确匹配；不支持变量槽位/模板参数，覆盖有限 | C | 中 | Open（有意保守） |
+| Q-062 | Dictionary | 上下文选义仅覆盖 11 个词/少量明确搭配；不是通用 WSD，无上下文仍返回多义 | B | 中 | Open（P16 部分） |
+| Q-063 | Stats | `executions` 是执行单元数，不是宿主逻辑请求数；段落/文章会按单元计数 | C | 低 | Open（口径已注明） |
+| Q-064 | Stats | `failures` 只在顶层 API 包装计数；被文档恢复的段落失败不计入 | C | 低 | Open |
+| Q-065 | Cache | 词典 miss 回退 NMT 时，下一次仍先尝试词典（回退缓存键与词典键不同） | C | 低 | Open |
+| Q-066 | Diagnostics | 模板路由的 `capability` 仍为 Nmt（route=rule），capability 语义略粗糙 | C | 低 | Open |
+| Q-067 | API | `translate_cancellable`/JNI 仍走单路径，模板与上下文选义只在 options/planner 入口生效 | C | 低 | Open |
+| Q-068 | Quality | NMT 减少 6.8% 主要来自 22 条 UI/基础模板，不代表复杂文本也能减少 | C | 中 | Open |
+| Q-069 | Metrics | P16 修正 chrF/BLEU 短句 n-gram 记 0 的问题；P11～P15 历史报告中的短句分数偏低，P16 起的对照使用修正口径 | C | 低 | Fixed（历史报告保留） |
 
 
 ## 质量回归集合（必须持续跑）

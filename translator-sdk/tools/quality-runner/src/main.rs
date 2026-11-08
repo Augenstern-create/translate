@@ -28,6 +28,7 @@ struct Args {
     dictionaries: Vec<PathBuf>,
     rules: Option<PathBuf>,
     terms: Option<PathBuf>,
+    templates: Option<PathBuf>,
     term_policy: TermPolicy,
     mode: TranslationMode,
     text_kind: translator_api::TextKind,
@@ -69,6 +70,7 @@ impl Default for Args {
             dictionaries: Vec::new(),
             rules: None,
             terms: None,
+            templates: None,
             term_policy: TermPolicy::Warn,
             mode: TranslationMode::Precise,
             text_kind: translator_api::TextKind::Auto,
@@ -113,6 +115,7 @@ fn usage() -> &'static str {
   --dict <dir>            挂载词典包（可重复）
   --rules <file>          挂载规则包
   --terms <file>          挂载输出侧术语表
+  --templates <file>      挂载完整句子模板（P16-R）
   --term-policy <p>       off | warn | enforce（默认 warn）
   --mode <m>              precise | fast（默认 precise）
   --text-kind <k>         auto | word | sentence | paragraph | document（默认 auto）
@@ -156,6 +159,7 @@ fn parse_args() -> Result<Args, String> {
             "--dict" => args.dictionaries.push(PathBuf::from(value()?)),
             "--rules" => args.rules = Some(PathBuf::from(value()?)),
             "--terms" => args.terms = Some(PathBuf::from(value()?)),
+            "--templates" => args.templates = Some(PathBuf::from(value()?)),
             "--term-policy" => {
                 args.term_policy = match value()?.as_str() {
                     "off" => TermPolicy::Off,
@@ -266,6 +270,9 @@ fn build_translator(args: &Args) -> Result<Translator, String> {
     if let Some(terms) = &args.terms {
         builder = builder.term_table_file(terms);
     }
+    if let Some(templates) = &args.templates {
+        builder = builder.templates_file(templates);
+    }
 
     #[cfg(feature = "ort")]
     if let Some(dir) = &args.ort_model_dir {
@@ -346,6 +353,7 @@ fn translate_record(translator: &Translator, args: &Args, id: &str, source_text:
         paragraph_strategy: args.paragraph_strategy,
         strategy: None,
         context_id: None,
+        context_text: None,
     };
     match pollster::block_on(translator.translate_with_diagnostics_options(&req, &options)) {
         Ok(out) => {
@@ -359,6 +367,19 @@ fn translate_record(translator: &Translator, args: &Args, id: &str, source_text:
                 json!(out.diagnostics.text_kind.as_str()),
             );
             record.insert("strategy".to_string(), json!(out.diagnostics.strategy));
+            record.insert("route".to_string(), json!(out.diagnostics.route.as_str()));
+            record.insert(
+                "model_invoked".to_string(),
+                json!(out.diagnostics.model_invoked),
+            );
+            record.insert(
+                "dictionary_hit".to_string(),
+                json!(out.diagnostics.dictionary_hit),
+            );
+            record.insert(
+                "rule_matched".to_string(),
+                json!(out.diagnostics.rule_matched),
+            );
             record.insert("source".to_string(), json!(source_text));
             record.insert("output".to_string(), json!(out.result.text));
             record.insert("engine_id".to_string(), json!(out.result.engine_id));
@@ -608,6 +629,16 @@ fn main() {
         "cache_hits": cache_hits,
         "total_wall_ms": total_wall_ms,
         "resource_fingerprint": translator.resource_fingerprint(),
+        "route_stats": {
+            "executions": translator.route_stats().executions,
+            "dictionary_hits": translator.route_stats().dictionary_hits,
+            "rule_matches": translator.route_stats().rule_matches,
+            "nmt_calls": translator.route_stats().nmt_calls,
+            "nmt_fallbacks": translator.route_stats().nmt_fallbacks,
+            "cache_hits": translator.route_stats().cache_hits,
+            "best_candidates": translator.route_stats().best_candidates,
+            "failures": translator.route_stats().failures,
+        },
     });
     if let Some(path) = &args.summary {
         std::fs::write(path, serde_json::to_string_pretty(&summary).unwrap()).ok();

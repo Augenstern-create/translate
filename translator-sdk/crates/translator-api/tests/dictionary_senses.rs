@@ -7,7 +7,10 @@
 
 #![cfg(feature = "dictionary")]
 
-use translator_api::{LanguageTag, LookupRequest, TranslateRequest, Translator};
+use translator_api::{
+    LanguageTag, LookupRequest, TextKind, TranslateOptions, TranslateRequest, TranslationMode,
+    Translator,
+};
 
 fn pack_bank_package() -> tempfile::TempDir {
     let jsonl = concat!(
@@ -120,6 +123,27 @@ fn 查词未命中时使用词形候选() {
         entries.iter().any(|e| e.headword == "run"),
         "running 应通过词形候选命中 run，实际 {entries:?}"
     );
+}
+
+#[test]
+fn 上下文线索选择词义() {
+    let dir = pack_bank_package();
+    let translator = translator(&dir);
+    let req = TranslateRequest::new("bank", LanguageTag::new("zh-Hans").unwrap());
+    let river = TranslateOptions::new(TranslationMode::Precise)
+        .with_text_kind(TextKind::Word)
+        .with_context_text("We sat on the river bank and watched the boats.");
+    let out = pollster::block_on(translator.translate_with_options(&req, &river)).unwrap();
+    assert!(
+        out.text.contains("岸") || out.text.contains("堤"),
+        "{}",
+        out.text
+    );
+    let money = TranslateOptions::new(TranslationMode::Precise)
+        .with_text_kind(TextKind::Word)
+        .with_context_text("I need to go to the bank to withdraw money.");
+    let out = pollster::block_on(translator.translate_with_options(&req, &money)).unwrap();
+    assert!(out.text.contains("银行"), "{}", out.text);
 }
 
 #[test]

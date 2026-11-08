@@ -1,5 +1,31 @@
 # 变更记录
 
+## P16-R — 分层路由与质量验证（2026-11-08，报告 `docs/67`）
+
+### 新增
+
+- **三层路由**：`TranslationRoute { Dictionary, Rule, LocalNmt, Mixed }`；
+  `TranslationDiagnostics` 增加 `route/model_invoked/dictionary_hit/rule_matched`；
+  `CacheKey.route` 隔离。
+- **完整句子模板**：`templates.en-zh.core.json` 40 条；只做整句精确匹配，不逐词拼接；
+  `TranslatorBuilder::templates_file`，CLI/quality-runner `--templates`。
+- **上下文选义**：`TranslateOptions.context_text` + `context_sense` 明确搭配表（bank/spring/take off 等）。
+- **RouteStats**：executions/dictionary/rule/nmt/fallback/cache/best/failures；
+  quality-runner 输出每条 route 与 summary 统计。
+- **chrF/BLEU 修复**：短句不再因 n > 句长被记 0；模板 40 条 chrF/BLEU=1.0。
+
+### 结果
+
+- Word/Phrase 100/100，NMT **0**；
+- 40 条模板 40/40，NMT **0**，chrF/BLEU **1.0**；
+- 320 句：NMT **322→300（−6.8%）**、规则 22、chrF **0.4703→0.5074（+0.0371）**、
+  BLEU **+0.0419**、回归 0、改善 20、fatal 0、数字 1.0；
+- 复杂句仍进入真实 NMT；50 段/10 篇结构保持。
+
+### 未做
+
+- 变量槽位模板、通用上下文 WSD、更大模板库；人工评审 94 条 PENDING。
+
 ## P15-Q — 模型候选与默认策略校准（2026-11-08，报告 `docs/66`）
 
 ### 新增

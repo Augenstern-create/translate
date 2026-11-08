@@ -36,6 +36,7 @@ pub use translator_nmt_ort as nmt_ort;
 
 // 规则契约：即使不开 `rules` feature，宿主也可以自己实现 `TextRules` 注入。
 pub use translator_core::rules::{NoRules, RuleOutcome, RulePreview, TextRules};
+pub use translator_core::templates::{SentenceTemplates, TemplateTable};
 // 术语契约（P2.4）：同上，宿主可自己实现 `TargetTermGuard`。
 pub use translator_core::terms::{
     NoTermGuard, TargetTermGuard, TermOutcome, TermPolicy, TermViolation,
@@ -84,6 +85,16 @@ impl Translator {
         self.translate_with_options(req, &options).await
     }
 
+    /// 路由/模型调用统计快照（P16-R / R5）。
+    pub fn route_stats(&self) -> RouteStats {
+        self.coordinator.route_stats()
+    }
+
+    /// 清零路由统计（测试/基准用）。
+    pub fn reset_route_stats(&self) {
+        self.coordinator.reset_route_stats();
+    }
+
     /// 当前默认执行选项。
     pub fn default_options(&self) -> TranslateOptions {
         self.default_options.clone()
@@ -111,7 +122,11 @@ impl Translator {
         req: &TranslateRequest,
         options: &TranslateOptions,
     ) -> Result<TranslateOutput, TranslationError> {
-        self.run_options(req, options).await
+        let result = self.run_options(req, options).await;
+        if result.is_err() {
+            self.coordinator.record_failure();
+        }
+        result
     }
 
     /// 指定模式翻译（单请求覆盖 Builder 默认值）。
@@ -173,7 +188,8 @@ impl Translator {
         &self,
         req: &TranslateRequest,
     ) -> Result<TranslateOutput, TranslationError> {
-        self.coordinator.translate_with_diagnostics(req).await
+        let options = self.default_options.clone();
+        self.translate_with_diagnostics_options(req, &options).await
     }
 
     /// 预览术语约束会怎么改一段**译文**（不翻译、不写缓存）。
@@ -379,6 +395,11 @@ impl Translator {
             ));
         }
         let analysis = translator_core::planner::analyze(&req.text, options.text_kind);
+        if analysis.kind == TextKind::Word && options.context_text.is_some() {
+            if let Some(out) = self.try_context_word(req, options).await? {
+                return Ok(out);
+            }
+        }
         if analysis.kind == TextKind::Paragraph
             && options.paragraph_strategy == ParagraphStrategy::Context
         {
@@ -415,6 +436,83 @@ impl Translator {
         self.run_plan(req, options, &plan).await
     }
 
+    /// P16-R / R-03：带上下文原文的单词/短语选义。
+    ///
+    /// 只使用明确的搭配线索；没有线索时保留多义项，不猜。若词典未命中返回
+    /// `Ok(None)`，后续仍走普通路由（Word 的 NMT 回退）。
+    async fn try_context_word(
+        &self,
+        req: &TranslateRequest,
+        options: &TranslateOptions,
+    ) -> Result<Option<TranslateOutput>, TranslationError> {
+        let context = options.context_text.as_deref().unwrap_or("");
+        let source = req
+            .source
+            .clone()
+            .unwrap_or_else(|| LanguageTag::new("en").expect("静态语言标签合法"));
+        let lookup = LookupRequest::new(req.text.clone())
+            .with_language(source.clone())
+            .with_limit(10);
+        let entries = self.lookup(&lookup).await?;
+        if entries.is_empty() {
+            return Ok(None);
+        }
+        let selected = translator_core::context_sense::select_by_context(
+            &req.text,
+            context,
+            &entries,
+            &req.target,
+        )
+        .or_else(|| translator_core::context_sense::compose_senses(&entries, 3));
+        let Some(selected) = selected else {
+            return Ok(None);
+        };
+        let (text, term_trace) =
+            self.coordinator
+                .enforce_terms_on_text(&req.text, &req.target, &selected);
+        let quality = translator_core::quality::check(&req.text, &text, &req.target, options.mode);
+        self.coordinator.record_execution();
+        self.coordinator.record_dictionary_hit();
+        let source_id = entries
+            .first()
+            .map(|e| e.source_id.clone())
+            .unwrap_or_else(|| "dictionary".to_string());
+        let diagnostics = TranslationDiagnostics {
+            engine_id: "dictionary.context".to_string(),
+            capability: Capability::Dictionary,
+            route_reason: "上下文线索选义（P16-R / R-03）".to_string(),
+            cache_hit: false,
+            source_assumed: req.source.is_none(),
+            rules_version: 0,
+            resource_fingerprint: self.coordinator.resource_fingerprint().to_string(),
+            mode: options.mode,
+            text_kind: TextKind::Word,
+            route: TranslationRoute::Dictionary,
+            model_invoked: false,
+            dictionary_hit: true,
+            rule_matched: false,
+            strategy: "word-context".to_string(),
+            context_id: options.context_id.clone(),
+            rules: None,
+            protected_spans: Vec::new(),
+            restore_missing: Vec::new(),
+            term: term_trace,
+            quality: Some(quality),
+        };
+        Ok(Some(TranslateOutput {
+            result: TranslationResult {
+                text,
+                source,
+                target: req.target.clone(),
+                engine_id: "dictionary.context".to_string(),
+                model_id: Some(source_id),
+                elapsed_ms: 0,
+                warnings: Vec::new(),
+            },
+            diagnostics,
+        }))
+    }
+
     /// P14-Q4 实验 B：前一句作为上下文提示，只取当前句译文。
     ///
     /// 这是**实验路径**，不默认启用：Marian 并不保证支持上下文拼接；如果模型
@@ -441,6 +539,10 @@ impl Translator {
         let mut first: Option<TranslateOutput> = None;
         let mut elapsed = 0u64;
         let mut fallbacks = 0usize;
+        let mut routes: Vec<TranslationRoute> = Vec::new();
+        let mut any_model = false;
+        let mut any_dictionary = false;
+        let mut any_rule = false;
 
         for (idx, sentence) in sentences.iter().enumerate() {
             text.push_str(&sentence.separator);
@@ -492,6 +594,10 @@ impl Translator {
             if let Some(q) = &out.diagnostics.quality {
                 quality.merge(q.clone());
             }
+            routes.push(out.diagnostics.route);
+            any_model |= out.diagnostics.model_invoked;
+            any_dictionary |= out.diagnostics.dictionary_hit;
+            any_rule |= out.diagnostics.rule_matched;
             if first.is_none() {
                 first = Some(out);
             }
@@ -507,6 +613,17 @@ impl Translator {
             fallbacks
         );
         diagnostics.strategy = "paragraph-context".to_string();
+        diagnostics.route = if routes.windows(2).any(|w| w[0] != w[1]) {
+            TranslationRoute::Mixed
+        } else {
+            routes
+                .first()
+                .copied()
+                .unwrap_or(TranslationRoute::LocalNmt)
+        };
+        diagnostics.model_invoked = any_model;
+        diagnostics.dictionary_hit = any_dictionary;
+        diagnostics.rule_matched = any_rule;
         diagnostics.quality = Some(quality);
         diagnostics.cache_hit = false;
         let source = req
@@ -545,6 +662,7 @@ impl Translator {
         sentence_opts.paragraph_strategy = ParagraphStrategy::Sentence;
         sentence_opts.strategy = None;
 
+        self.coordinator.record_best_candidates(2);
         let whole = Box::pin(self.run_options(req, &whole_opts)).await;
         let sentence = Box::pin(self.run_options(req, &sentence_opts)).await;
         match (whole, sentence) {
@@ -586,6 +704,10 @@ impl Translator {
         let mut mixed_engine = false;
         let mut first_engine = String::new();
         let mut first_model: Option<String> = None;
+        let mut routes: Vec<TranslationRoute> = Vec::new();
+        let mut any_model = false;
+        let mut any_dictionary = false;
+        let mut any_rule = false;
 
         for unit in &plan.units {
             text.push_str(&unit.separator);
@@ -626,6 +748,10 @@ impl Translator {
                     if let Some(q) = &out.diagnostics.quality {
                         quality.merge(q.clone());
                     }
+                    routes.push(out.diagnostics.route);
+                    any_model |= out.diagnostics.model_invoked;
+                    any_dictionary |= out.diagnostics.dictionary_hit;
+                    any_rule |= out.diagnostics.rule_matched;
                     all_cache_hit &= out.diagnostics.cache_hit;
                     if first.is_none() {
                         first_engine = out.result.engine_id.clone();
@@ -672,6 +798,17 @@ impl Translator {
                 plan.units.len(),
                 plan.kind
             );
+            diagnostics.route = if routes.windows(2).any(|w| w[0] != w[1]) {
+                TranslationRoute::Mixed
+            } else {
+                routes
+                    .first()
+                    .copied()
+                    .unwrap_or(TranslationRoute::LocalNmt)
+            };
+            diagnostics.model_invoked = any_model;
+            diagnostics.dictionary_hit = any_dictionary;
+            diagnostics.rule_matched = any_rule;
             diagnostics.cache_hit = all_cache_hit;
             diagnostics.text_kind = plan.kind;
             diagnostics.strategy = plan.strategy.to_string();
@@ -709,6 +846,10 @@ impl Translator {
                 resource_fingerprint: self.coordinator.resource_fingerprint().to_string(),
                 mode: options.mode,
                 text_kind: plan.kind,
+                route: TranslationRoute::LocalNmt,
+                model_invoked: false,
+                dictionary_hit: false,
+                rule_matched: false,
                 strategy: plan.strategy.to_string(),
                 context_id: options.context_id.clone(),
                 quality: Some(quality),
@@ -805,6 +946,9 @@ pub struct TranslatorBuilder {
     #[cfg(feature = "dictionary")]
     dictionary_roots: Vec<std::path::PathBuf>,
     rules: Option<Arc<dyn TextRules>>,
+    /// 完整句子模板（P16-R）。
+    templates: Option<Arc<dyn SentenceTemplates>>,
+    templates_digest: Option<String>,
     /// 规则文件内容摘要（仅 `rules_file` 路径有）；P8 EP-02。
     rules_digest: Option<String>,
     /// 宿主直接注入 Arc 时提供的规则内容摘要（可选）。
@@ -850,6 +994,8 @@ impl TranslatorBuilder {
             #[cfg(feature = "dictionary")]
             dictionary_roots: Vec::new(),
             rules: None,
+            templates: None,
+            templates_digest: None,
             rules_digest: None,
             rules_fingerprint: None,
             term_guard: None,
@@ -952,6 +1098,29 @@ impl TranslatorBuilder {
     #[cfg(feature = "dictionary")]
     pub fn dictionary_package(mut self, root: impl Into<std::path::PathBuf>) -> Self {
         self.dictionary_roots.push(root.into());
+        self
+    }
+
+    /// 从 JSON 文件加载完整句子模板（P16-R / R2）。
+    ///
+    /// 只有整句精确匹配才直接返回；加载失败计入构建错误，不会静默退化为“没有模板”。
+    pub fn templates_file(mut self, path: impl AsRef<std::path::Path>) -> Self {
+        let path_buf = path.as_ref().to_path_buf();
+        match translator_core::templates::TemplateTable::from_file(&path_buf) {
+            Ok(table) => {
+                self.templates = Some(Arc::new(table));
+                self.templates_digest = sha256_file(&path_buf);
+            }
+            Err(e) => self
+                .errors
+                .push(translator_core::templates::template_error_to_translation(e)),
+        }
+        self
+    }
+
+    /// 直接注入模板实现（可选）。
+    pub fn templates(mut self, templates: Arc<dyn SentenceTemplates>) -> Self {
+        self.templates = Some(templates);
         self
     }
 
@@ -1247,6 +1416,14 @@ impl TranslatorBuilder {
             }
             fingerprint.push(item);
         }
+        if let Some(templates) = &self.templates {
+            let mut item = format!("{}@{}", templates.id(), templates.version());
+            if let Some(digest) = &self.templates_digest {
+                item.push('#');
+                item.push_str(digest);
+            }
+            fingerprint.push(item);
+        }
         if let Some(guard) = &self.term_guard {
             // 术语表变化必须让旧译文失效：同一句话在不同术语表下结果不同
             let mut item = format!("{}@{}", guard.id(), guard.version());
@@ -1257,6 +1434,7 @@ impl TranslatorBuilder {
             fingerprint.push(item);
         }
         self.config.rules = self.rules.take();
+        self.config.templates = self.templates.take();
         self.config.term_guard = self.term_guard.take();
         self.config.term_policy = self.term_policy;
         self.config.language_identifier = self.language_identifier.take();
@@ -1269,6 +1447,7 @@ impl TranslatorBuilder {
             paragraph_strategy: self.default_paragraph_strategy,
             strategy: None,
             context_id: None,
+            context_text: None,
         };
         let mut coordinator = Coordinator::new(Arc::new(self.registry), self.config);
         coordinator.bind_resource_fingerprint(fingerprint.join(";"));
@@ -1287,7 +1466,6 @@ impl TranslatorBuilder {
     }
 }
 
-#[cfg(feature = "rules")]
 fn sha256_file(path: &std::path::Path) -> Option<String> {
     use sha2::{Digest, Sha256};
     use std::io::Read;

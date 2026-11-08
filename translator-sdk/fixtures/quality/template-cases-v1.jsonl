@@ -1,0 +1,40 @@
+{"id":"template-0001","source":"Good morning.","reference":"早上好。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0002","source":"Thank you.","reference":"谢谢。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0003","source":"Thank you very much.","reference":"非常感谢。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0004","source":"You are welcome.","reference":"不客气。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0005","source":"Please sit down.","reference":"请坐。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0006","source":"Nice to meet you.","reference":"很高兴认识你。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0007","source":"See you tomorrow.","reference":"明天见。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0008","source":"I am sorry.","reference":"对不起。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0009","source":"Good night.","reference":"晚安。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0010","source":"Happy birthday.","reference":"生日快乐。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0011","source":"Welcome.","reference":"欢迎。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0012","source":"Yes.","reference":"是。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0013","source":"No.","reference":"不。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0014","source":"OK.","reference":"好的。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0015","source":"Cancel.","reference":"取消。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0016","source":"Save.","reference":"保存。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0017","source":"Delete.","reference":"删除。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0018","source":"Retry.","reference":"重试。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0019","source":"Close.","reference":"关闭。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0020","source":"Open.","reference":"打开。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0021","source":"Loading...","reference":"正在加载……","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0022","source":"Done.","reference":"完成。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0023","source":"Error.","reference":"错误。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0024","source":"Please try again later.","reference":"请稍后重试。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0025","source":"Please restart the server.","reference":"请重新启动服务器。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0026","source":"The operation completed successfully.","reference":"操作已成功完成。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0027","source":"An unexpected error occurred.","reference":"发生了意外错误。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0028","source":"Loading data, please wait.","reference":"正在加载数据，请稍候。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0029","source":"No results were found for your search.","reference":"未找到与你的搜索匹配的结果。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0030","source":"This action cannot be undone.","reference":"此操作无法撤销。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0031","source":"Your changes have been saved.","reference":"你的更改已保存。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0032","source":"The server is not responding.","reference":"服务器没有响应。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0033","source":"Try again later.","reference":"请稍后重试。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0034","source":"The connection was interrupted.","reference":"连接已中断。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0035","source":"The configuration file is missing.","reference":"配置文件缺失。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0036","source":"Contact support if the problem persists.","reference":"如果问题仍然存在，请联系支持人员。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0037","source":"Please enter a valid phone number.","reference":"请输入有效的电话号码。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0038","source":"Please select a valid date.","reference":"请选择有效日期。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0039","source":"The username is already taken.","reference":"该用户名已被占用。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}
+{"id":"template-0040","source":"This feature is not available in your region.","reference":"此功能在你的地区不可用。","category":"template","critical_constraints":["target_language_zh"],"review_status":"pending"}

@@ -53,6 +53,8 @@ def chrf(hyp: str, ref: str, max_n: int = 6, beta: float = 2.0) -> float:
     if not hyp or not ref:
         return 0.0
     scores = []
+    # 短句不应因为 n > 句长而吃 0 分：只统计实际存在的 n-gram 阶数。
+    max_n = min(max_n, max(len(hyp), len(ref)))
     for n in range(1, max_n + 1):
         h, r = ngrams(hyp, n), ngrams(ref, n)
         overlap = sum((h & r).values())
@@ -75,6 +77,7 @@ def bleu(hyp: str, ref: str, max_n: int = 4) -> float:
     if not hyp or not ref:
         return 0.0
     precisions = []
+    max_n = min(max_n, max(1, max(len(hyp), len(ref))))
     for n in range(1, max_n + 1):
         h, r = ngrams(hyp, n), ngrams(ref, n)
         overlap = sum((h & r).values())

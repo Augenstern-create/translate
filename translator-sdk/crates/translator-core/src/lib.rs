@@ -21,6 +21,7 @@
 
 pub mod budget;
 pub mod cache;
+pub mod context_sense;
 pub mod coordinator;
 pub mod diagnostics;
 pub mod plan;
@@ -30,11 +31,13 @@ pub mod protection;
 pub mod quality;
 pub mod routing;
 pub mod rules;
+pub mod templates;
 pub mod terms;
 pub mod text;
 
 pub use budget::{BudgetError, BudgetReservation, MemoryBudget, MemoryReport};
 pub use cache::{CacheEntry, CacheKey, QueryCache};
+pub use context_sense::{compose_senses, select_by_context};
 pub use coordinator::{Coordinator, CoordinatorConfig};
 pub use diagnostics::{RuleTrace, TermTrace, TranslateOutput, TranslationDiagnostics};
 pub use planner::{
@@ -43,6 +46,7 @@ pub use planner::{
 pub use quality::{QualityIssue, QualityIssueKind, QualityReport, QualitySeverity};
 pub use routing::RouteOutcome;
 pub use rules::{NoRules, RuleOutcome, RulePreview, TextRules};
+pub use templates::{SentenceTemplates, TemplateTable};
 pub use terms::{
     NoTermGuard, TargetTermGuard, TermContext, TermOutcome, TermPolicy, TermViolation,
 };

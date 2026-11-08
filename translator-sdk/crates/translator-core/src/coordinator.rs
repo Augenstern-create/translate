@@ -3,6 +3,7 @@
 //! 对应设计文档 §6 的流水线。Coordinator 不认识任何具体引擎，
 //! 只依赖 `translator-plugin-api` 的 trait，因此替换后端不需要改这里。
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -53,6 +54,8 @@ pub struct CoordinatorConfig {
     pub language_identifier: Option<Arc<dyn translator_analysis::LanguageIdentifier>>,
     /// 可选形态分析器；只用于**查词未命中后的候选**，不改写翻译输入。
     pub lemmatizer: Option<Arc<dyn translator_analysis::MorphologyAnalyzer>>,
+    /// 完整句子模板（P16-R / R2）。只有整句精确匹配才直接返回。
+    pub templates: Option<Arc<dyn crate::templates::SentenceTemplates>>,
     /// 默认翻译模式（docs/57 §4）。默认 [`TranslationMode::Precise`]。
     pub default_mode: TranslationMode,
     /// 关键完整性检查失败时是否拒绝返回译文。
@@ -83,6 +86,7 @@ impl std::fmt::Debug for CoordinatorConfig {
                 &self.language_identifier.as_ref().map(|x| x.name()),
             )
             .field("lemmatizer", &self.lemmatizer.as_ref().map(|x| x.name()))
+            .field("templates", &self.templates.as_ref().map(|x| x.id()))
             .field("default_mode", &self.default_mode)
             .field("strict_integrity", &self.strict_integrity)
             .finish()
@@ -108,10 +112,23 @@ impl Default for CoordinatorConfig {
             term_policy: TermPolicy::default(),
             language_identifier: None,
             lemmatizer: None,
+            templates: None,
             default_mode: TranslationMode::Precise,
             strict_integrity: true,
         }
     }
+}
+
+#[derive(Default)]
+struct RouteCounters {
+    executions: AtomicU64,
+    dictionary_hits: AtomicU64,
+    rule_matches: AtomicU64,
+    nmt_calls: AtomicU64,
+    nmt_fallbacks: AtomicU64,
+    cache_hits: AtomicU64,
+    best_candidates: AtomicU64,
+    failures: AtomicU64,
 }
 
 pub struct Coordinator {
@@ -122,6 +139,7 @@ pub struct Coordinator {
     effective_rules_version: u32,
     /// 实际参与缓存键的资源指纹（挂载的词典/规则包/术语表 id@version）。
     resource_fingerprint: String,
+    stats: RouteCounters,
 }
 
 impl Coordinator {
@@ -138,6 +156,7 @@ impl Coordinator {
             config,
             effective_rules_version,
             resource_fingerprint: String::new(),
+            stats: RouteCounters::default(),
         }
     }
 
@@ -154,6 +173,51 @@ impl Coordinator {
     /// 默认翻译模式。
     pub fn default_mode(&self) -> TranslationMode {
         self.config.default_mode
+    }
+
+    /// 路由/模型调用统计快照（P16-R / R5）。
+    pub fn route_stats(&self) -> translator_types::RouteStats {
+        translator_types::RouteStats {
+            executions: self.stats.executions.load(Ordering::Relaxed),
+            dictionary_hits: self.stats.dictionary_hits.load(Ordering::Relaxed),
+            rule_matches: self.stats.rule_matches.load(Ordering::Relaxed),
+            nmt_calls: self.stats.nmt_calls.load(Ordering::Relaxed),
+            nmt_fallbacks: self.stats.nmt_fallbacks.load(Ordering::Relaxed),
+            cache_hits: self.stats.cache_hits.load(Ordering::Relaxed),
+            best_candidates: self.stats.best_candidates.load(Ordering::Relaxed),
+            failures: self.stats.failures.load(Ordering::Relaxed),
+        }
+    }
+
+    pub fn reset_route_stats(&self) {
+        for c in [
+            &self.stats.executions,
+            &self.stats.dictionary_hits,
+            &self.stats.rule_matches,
+            &self.stats.nmt_calls,
+            &self.stats.nmt_fallbacks,
+            &self.stats.cache_hits,
+            &self.stats.best_candidates,
+            &self.stats.failures,
+        ] {
+            c.store(0, Ordering::Relaxed);
+        }
+    }
+
+    pub fn record_dictionary_hit(&self) {
+        self.stats.dictionary_hits.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_execution(&self) {
+        self.stats.executions.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_best_candidates(&self, n: u64) {
+        self.stats.best_candidates.fetch_add(n, Ordering::Relaxed);
+    }
+
+    pub fn record_failure(&self) {
+        self.stats.failures.fetch_add(1, Ordering::Relaxed);
     }
 
     /// 绑定已挂载资源的指纹（`id@version` 用 `;` 连接）。
@@ -496,6 +560,7 @@ impl Coordinator {
         cancel: Option<&CancelToken>,
         options: &TranslateOptions,
     ) -> Result<TranslateOutput, TranslationError> {
+        self.stats.executions.fetch_add(1, Ordering::Relaxed);
         check_cancelled(cancel)?;
         // 1) 校验 + 规范化
         let normalized = text::normalize(&req.text);
@@ -525,6 +590,23 @@ impl Coordinator {
             ));
         }
 
+        // 3.5) 完整句子模板（P16-R / R2）：只有整句精确匹配才直接返回。
+        if options.text_kind == TextKind::Sentence {
+            if let Some(templates) = &self.config.templates {
+                if let Some(target_text) = templates.match_exact(&work_text, &source, &req.target) {
+                    return self.finish_template(
+                        req,
+                        options,
+                        source,
+                        &work_text,
+                        &target_text,
+                        &rule_applied,
+                        source_assumed,
+                    );
+                }
+            }
+        }
+
         check_cancelled(cancel)?;
         // 4) 路由（用的是规则处理后的文本）。先选引擎，才知道该由谁做保护：
         //    真实 NMT 后端自己按 `ProtectionPlan` 分段，协调器再打一次标记会破坏它。
@@ -552,7 +634,7 @@ impl Coordinator {
         });
 
         // 6) 缓存查询（模式必须进键：Precise 与 Fast 不得互相复用）
-        let key = CacheKey::new_with_options(
+        let mut key = CacheKey::new_with_options(
             &protected,
             req,
             source.as_str(),
@@ -562,6 +644,11 @@ impl Coordinator {
             &self.resource_fingerprint,
             options,
             options.strategy.as_deref().unwrap_or("single"),
+            if outcome.decision.capability == Capability::Dictionary {
+                translator_types::TranslationRoute::Dictionary
+            } else {
+                translator_types::TranslationRoute::LocalNmt
+            },
         );
 
         if let Ok(cache) = self.cache.lock() {
@@ -575,6 +662,7 @@ impl Coordinator {
                 if entry.diagnostics.rules.is_none() {
                     entry.diagnostics.rules = rules_trace;
                 }
+                self.stats.cache_hits.fetch_add(1, Ordering::Relaxed);
                 return Ok(TranslateOutput {
                     result: entry.result,
                     diagnostics: entry.diagnostics,
@@ -591,6 +679,19 @@ impl Coordinator {
 
         check_cancelled(cancel)?;
         let started = Instant::now();
+        let mut actual_engine_id = outcome.decision.engine_id.clone();
+        let mut actual_route = if outcome.decision.capability == Capability::Dictionary {
+            translator_types::TranslationRoute::Dictionary
+        } else {
+            translator_types::TranslationRoute::LocalNmt
+        };
+        let mut actual_reason = outcome.decision.reason.clone();
+        let mut dictionary_hit = actual_route == translator_types::TranslationRoute::Dictionary;
+        let mut nmt_invoked = actual_route == translator_types::TranslationRoute::LocalNmt;
+        if nmt_invoked {
+            self.stats.nmt_calls.fetch_add(1, Ordering::Relaxed);
+        }
+
         let mut result = match outcome
             .engine
             .translate_cancellable(&resolved, cancel.unwrap_or_else(|| never_cancelled()))
@@ -598,8 +699,29 @@ impl Coordinator {
         {
             Ok(result) => result,
             Err(err) if self.should_fallback(req, outcome.decision.capability, &err) => {
+                dictionary_hit = false;
                 match routing::fallback_to_nmt(&self.registry, &source, &req.target) {
                     Some(fallback) => {
+                        self.stats.nmt_calls.fetch_add(1, Ordering::Relaxed);
+                        self.stats.nmt_fallbacks.fetch_add(1, Ordering::Relaxed);
+                        nmt_invoked = true;
+                        actual_engine_id = fallback.decision.engine_id.clone();
+                        actual_route = translator_types::TranslationRoute::LocalNmt;
+                        actual_reason = fallback.decision.reason.clone();
+                        // 回退后换执行身份，缓存键必须按实际引擎重算。
+                        let fallback_identity = fallback.engine.cache_identity();
+                        key = CacheKey::new_with_options(
+                            &protected,
+                            req,
+                            source.as_str(),
+                            &actual_engine_id,
+                            fallback_identity.as_deref(),
+                            self.effective_rules_version,
+                            &self.resource_fingerprint,
+                            options,
+                            options.strategy.as_deref().unwrap_or("single"),
+                            actual_route,
+                        );
                         fallback
                             .engine
                             .translate_cancellable(
@@ -620,6 +742,9 @@ impl Coordinator {
             Err(err) => return Err(err),
         };
         check_cancelled(cancel)?;
+        if dictionary_hit {
+            self.stats.dictionary_hits.fetch_add(1, Ordering::Relaxed);
+        }
 
         // 8) 占位符还原；结构化后端已经还原过，不能再走一遍标记替换。
         let (restored, missing) = match &masked {
@@ -669,15 +794,19 @@ impl Coordinator {
         result.elapsed_ms = started.elapsed().as_millis() as u64;
 
         let diagnostics = TranslationDiagnostics {
-            engine_id: outcome.decision.engine_id.clone(),
+            engine_id: actual_engine_id.clone(),
             capability: outcome.decision.capability,
-            route_reason: outcome.decision.reason.clone(),
+            route_reason: actual_reason.clone(),
             cache_hit: false,
             source_assumed,
             rules_version: self.effective_rules_version,
             resource_fingerprint: self.resource_fingerprint.clone(),
             mode: options.mode,
             text_kind: options.text_kind,
+            route: actual_route,
+            model_invoked: nmt_invoked,
+            dictionary_hit,
+            rule_matched: false,
             strategy: options
                 .strategy
                 .clone()
@@ -704,6 +833,124 @@ impl Coordinator {
             cache.insert(key, cached);
         }
 
+        Ok(TranslateOutput {
+            result,
+            diagnostics,
+        })
+    }
+
+    /// 模板完整匹配的收尾：术语、质量门禁、缓存、诊断。
+    #[allow(clippy::too_many_arguments)]
+    fn finish_template(
+        &self,
+        req: &TranslateRequest,
+        options: &TranslateOptions,
+        source: translator_types::LanguageTag,
+        work_text: &str,
+        target_text: &str,
+        rule_applied: &[String],
+        source_assumed: bool,
+    ) -> Result<TranslateOutput, TranslationError> {
+        let templates = self
+            .config
+            .templates
+            .as_ref()
+            .expect("finish_template 只在 templates 存在时调用");
+        let engine_id = format!("template:{}", templates.id());
+        let engine_identity = format!("{}@{}", templates.id(), templates.version());
+        let spans = text::protected_spans(work_text);
+        let key = CacheKey::new_with_options(
+            work_text,
+            req,
+            source.as_str(),
+            &engine_id,
+            Some(&engine_identity),
+            self.effective_rules_version,
+            &self.resource_fingerprint,
+            options,
+            options.strategy.as_deref().unwrap_or("template"),
+            translator_types::TranslationRoute::Rule,
+        );
+        if let Ok(cache) = self.cache.lock() {
+            if let Some(hit) = cache.get(&key) {
+                let mut entry = hit.clone();
+                entry.result.warnings.push(TranslationWarning::CacheHit);
+                entry.result.elapsed_ms = 0;
+                entry.diagnostics.mark_cached();
+                entry.diagnostics.protected_spans = spans;
+                self.stats.cache_hits.fetch_add(1, Ordering::Relaxed);
+                return Ok(TranslateOutput {
+                    result: entry.result,
+                    diagnostics: entry.diagnostics,
+                });
+            }
+        }
+
+        let mut result = TranslationResult {
+            text: target_text.to_string(),
+            source: source.clone(),
+            target: req.target.clone(),
+            engine_id: engine_id.clone(),
+            model_id: None,
+            elapsed_ms: 0,
+            warnings: Vec::new(),
+        };
+        let term_trace = self.apply_term_guard(work_text, &source, &req.target, &mut result);
+        result.text = quality::repair_output(&result.text);
+        let quality = quality::check(work_text, &result.text, &req.target, options.mode);
+        if self.config.strict_integrity && quality.has_fatal() {
+            return Err(TranslationError::new(
+                TranslationErrorCode::IntegrityFailure,
+                format!("模板译文未通过完整性检查：{}", quality.summary()),
+            ));
+        }
+        let rules_trace = self.config.rules.as_ref().map(|rules| RuleTrace {
+            id: rules.id().to_string(),
+            version: rules.version(),
+            applied: rule_applied.to_vec(),
+        });
+        let diagnostics = TranslationDiagnostics {
+            engine_id: engine_id.clone(),
+            capability: Capability::Nmt,
+            route_reason: format!(
+                "完整句子模板命中：{}@{}",
+                templates.id(),
+                templates.version()
+            ),
+            cache_hit: false,
+            source_assumed,
+            rules_version: self.effective_rules_version,
+            resource_fingerprint: self.resource_fingerprint.clone(),
+            mode: options.mode,
+            text_kind: TextKind::Sentence,
+            route: translator_types::TranslationRoute::Rule,
+            model_invoked: false,
+            dictionary_hit: false,
+            rule_matched: true,
+            strategy: options
+                .strategy
+                .clone()
+                .unwrap_or_else(|| "template".to_string()),
+            context_id: options.context_id.clone(),
+            rules: rules_trace,
+            protected_spans: spans,
+            restore_missing: Vec::new(),
+            term: term_trace,
+            quality: Some(quality),
+        };
+        self.stats.rule_matches.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut cache) = self.cache.lock() {
+            let mut cached = CacheEntry {
+                result: result.clone(),
+                diagnostics: diagnostics.clone(),
+            };
+            cached
+                .result
+                .warnings
+                .retain(|w| !matches!(w, TranslationWarning::CacheHit));
+            cached.result.elapsed_ms = 0;
+            cache.insert(key, cached);
+        }
         Ok(TranslateOutput {
             result,
             diagnostics,

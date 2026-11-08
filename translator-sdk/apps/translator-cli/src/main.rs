@@ -61,6 +61,7 @@ translator-cli —— 轻量跨平台翻译 SDK 调试工具
   --terms <术语表>   输出侧术语表（JSON，P2.4）
   --term-policy <p>  术语策略：off | warn | enforce（默认 warn：只报告不改写）
   --rules <规则文件>  挂载规则包（JSON 或已编译的二进制）
+  --templates <模板>  挂载完整句子模板（P16-R）
 
 真实本地 NMT（需以 --features nmt 编译）:
   --nmt                    挂载 Bergamot 引擎（缺省仍用 Mock）
@@ -139,6 +140,7 @@ struct GlobalOptions {
     dict_id: Option<String>,
     store: String,
     rules: Option<String>,
+    templates: Option<String>,
     /// 峰值内存上限（字节）。
     memory_budget: Option<u64>,
     /// 输出侧术语表文件。
@@ -188,6 +190,7 @@ fn take_global_options(args: &mut Vec<String>) -> Result<GlobalOptions, ExitCode
         dict_id: None,
         store: DEFAULT_STORE.to_string(),
         rules: None,
+        templates: None,
         memory_budget: None,
         terms: None,
         term_policy: translator_api::TermPolicy::default(),
@@ -212,6 +215,7 @@ fn take_global_options(args: &mut Vec<String>) -> Result<GlobalOptions, ExitCode
     options.dict = take(args, "--dict");
     options.dict_id = take(args, "--dict-id");
     options.rules = take(args, "--rules");
+    options.templates = take(args, "--templates");
     if let Some(store) = take(args, "--store") {
         options.store = store;
     }
@@ -361,6 +365,9 @@ fn build_translator(
 
     if let Some(path) = &options.rules {
         builder = builder.rules_file(path);
+    }
+    if let Some(path) = &options.templates {
+        builder = builder.templates_file(path);
     }
     if let Some(bytes) = options.memory_budget {
         builder = builder.memory_budget(Some(bytes));

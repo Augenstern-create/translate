@@ -236,6 +236,70 @@ impl fmt::Display for TextKind {
     }
 }
 
+/// 实际执行路由（docs/67 §3.4）。
+///
+/// 与 `Capability` 不同：`Capability` 描述引擎“会什么”，`TranslationRoute`
+/// 描述这次请求“实际走了哪条执行层”。`Mixed` 只用于段落/文章的聚合诊断。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum TranslationRoute {
+    /// 词典精确命中（Word/Phrase）。
+    Dictionary,
+    /// 规则/模板完整匹配（Sentence）。
+    Rule,
+    /// 本地 NMT。
+    #[default]
+    LocalNmt,
+    /// 段落/文章聚合后，多个路由混合。
+    Mixed,
+}
+
+impl TranslationRoute {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Dictionary => "dictionary",
+            Self::Rule => "rule",
+            Self::LocalNmt => "local_nmt",
+            Self::Mixed => "mixed",
+        }
+    }
+}
+
+impl fmt::Display for TranslationRoute {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// 路由与模型调用统计（P16-R / R5）。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RouteStats {
+    /// 执行单元数（段落/文章会按单元计数，不等于逻辑请求数）。
+    pub executions: u64,
+    pub dictionary_hits: u64,
+    pub rule_matches: u64,
+    pub nmt_calls: u64,
+    pub nmt_fallbacks: u64,
+    pub cache_hits: u64,
+    pub best_candidates: u64,
+    pub failures: u64,
+}
+
+impl RouteStats {
+    pub fn summary(&self) -> String {
+        format!(
+            "executions={} dictionary={} rule={} nmt_calls={} nmt_fallbacks={} cache_hits={} best_candidates={} failures={}",
+            self.executions,
+            self.dictionary_hits,
+            self.rule_matches,
+            self.nmt_calls,
+            self.nmt_fallbacks,
+            self.cache_hits,
+            self.best_candidates,
+            self.failures
+        )
+    }
+}
+
 /// 段落翻译策略（docs/62 §6.2）。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum ParagraphStrategy {
@@ -277,6 +341,8 @@ pub struct TranslateOptions {
     pub strategy: Option<String>,
     /// 上下文身份（可选）：同一句在不同上下文下需要不同缓存时由宿主提供。
     pub context_id: Option<String>,
+    /// 上下文原文（可选）：P16-R 单词/短语消歧用；不用于模型输入。
+    pub context_text: Option<String>,
 }
 
 impl TranslateOptions {
@@ -304,6 +370,11 @@ impl TranslateOptions {
 
     pub fn with_context_id(mut self, id: impl Into<String>) -> Self {
         self.context_id = Some(id.into());
+        self
+    }
+
+    pub fn with_context_text(mut self, text: impl Into<String>) -> Self {
+        self.context_text = Some(text.into());
         self
     }
 }

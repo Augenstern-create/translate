@@ -14,7 +14,7 @@ use std::hash::{Hash, Hasher};
 
 use translator_types::{
     TextKind, TranslateOptions, TranslateRequest, TranslationMode, TranslationPolicy,
-    TranslationResult,
+    TranslationResult, TranslationRoute,
 };
 
 use crate::diagnostics::TranslationDiagnostics;
@@ -49,6 +49,8 @@ pub struct CacheKey {
     pub text_kind: TextKind,
     /// 分段/组织策略（`word` / `sentence` / `paragraph-group` / `document`…）。
     pub strategy: String,
+    /// 实际执行路由；词典/规则/NMT 不得共享缓存。
+    pub route: TranslationRoute,
     /// 上下文身份；不同上下文不得错误共享缓存。
     pub context_fingerprint: String,
     pub decode_config: String,
@@ -108,6 +110,7 @@ impl CacheKey {
             resource_fingerprint,
             &TranslateOptions::new(mode),
             "",
+            TranslationRoute::LocalNmt,
         )
     }
 
@@ -122,6 +125,7 @@ impl CacheKey {
         resource_fingerprint: &str,
         options: &TranslateOptions,
         strategy: &str,
+        route: TranslationRoute,
     ) -> Self {
         let mut hasher = DefaultHasher::new();
         normalized_text.hash(&mut hasher);
@@ -137,6 +141,7 @@ impl CacheKey {
             rules_version,
             mode: options.mode,
             text_kind: options.text_kind,
+            route,
             strategy: strategy.to_string(),
             context_fingerprint: options.context_id.clone().unwrap_or_default(),
             decode_config: "default".to_string(),
@@ -303,6 +308,37 @@ mod tests {
     }
 
     #[test]
+    fn 不同路由不得共享缓存() {
+        let req = TranslateRequest::new("hi", LanguageTag::new("zh-Hans").unwrap());
+        let opts = TranslateOptions::new(TranslationMode::Precise);
+        let dict = CacheKey::new_with_options(
+            "hi",
+            &req,
+            "en",
+            "dictionary.package",
+            None,
+            1,
+            "",
+            &opts,
+            "word",
+            TranslationRoute::Dictionary,
+        );
+        let nmt = CacheKey::new_with_options(
+            "hi",
+            &req,
+            "en",
+            "dictionary.package",
+            None,
+            1,
+            "",
+            &opts,
+            "word",
+            TranslationRoute::LocalNmt,
+        );
+        assert_ne!(dict, nmt, "不同路由不得共享缓存（P16-R / R8）");
+    }
+
+    #[test]
     fn 不同模式不得共享缓存() {
         let req = TranslateRequest::new("hi", LanguageTag::new("zh-Hans").unwrap());
         let precise = CacheKey::new_with_mode(
@@ -367,6 +403,10 @@ mod tests {
                 resource_fingerprint: String::new(),
                 mode: TranslationMode::Precise,
                 text_kind: TextKind::Auto,
+                route: translator_types::TranslationRoute::LocalNmt,
+                model_invoked: true,
+                dictionary_hit: false,
+                rule_matched: false,
                 strategy: "single".to_string(),
                 context_id: None,
                 quality: None,

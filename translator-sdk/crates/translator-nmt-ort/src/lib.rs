@@ -125,6 +125,7 @@ const EOS_ID: i64 = 0;
 const PAD_ID: i64 = 65000;
 
 /// 一层/一侧的 past 张量列表（名字、形状、数据）。
+#[cfg_attr(not(feature = "ort-runtime"), allow(dead_code))]
 type DecoderPast = Vec<(String, Vec<i64>, Vec<f32>)>;
 
 /// 解码时的重复 n-gram 抑制阶数（0 = 关闭）。

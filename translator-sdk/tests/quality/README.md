@@ -105,3 +105,18 @@ python3 tools/quality/summarize-quality.py \
 | `reports/p15-test-*.log` / `p15-clippy.log` | 测试与静态检查 |
 
 > 94 条人工评审仍 PENDING_HUMAN；AI 辅助评审不计入人工验收。
+
+## P16-R 证据
+
+| 文件 | 内容 |
+|---|---|
+| `outputs/p16-word.jsonl` | 100 词/短语，词典命中、NMT=0 |
+| `outputs/p16-templates.jsonl` | 40 条完整模板，规则命中、NMT=0 |
+| `outputs/p16-golden.jsonl` / `p16-golden-notemplates.jsonl` | 320 句模板 vs 无模板（NMT 322→300） |
+| `reports/p16-*.summary.json` | RouteStats（dictionary/rule/nmt/fallback/cache） |
+| `reports/compare-p16-golden.*` | chrF +0.0371、0 回归 |
+| `reports/compare-p16-templates.*` | 40/40、chrF/BLEU 1.0 |
+| `fixtures/templates/en-zh.core.json` | 40 条完整句子模板 |
+| `fixtures/quality/template-cases-v1.jsonl` | 模板验收集 |
+
+> 模板只做整句精确匹配；未命中回退 NMT。人工评审仍 PENDING_HUMAN。

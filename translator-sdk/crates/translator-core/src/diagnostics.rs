@@ -19,7 +19,7 @@
 //! （URL、邮箱、`{变量}`）。诊断对象只应回给发起请求的调用方，
 //! 不要原样写进集中式日志——设计文档 §4.1 明确禁止把用户原文写进日志。
 
-use translator_types::{Capability, TextKind, TranslationMode};
+use translator_types::{Capability, TextKind, TranslationMode, TranslationRoute};
 
 use crate::quality::QualityReport;
 use crate::terms::{TermPolicy, TermViolation};
@@ -62,6 +62,14 @@ pub struct TranslationDiagnostics {
     pub mode: TranslationMode,
     /// 文本类型（Word / Sentence / Paragraph / Document / Auto）。
     pub text_kind: TextKind,
+    /// 实际执行路由（Dictionary / Rule / LocalNmt / Mixed）。
+    pub route: TranslationRoute,
+    /// 是否真的调用了模型推理（缓存命中/模板/词典为 false）。
+    pub model_invoked: bool,
+    /// 是否由词典命中。
+    pub dictionary_hit: bool,
+    /// 是否由规则/模板完整匹配。
+    pub rule_matched: bool,
     /// 分段/组织策略名（进入缓存身份）。
     pub strategy: String,
     /// 上下文身份（可选）。
@@ -85,6 +93,7 @@ impl TranslationDiagnostics {
             format!("引擎={} 能力={}", self.engine_id, self.capability.as_str()),
             format!("模式={}", self.mode),
             format!("类型={} 策略={}", self.text_kind, self.strategy),
+            format!("路由={}", self.route),
         ];
         if self.cache_hit {
             parts.push("缓存命中".to_string());
