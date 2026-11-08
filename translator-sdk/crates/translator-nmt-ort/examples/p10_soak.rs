@@ -128,6 +128,27 @@ fn main() {
         .and_then(|s| s.parse().ok())
         .unwrap_or(1000);
     let dir = std::env::var("P4_ORT_MODEL_DIR").expect("需要 P4_ORT_MODEL_DIR（本地模型）");
+    let checkpoint = std::env::var("P10_CHECKPOINT")
+        .unwrap_or_else(|_| format!("p10-ort-{rounds}.checkpoint.jsonl"));
+    let run_id = std::env::var("P10_RUN_ID").unwrap_or_else(|_| {
+        format!(
+            "{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+        )
+    });
+    let mut cp = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&checkpoint)
+        .expect("无法创建 checkpoint");
+    use std::io::Write;
+    let started_epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
     let en = LanguageTag::new("en").unwrap();
     let zh = LanguageTag::new("zh-Hans").unwrap();
     let config = OrtNmtConfig::new(&dir, en.clone(), zh.clone()).with_threads(1);
@@ -166,6 +187,27 @@ fn main() {
         if (i + 1) % 500 == 0 {
             let m = mem();
             mem_marks.push((i + 1, m.rss_mib, m.private_mib, m.peak_mib));
+            let mut sorted = samples.clone();
+            sorted.sort_by(|x, y| x.partial_cmp(y).unwrap());
+            let p50 = if sorted.is_empty() {
+                0.0
+            } else {
+                sorted[sorted.len() / 2]
+            };
+            let p95 = if sorted.is_empty() {
+                0.0
+            } else {
+                sorted[(sorted.len() as f64 * 0.95) as usize]
+            };
+            let line = serde_json::json!({
+                "seq": i + 1, "run_id": run_id, "pid": std::process::id(),
+                "round": i + 1, "completed": i + 1, "errors": errors,
+                "p50_ms": p50, "p95_ms": p95,
+                "rss_mib": m.rss_mib, "private_mib": m.private_mib, "peak_mib": m.peak_mib,
+                "started_epoch": started_epoch, "continuous": true,
+            });
+            writeln!(cp, "{}", line).unwrap();
+            cp.flush().unwrap();
             eprintln!(
                 "after {}: rss {:.1} MiB private {:?}",
                 i + 1,
@@ -193,6 +235,10 @@ fn main() {
         "schema": "p10.1-ort-soak/v1",
         "platform": std::env::consts::OS,
         "rounds": rounds,
+        "completed": samples.len(),
+        "run_id": run_id,
+        "checkpoint": checkpoint,
+        "continuous": true,
         "model_dir": dir,
         "model_revision": identity.model_revision,
         "runtime": identity.runtime,
