@@ -56,6 +56,8 @@ translator-cli —— 轻量跨平台翻译 SDK 调试工具
   --store <仓库目录>  资源仓库根目录（默认 .resources）
   --memory-budget <MiB>  峰值内存上限；超限时 build() 直接 OutOfBudget
   --mode <m>         翻译模式：precise（默认）| fast
+  --text-kind <k>    文本类型：auto（默认）| word | sentence | paragraph | document
+  --paragraph-strategy <s>  段落策略：auto（默认）| whole | sentence | group
   --terms <术语表>   输出侧术语表（JSON，P2.4）
   --term-policy <p>  术语策略：off | warn | enforce（默认 warn：只报告不改写）
   --rules <规则文件>  挂载规则包（JSON 或已编译的二进制）
@@ -144,6 +146,10 @@ struct GlobalOptions {
     term_policy: translator_api::TermPolicy,
     /// 翻译模式（docs/57 §4）：默认 Precise。
     mode: translator_api::TranslationMode,
+    /// 文本类型（docs/62 §3）：默认 Auto。
+    text_kind: translator_api::TextKind,
+    /// 段落策略：默认 Auto。
+    paragraph_strategy: translator_api::ParagraphStrategy,
     /// 真实本地 NMT 选项（`--nmt*`）。
     nmt: NmtOptions,
 }
@@ -186,6 +192,8 @@ fn take_global_options(args: &mut Vec<String>) -> Result<GlobalOptions, ExitCode
         terms: None,
         term_policy: translator_api::TermPolicy::default(),
         mode: translator_api::TranslationMode::Precise,
+        text_kind: translator_api::TextKind::Auto,
+        paragraph_strategy: translator_api::ParagraphStrategy::Auto,
         nmt: NmtOptions::default(),
     };
 
@@ -214,6 +222,33 @@ fn take_global_options(args: &mut Vec<String>) -> Result<GlobalOptions, ExitCode
             "fast" => translator_api::TranslationMode::Fast,
             other => {
                 eprintln!("--mode 只能是 precise | fast：{other}");
+                return Err(ExitCode::from(2));
+            }
+        };
+    }
+    if let Some(raw) = take(args, "--text-kind") {
+        options.text_kind = match raw.as_str() {
+            "auto" => translator_api::TextKind::Auto,
+            "word" => translator_api::TextKind::Word,
+            "sentence" => translator_api::TextKind::Sentence,
+            "paragraph" => translator_api::TextKind::Paragraph,
+            "document" => translator_api::TextKind::Document,
+            other => {
+                eprintln!(
+                    "--text-kind 只能是 auto | word | sentence | paragraph | document：{other}"
+                );
+                return Err(ExitCode::from(2));
+            }
+        };
+    }
+    if let Some(raw) = take(args, "--paragraph-strategy") {
+        options.paragraph_strategy = match raw.as_str() {
+            "auto" => translator_api::ParagraphStrategy::Auto,
+            "whole" => translator_api::ParagraphStrategy::Whole,
+            "sentence" => translator_api::ParagraphStrategy::Sentence,
+            "group" => translator_api::ParagraphStrategy::Group,
+            other => {
+                eprintln!("--paragraph-strategy 只能是 auto | whole | sentence | group：{other}");
                 return Err(ExitCode::from(2));
             }
         };
@@ -309,6 +344,8 @@ fn build_translator(
         .engine(MockRemoteEngine::new(false))
         .backend(MockBackend::new())
         .translation_mode(options.mode)
+        .text_kind(options.text_kind)
+        .paragraph_strategy(options.paragraph_strategy)
         .cache_capacity(64);
 
     // 真实本地 NMT：显式传 `--nmt` 才挂载；未编译该特性时给出明确提示而不是静默降级
@@ -722,6 +759,7 @@ fn cmd_translate(
                                 translator_api::ProtectedKind::Email => "邮箱",
                                 translator_api::ProtectedKind::TemplateVar => "模板变量",
                                 translator_api::ProtectedKind::Code => "代码",
+                                translator_api::ProtectedKind::Number => "数字",
                             }
                         );
                     }

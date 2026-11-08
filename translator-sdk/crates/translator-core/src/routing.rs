@@ -36,7 +36,7 @@ fn pick(
         .find(|e| e.supports(source, target))
 }
 
-fn not_installed(
+pub(crate) fn not_installed(
     capability: Capability,
     source: &LanguageTag,
     target: &LanguageTag,
@@ -63,6 +63,7 @@ pub fn select(
     req: &TranslateRequest,
     source: &LanguageTag,
     text: &str,
+    prefer_dictionary: bool,
 ) -> Result<RouteOutcome, TranslationError> {
     use translator_types::TranslationPolicy as P;
 
@@ -127,13 +128,17 @@ pub fn select(
 
         P::AutoLocalFirst => {
             // 只有"像单词"的输入才优先查词典，避免用词条释义冒充整句翻译。
-            if text::looks_like_single_word(text) {
+            if prefer_dictionary || text::looks_like_single_word(text) {
                 if let Some(engine) = pick(registry, Capability::Dictionary, source, target) {
                     return Ok(RouteOutcome {
                         decision: RouteDecision {
                             engine_id: engine.descriptor().id.to_string(),
                             capability: Capability::Dictionary,
-                            reason: "输入呈单词形态，优先精确词典匹配".to_string(),
+                            reason: if prefer_dictionary {
+                                "文本类型为 Word，优先精确词典匹配".to_string()
+                            } else {
+                                "输入呈单词形态，优先精确词典匹配".to_string()
+                            },
                         },
                         engine,
                     });

@@ -30,6 +30,8 @@ struct Args {
     terms: Option<PathBuf>,
     term_policy: TermPolicy,
     mode: TranslationMode,
+    text_kind: translator_api::TextKind,
+    paragraph_strategy: translator_api::ParagraphStrategy,
     label: String,
     limit: Option<usize>,
     cache_capacity: usize,
@@ -44,6 +46,8 @@ struct Args {
     max_new_tokens: Option<usize>,
     #[cfg(feature = "ort")]
     threads: usize,
+    #[cfg(feature = "ort")]
+    beam_width: usize,
     summary: Option<PathBuf>,
 }
 
@@ -59,6 +63,8 @@ impl Default for Args {
             terms: None,
             term_policy: TermPolicy::Warn,
             mode: TranslationMode::Precise,
+            text_kind: translator_api::TextKind::Auto,
+            paragraph_strategy: translator_api::ParagraphStrategy::Auto,
             label: "default".to_string(),
             limit: None,
             cache_capacity: 256,
@@ -73,6 +79,8 @@ impl Default for Args {
             max_new_tokens: None,
             #[cfg(feature = "ort")]
             threads: 1,
+            #[cfg(feature = "ort")]
+            beam_width: 1,
             summary: None,
         }
     }
@@ -91,6 +99,8 @@ fn usage() -> &'static str {
   --terms <file>          挂载输出侧术语表
   --term-policy <p>       off | warn | enforce（默认 warn）
   --mode <m>              precise | fast（默认 precise）
+  --text-kind <k>         auto | word | sentence | paragraph | document（默认 auto）
+  --paragraph-strategy <s> auto | whole | sentence | group（默认 auto）
   --label <name>          配置标签，写进每条输出
   --limit <n>             只跑前 n 条
   --cache-capacity <n>    查询缓存条数（0 关闭，默认 256）
@@ -105,6 +115,7 @@ fn usage() -> &'static str {
   --ort-model-dir <dir>   模型目录（encoder/decoder/tokenizer）
   --max-new-tokens <n>    解码上界（默认模型配置 192）
   --threads <n>           intra-op 线程数（默认 1）
+  --beam <n>              beam 宽度（1 = 贪心，>1 = 实验性 beam search）
 "
 }
 
@@ -138,6 +149,25 @@ fn parse_args() -> Result<Args, String> {
                     "precise" => TranslationMode::Precise,
                     "fast" => TranslationMode::Fast,
                     other => return Err(format!("未知 mode：{other}")),
+                }
+            }
+            "--text-kind" => {
+                args.text_kind = match value()?.as_str() {
+                    "auto" => translator_api::TextKind::Auto,
+                    "word" => translator_api::TextKind::Word,
+                    "sentence" => translator_api::TextKind::Sentence,
+                    "paragraph" => translator_api::TextKind::Paragraph,
+                    "document" => translator_api::TextKind::Document,
+                    other => return Err(format!("未知 text-kind：{other}")),
+                }
+            }
+            "--paragraph-strategy" => {
+                args.paragraph_strategy = match value()?.as_str() {
+                    "auto" => translator_api::ParagraphStrategy::Auto,
+                    "whole" => translator_api::ParagraphStrategy::Whole,
+                    "sentence" => translator_api::ParagraphStrategy::Sentence,
+                    "group" => translator_api::ParagraphStrategy::Group,
+                    other => return Err(format!("未知 paragraph-strategy：{other}")),
                 }
             }
             "--label" => args.label = value()?,
@@ -174,6 +204,8 @@ fn parse_args() -> Result<Args, String> {
             }
             #[cfg(feature = "ort")]
             "--threads" => args.threads = value()?.parse().map_err(|e| format!("{e}"))?,
+            #[cfg(feature = "ort")]
+            "--beam" => args.beam_width = value()?.parse().map_err(|e| format!("{e}"))?,
             other => return Err(format!("未知参数：{other}")),
         }
     }
@@ -213,6 +245,7 @@ fn build_translator(args: &Args) -> Result<Translator, String> {
             args.target.clone(),
         );
         config.threads = args.threads;
+        config.beam_width = args.beam_width;
         if let Some(max_new) = args.max_new_tokens {
             config.max_new_tokens = max_new;
         }
@@ -231,6 +264,7 @@ fn warning_str(warning: &TranslationWarning) -> String {
         TranslationWarning::CacheHit => "cache_hit".to_string(),
         TranslationWarning::TermMismatch(detail) => format!("term_mismatch: {detail}"),
         TranslationWarning::PivotRoute(detail) => format!("pivot_route: {detail}"),
+        TranslationWarning::SegmentFailed(detail) => format!("segment_failed: {detail}"),
     }
 }
 
@@ -240,6 +274,7 @@ fn protected_kind(kind: translator_api::ProtectedKind) -> &'static str {
         translator_api::ProtectedKind::Email => "email",
         translator_api::ProtectedKind::TemplateVar => "template_var",
         translator_api::ProtectedKind::Code => "code",
+        translator_api::ProtectedKind::Number => "number",
     }
 }
 
@@ -251,13 +286,25 @@ fn translate_record(translator: &Translator, args: &Args, id: &str, source_text:
     }
 
     let started = std::time::Instant::now();
-    match pollster::block_on(translator.translate_with_diagnostics(&req)) {
+    let options = translator_api::TranslateOptions {
+        mode: args.mode,
+        text_kind: args.text_kind,
+        paragraph_strategy: args.paragraph_strategy,
+        strategy: None,
+        context_id: None,
+    };
+    match pollster::block_on(translator.translate_with_diagnostics_options(&req, &options)) {
         Ok(out) => {
             let quality = out.diagnostics.quality.as_ref();
             let mut record = Map::new();
             record.insert("id".to_string(), json!(id));
             record.insert("label".to_string(), json!(args.label));
             record.insert("mode".to_string(), json!(args.mode.as_str()));
+            record.insert(
+                "text_kind".to_string(),
+                json!(out.diagnostics.text_kind.as_str()),
+            );
+            record.insert("strategy".to_string(), json!(out.diagnostics.strategy));
             record.insert("source".to_string(), json!(source_text));
             record.insert("output".to_string(), json!(out.result.text));
             record.insert("engine_id".to_string(), json!(out.result.engine_id));

@@ -9,7 +9,8 @@
 use std::sync::Arc;
 
 use translator_core::{
-    BudgetReservation, Coordinator, CoordinatorConfig, MemoryBudget, MemoryReport,
+    quality::QualityReport, BudgetReservation, Coordinator, CoordinatorConfig, MemoryBudget,
+    MemoryReport,
 };
 
 // 插件契约：`pub use` 同时满足内部使用与对外导出，避免重复导入。
@@ -50,6 +51,8 @@ pub use translator_core::diagnostics::{
 /// 对外门面。构造后不可变，可跨线程共享（`Send + Sync`）。
 pub struct Translator {
     coordinator: Coordinator,
+    /// 默认执行选项（模式/文本类型/段落策略/上下文）。
+    default_options: TranslateOptions,
     /// 内存预算池。记账凭据必须活到 `Translator` 结束，否则预留会被立刻归还。
     budget: Arc<MemoryBudget>,
     /// 已挂载资源的内存预留凭据（字段名带下划线：只用于保活，不直接读取）。
@@ -69,12 +72,46 @@ impl Translator {
         TranslatorBuilder::new()
     }
 
-    /// 翻译入口。
+    /// 翻译入口：默认 Auto 文本类型 + Precise 模式（docs/62）。
+    ///
+    /// 单句/单词仍走原有单路径；多句/段落/文章会由 `TextStructureAnalyzer`
+    /// 规划成多个翻译单元，再按原结构还原。
     pub async fn translate(
         &self,
         req: &TranslateRequest,
     ) -> Result<TranslationResult, TranslationError> {
-        self.coordinator.translate(req).await
+        let options = self.default_options.clone();
+        self.translate_with_options(req, &options).await
+    }
+
+    /// 当前默认执行选项。
+    pub fn default_options(&self) -> TranslateOptions {
+        self.default_options.clone()
+    }
+
+    /// 文本类型（Builder 默认值；单请求可通过 `TranslateOptions` 覆盖）。
+    pub fn text_kind(&self) -> TextKind {
+        self.default_options.text_kind
+    }
+
+    /// 指定完整选项翻译（模式 + 文本类型 + 段落策略 + 上下文）。
+    pub async fn translate_with_options(
+        &self,
+        req: &TranslateRequest,
+        options: &TranslateOptions,
+    ) -> Result<TranslationResult, TranslationError> {
+        self.translate_with_diagnostics_options(req, options)
+            .await
+            .map(|out| out.result)
+    }
+
+    /// 指定完整选项 + 诊断。
+    pub async fn translate_with_diagnostics_options(
+        &self,
+        req: &TranslateRequest,
+        options: &TranslateOptions,
+    ) -> Result<TranslateOutput, TranslationError> {
+        self.run_options(req, options).await
     }
 
     /// 指定模式翻译（单请求覆盖 Builder 默认值）。
@@ -85,7 +122,9 @@ impl Translator {
         req: &TranslateRequest,
         mode: TranslationMode,
     ) -> Result<TranslationResult, TranslationError> {
-        self.coordinator.translate_with_mode(req, mode).await
+        let mut options = self.default_options.clone();
+        options.mode = mode;
+        self.translate_with_options(req, &options).await
     }
 
     /// 带诊断的指定模式翻译。
@@ -94,9 +133,9 @@ impl Translator {
         req: &TranslateRequest,
         mode: TranslationMode,
     ) -> Result<TranslateOutput, TranslationError> {
-        self.coordinator
-            .translate_with_diagnostics_mode(req, mode)
-            .await
+        let mut options = self.default_options.clone();
+        options.mode = mode;
+        self.translate_with_diagnostics_options(req, &options).await
     }
 
     /// 可取消的翻译入口（G06）。
@@ -326,6 +365,199 @@ impl Translator {
     }
 }
 
+impl Translator {
+    /// 结构分析 + 规划 + 逐单元执行。
+    async fn run_options(
+        &self,
+        req: &TranslateRequest,
+        options: &TranslateOptions,
+    ) -> Result<TranslateOutput, TranslationError> {
+        if req.text.trim().is_empty() {
+            return Err(TranslationError::new(
+                TranslationErrorCode::InvalidRequest,
+                "请求文本为空",
+            ));
+        }
+        let plan = translator_core::planner::plan(&req.text, options);
+        if plan.units.is_empty() {
+            return Err(TranslationError::new(
+                TranslationErrorCode::InvalidRequest,
+                "文本结构分析没有得到可翻译单元",
+            ));
+        }
+
+        let single = plan.units.len() == 1
+            && plan.units[0].text.is_some()
+            && plan.kind != TextKind::Document;
+        if single {
+            let mut seg_options = options.clone();
+            seg_options.text_kind = plan.kind;
+            seg_options.strategy = Some(plan.strategy.to_string());
+            return self
+                .coordinator
+                .translate_with_diagnostics_options(req, &seg_options)
+                .await;
+        }
+
+        self.run_plan(req, options, &plan).await
+    }
+
+    async fn run_plan(
+        &self,
+        req: &TranslateRequest,
+        options: &TranslateOptions,
+        plan: &translator_core::planner::TranslationPlan,
+    ) -> Result<TranslateOutput, TranslationError> {
+        let mut text = String::new();
+        let mut warnings: Vec<TranslationWarning> = Vec::new();
+        let mut quality = QualityReport {
+            mode: options.mode,
+            ..QualityReport::default()
+        };
+        let mut first: Option<TranslateOutput> = None;
+        let mut elapsed_ms = 0u64;
+        let mut all_cache_hit = true;
+        let mut any_translated = false;
+        let mut mixed_engine = false;
+        let mut first_engine = String::new();
+        let mut first_model: Option<String> = None;
+
+        for unit in &plan.units {
+            text.push_str(&unit.separator);
+            if let Some(literal) = &unit.literal {
+                text.push_str(literal);
+                text.push_str(&unit.suffix);
+                continue;
+            }
+            let Some(source_text) = &unit.text else {
+                text.push_str(&unit.suffix);
+                continue;
+            };
+
+            let mut sub_req = req.clone();
+            sub_req.text = source_text.clone();
+            let mut seg_options = options.clone();
+            seg_options.text_kind = unit.kind;
+            seg_options.strategy = Some(plan.strategy.to_string());
+            if unit.kind == TextKind::Paragraph {
+                seg_options.paragraph_strategy = options.paragraph_strategy;
+                seg_options.strategy = None;
+            }
+
+            let outcome = if unit.kind == TextKind::Paragraph {
+                Box::pin(self.run_options(&sub_req, &seg_options)).await
+            } else {
+                self.coordinator
+                    .translate_with_diagnostics_options(&sub_req, &seg_options)
+                    .await
+            };
+
+            match outcome {
+                Ok(out) => {
+                    any_translated = true;
+                    text.push_str(&out.result.text);
+                    elapsed_ms = elapsed_ms.saturating_add(out.result.elapsed_ms);
+                    warnings.extend(out.result.warnings.iter().cloned());
+                    if let Some(q) = &out.diagnostics.quality {
+                        quality.merge(q.clone());
+                    }
+                    all_cache_hit &= out.diagnostics.cache_hit;
+                    if first.is_none() {
+                        first_engine = out.result.engine_id.clone();
+                        first_model = out.result.model_id.clone();
+                        first = Some(out);
+                    } else if first_engine != out.result.engine_id {
+                        mixed_engine = true;
+                    }
+                }
+                Err(err) if plan.kind == TextKind::Document => {
+                    // 文档段落失败时保留原文与其他成功段落（T7.4）。
+                    text.push_str(source_text);
+                    warnings.push(TranslationWarning::SegmentFailed(format!(
+                        "{}:{}",
+                        unit.kind, err.code
+                    )));
+                }
+                Err(err) => return Err(err),
+            }
+            text.push_str(&unit.suffix);
+        }
+
+        let engine_id = if !any_translated {
+            "planner.passthrough".to_string()
+        } else if mixed_engine {
+            "planner.mixed".to_string()
+        } else {
+            first_engine
+        };
+
+        if let Some(first_out) = first {
+            let mut diagnostics = first_out.diagnostics;
+            diagnostics.engine_id = engine_id.clone();
+            diagnostics.route_reason = format!(
+                "planner:{} units={} kind={}",
+                plan.strategy,
+                plan.units.len(),
+                plan.kind
+            );
+            diagnostics.cache_hit = all_cache_hit;
+            diagnostics.text_kind = plan.kind;
+            diagnostics.strategy = plan.strategy.to_string();
+            diagnostics.context_id = options.context_id.clone();
+            diagnostics.quality = Some(quality);
+            diagnostics.protected_spans.clear();
+            let source = first_out.result.source;
+            Ok(TranslateOutput {
+                result: TranslationResult {
+                    text,
+                    source: source.clone(),
+                    target: req.target.clone(),
+                    engine_id,
+                    model_id: first_model,
+                    elapsed_ms,
+                    warnings,
+                },
+                diagnostics,
+            })
+        } else {
+            let source = req
+                .source
+                .clone()
+                .unwrap_or_else(|| LanguageTag::new("en").expect("静态语言标签合法"));
+            let diagnostics = TranslationDiagnostics {
+                engine_id: engine_id.clone(),
+                capability: Capability::Nmt,
+                route_reason: format!("planner:{} units={}", plan.strategy, plan.units.len()),
+                cache_hit: false,
+                source_assumed: req.source.is_none(),
+                rules_version: 0,
+                resource_fingerprint: self.coordinator.resource_fingerprint().to_string(),
+                mode: options.mode,
+                text_kind: plan.kind,
+                strategy: plan.strategy.to_string(),
+                context_id: options.context_id.clone(),
+                quality: Some(quality),
+                rules: None,
+                protected_spans: Vec::new(),
+                restore_missing: Vec::new(),
+                term: None,
+            };
+            Ok(TranslateOutput {
+                result: TranslationResult {
+                    text,
+                    source,
+                    target: req.target.clone(),
+                    engine_id,
+                    model_id: None,
+                    elapsed_ms,
+                    warnings,
+                },
+                diagnostics,
+            })
+        }
+    }
+}
+
 impl std::fmt::Debug for Translator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let registry = self.coordinator.registry();
@@ -362,6 +594,10 @@ pub struct TranslatorBuilder {
     memory_limit: Option<u64>,
     /// 默认翻译模式（docs/57 §4）：默认 Precise。
     translation_mode: TranslationMode,
+    /// 默认文本类型（docs/62 §3）：默认 Auto。
+    default_text_kind: TextKind,
+    /// 默认段落策略：Auto。
+    default_paragraph_strategy: ParagraphStrategy,
     /// 已登记的资源租约，`build()` 时移交给 `Translator`。
     #[cfg(feature = "resource")]
     leases: Vec<translator_resource::ResourceLease>,
@@ -397,6 +633,8 @@ impl TranslatorBuilder {
             lemmatizer: None,
             memory_limit: None,
             translation_mode: TranslationMode::Precise,
+            default_text_kind: TextKind::Auto,
+            default_paragraph_strategy: ParagraphStrategy::Auto,
             #[cfg(feature = "resource")]
             leases: Vec::new(),
             #[cfg(feature = "nmt-bergamot")]
@@ -600,6 +838,21 @@ impl TranslatorBuilder {
         self
     }
 
+    /// 默认文本类型（docs/62 §3）：默认 [`TextKind::Auto`]。
+    ///
+    /// 宿主可用它把同一 `Translator` 固定为 Word/Sentence/Paragraph/Document；
+    /// 单请求覆盖用 [`Translator::translate_with_options`]。
+    pub fn text_kind(mut self, kind: TextKind) -> Self {
+        self.default_text_kind = kind;
+        self
+    }
+
+    /// 默认段落策略（仅 `TextKind::Paragraph` 时有意义）。
+    pub fn paragraph_strategy(mut self, strategy: ParagraphStrategy) -> Self {
+        self.default_paragraph_strategy = strategy;
+        self
+    }
+
     /// 关键完整性检查失败时是否拒绝返回译文（默认 `true`）。
     ///
     /// 关闭后，数字丢失/标记残留只写入诊断，译文照常返回——仅在宿主自己做修复时使用。
@@ -783,10 +1036,18 @@ impl TranslatorBuilder {
         self.config.lemmatizer = self.lemmatizer.take();
         self.config.default_mode = self.translation_mode;
 
+        let default_options = TranslateOptions {
+            mode: self.translation_mode,
+            text_kind: self.default_text_kind,
+            paragraph_strategy: self.default_paragraph_strategy,
+            strategy: None,
+            context_id: None,
+        };
         let mut coordinator = Coordinator::new(Arc::new(self.registry), self.config);
         coordinator.bind_resource_fingerprint(fingerprint.join(";"));
         Ok(Translator {
             coordinator,
+            default_options,
             budget,
             _reservations: reservations,
             #[cfg(feature = "resource")]

@@ -9,8 +9,8 @@ use std::time::Instant;
 use translator_plugin_api::{BoxFuture, PluginRegistry};
 use translator_types::{
     CancelToken, Capability, CapabilityInfo, DictionaryEntry, LookupRequest, RouteDecision,
-    TranslateRequest, TranslationError, TranslationErrorCode, TranslationMode, TranslationPolicy,
-    TranslationResult, TranslationWarning,
+    TextKind, TranslateOptions, TranslateRequest, TranslationError, TranslationErrorCode,
+    TranslationMode, TranslationPolicy, TranslationResult, TranslationWarning,
 };
 
 use crate::cache::{CacheEntry, CacheKey, QueryCache};
@@ -250,8 +250,13 @@ impl Coordinator {
         let source = self.resolve_source(&normalized, req)?;
         // 规则可能改变文本形态（全角→半角、术语替换），路由必须看到处理后的文本
         let work_text = self.apply_rules(&normalized, &source, &req.target)?.0;
-        let outcome = routing::select(&self.registry, req, &source, &work_text)?;
+        let outcome = routing::select(&self.registry, req, &source, &work_text, false)?;
         Ok(outcome.decision)
+    }
+
+    /// 默认执行选项（模式取配置，文本类型 Auto、单路径）。
+    pub fn default_options(&self) -> TranslateOptions {
+        TranslateOptions::new(self.default_mode())
     }
 
     /// 仅返回译文（对外主路径，使用默认模式）。
@@ -260,7 +265,7 @@ impl Coordinator {
         req: &'a TranslateRequest,
     ) -> BoxFuture<'a, Result<TranslationResult, TranslationError>> {
         Box::pin(async move {
-            self.run(req, self.default_mode())
+            self.run(req, &self.default_options())
                 .await
                 .map(|out| out.result)
         })
@@ -272,7 +277,17 @@ impl Coordinator {
         req: &'a TranslateRequest,
         mode: TranslationMode,
     ) -> BoxFuture<'a, Result<TranslationResult, TranslationError>> {
-        Box::pin(async move { self.run(req, mode).await.map(|out| out.result) })
+        let options = TranslateOptions::new(mode);
+        Box::pin(async move { self.run(req, &options).await.map(|out| out.result) })
+    }
+
+    /// 指定执行选项（模式 + 文本类型 + 策略 + 上下文）。
+    pub fn translate_with_options<'a>(
+        &'a self,
+        req: &'a TranslateRequest,
+        options: &'a TranslateOptions,
+    ) -> BoxFuture<'a, Result<TranslationResult, TranslationError>> {
+        Box::pin(async move { self.run(req, options).await.map(|out| out.result) })
     }
 
     /// 可取消的译文入口（默认模式）。
@@ -284,8 +299,9 @@ impl Coordinator {
         req: &'a TranslateRequest,
         cancel: &'a CancelToken,
     ) -> BoxFuture<'a, Result<TranslationResult, TranslationError>> {
+        let options = self.default_options();
         Box::pin(async move {
-            self.run_inner(req, Some(cancel), self.default_mode())
+            self.run_inner(req, Some(cancel), &options)
                 .await
                 .map(|out| out.result)
         })
@@ -298,8 +314,9 @@ impl Coordinator {
         cancel: &'a CancelToken,
         mode: TranslationMode,
     ) -> BoxFuture<'a, Result<TranslationResult, TranslationError>> {
+        let options = TranslateOptions::new(mode);
         Box::pin(async move {
-            self.run_inner(req, Some(cancel), mode)
+            self.run_inner(req, Some(cancel), &options)
                 .await
                 .map(|out| out.result)
         })
@@ -313,7 +330,8 @@ impl Coordinator {
         &'a self,
         req: &'a TranslateRequest,
     ) -> BoxFuture<'a, Result<TranslateOutput, TranslationError>> {
-        Box::pin(async move { self.run(req, self.default_mode()).await })
+        let options = self.default_options();
+        Box::pin(async move { self.run(req, &options).await })
     }
 
     /// 指定模式的诊断入口。
@@ -322,7 +340,17 @@ impl Coordinator {
         req: &'a TranslateRequest,
         mode: TranslationMode,
     ) -> BoxFuture<'a, Result<TranslateOutput, TranslationError>> {
-        Box::pin(async move { self.run(req, mode).await })
+        let options = TranslateOptions::new(mode);
+        Box::pin(async move { self.run(req, &options).await })
+    }
+
+    /// 指定执行选项的诊断入口。
+    pub fn translate_with_diagnostics_options<'a>(
+        &'a self,
+        req: &'a TranslateRequest,
+        options: &'a TranslateOptions,
+    ) -> BoxFuture<'a, Result<TranslateOutput, TranslationError>> {
+        Box::pin(async move { self.run(req, options).await })
     }
 
     /// 带诊断的可取消入口（与 [`Self::translate_cancellable`] 同一实现）。
@@ -331,7 +359,8 @@ impl Coordinator {
         req: &'a TranslateRequest,
         cancel: &'a CancelToken,
     ) -> BoxFuture<'a, Result<TranslateOutput, TranslationError>> {
-        Box::pin(async move { self.run_inner(req, Some(cancel), self.default_mode()).await })
+        let options = self.default_options();
+        Box::pin(async move { self.run_inner(req, Some(cancel), &options).await })
     }
 
     /// 带诊断的可取消入口 + 指定模式。
@@ -341,7 +370,18 @@ impl Coordinator {
         cancel: &'a CancelToken,
         mode: TranslationMode,
     ) -> BoxFuture<'a, Result<TranslateOutput, TranslationError>> {
-        Box::pin(async move { self.run_inner(req, Some(cancel), mode).await })
+        let options = TranslateOptions::new(mode);
+        Box::pin(async move { self.run_inner(req, Some(cancel), &options).await })
+    }
+
+    /// 带诊断的可取消入口 + 完整选项。
+    pub fn translate_with_diagnostics_cancellable_options<'a>(
+        &'a self,
+        req: &'a TranslateRequest,
+        cancel: &'a CancelToken,
+        options: &'a TranslateOptions,
+    ) -> BoxFuture<'a, Result<TranslateOutput, TranslationError>> {
+        Box::pin(async move { self.run_inner(req, Some(cancel), options).await })
     }
 
     pub fn lookup<'a>(
@@ -445,16 +485,16 @@ impl Coordinator {
     async fn run(
         &self,
         req: &TranslateRequest,
-        mode: TranslationMode,
+        options: &TranslateOptions,
     ) -> Result<TranslateOutput, TranslationError> {
-        self.run_inner(req, None, mode).await
+        self.run_inner(req, None, options).await
     }
 
     async fn run_inner(
         &self,
         req: &TranslateRequest,
         cancel: Option<&CancelToken>,
-        mode: TranslationMode,
+        options: &TranslateOptions,
     ) -> Result<TranslateOutput, TranslationError> {
         check_cancelled(cancel)?;
         // 1) 校验 + 规范化
@@ -488,7 +528,13 @@ impl Coordinator {
         check_cancelled(cancel)?;
         // 4) 路由（用的是规则处理后的文本）。先选引擎，才知道该由谁做保护：
         //    真实 NMT 后端自己按 `ProtectionPlan` 分段，协调器再打一次标记会破坏它。
-        let outcome = routing::select(&self.registry, req, &source, &work_text)?;
+        let outcome = routing::select(
+            &self.registry,
+            req,
+            &source,
+            &work_text,
+            options.text_kind == TextKind::Word,
+        )?;
 
         // 5) 占位符保护。结构化后端拿原文；通用后端拿标记化文本。
         let spans = text::protected_spans(&work_text);
@@ -506,7 +552,7 @@ impl Coordinator {
         });
 
         // 6) 缓存查询（模式必须进键：Precise 与 Fast 不得互相复用）
-        let key = CacheKey::new_with_mode(
+        let key = CacheKey::new_with_options(
             &protected,
             req,
             source.as_str(),
@@ -514,7 +560,8 @@ impl Coordinator {
             outcome.engine.cache_identity().as_deref(),
             self.effective_rules_version,
             &self.resource_fingerprint,
-            mode,
+            options,
+            options.strategy.as_deref().unwrap_or("single"),
         );
 
         if let Ok(cache) = self.cache.lock() {
@@ -561,7 +608,13 @@ impl Coordinator {
                             )
                             .await?
                     }
-                    None => return Err(err),
+                    None => {
+                        return Err(routing::not_installed(
+                            Capability::Nmt,
+                            &source,
+                            &req.target,
+                        ))
+                    }
                 }
             }
             Err(err) => return Err(err),
@@ -597,10 +650,12 @@ impl Coordinator {
 
         // 9) 输出侧术语约束（P2.4）：只在译文上做，且不得触碰受保护跨度
         let term_trace = self.apply_term_guard(&work_text, &source, &req.target, &mut result);
+        // 9.2) 受控格式修复：数字/范围词换位、重复标点；不改写语义。
+        result.text = quality::repair_output(&result.text);
 
         // 9.5) 译后完整性检查（T2）。Fast 只查数字/占位符/空输出；Precise 再加
         //      否定、重复、目标语言、原文原样返回等启发式。
-        let quality = quality::check(&work_text, &result.text, &req.target, mode);
+        let quality = quality::check(&work_text, &result.text, &req.target, options.mode);
         if self.config.strict_integrity && quality.has_fatal() {
             return Err(TranslationError::new(
                 TranslationErrorCode::IntegrityFailure,
@@ -621,7 +676,13 @@ impl Coordinator {
             source_assumed,
             rules_version: self.effective_rules_version,
             resource_fingerprint: self.resource_fingerprint.clone(),
-            mode,
+            mode: options.mode,
+            text_kind: options.text_kind,
+            strategy: options
+                .strategy
+                .clone()
+                .unwrap_or_else(|| "single".to_string()),
+            context_id: options.context_id.clone(),
             quality: Some(quality),
             rules: rules_trace,
             protected_spans: spans,

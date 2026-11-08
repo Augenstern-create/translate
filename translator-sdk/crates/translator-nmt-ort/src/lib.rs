@@ -81,8 +81,10 @@ const HEADS: usize = 8;
 const HEAD_DIM: usize = 64;
 #[cfg(feature = "ort-runtime")]
 const EOS_ID: i64 = 0;
-#[cfg(feature = "ort-runtime")]
 const PAD_ID: i64 = 65000;
+
+/// 一层/一侧的 past 张量列表（名字、形状、数据）。
+type DecoderPast = Vec<(String, Vec<i64>, Vec<f32>)>;
 
 /// 解码时的重复 n-gram 抑制阶数（0 = 关闭）。
 ///
@@ -106,6 +108,15 @@ const LENGTH_SLACK: usize = 12;
 /// 这里刻意写成"人可读 + 机器可 diff"的一行，避免用版本号掩盖到底改了什么。
 pub const DECODE_POLICY: &str =
     "greedy;no-repeat-3gram=3;stop-on-3-run;tail-collapse(>=3 cycles,period<=4);len-cap=min(max_new_tokens,src*8/5+12)";
+
+/// 解码策略标签（进身份/缓存键）。beam=1 与历史贪心标签保持完全一致。
+pub fn decode_policy_label(beam_width: usize) -> String {
+    if beam_width <= 1 {
+        DECODE_POLICY.to_string()
+    } else {
+        format!("beam={beam_width};no-repeat-3gram=3;len-cap=min(max_new_tokens,src*8/5+12)")
+    }
+}
 
 /// 单段解码的 token 上界：`min(max_new_tokens, src_len*8/5 + 12)`。
 ///
@@ -135,6 +146,8 @@ pub struct OrtNmtConfig {
     pub threads: usize,
     /// 单句最多生成多少 token
     pub max_new_tokens: usize,
+    /// Beam 宽度（1 = 贪心；>1 = 实验性 beam search，逐候选重跑 decoder，较慢）。
+    pub beam_width: usize,
     pub protection: ProtectionMode,
     /// 装配期的内存估计（下界）
     pub steady_bytes: u64,
@@ -148,6 +161,7 @@ impl OrtNmtConfig {
             target,
             threads: 1,
             max_new_tokens: 192,
+            beam_width: 1,
             protection: ProtectionMode::Segment,
             steady_bytes: ORT_STEADY_BYTES,
         }
@@ -160,6 +174,12 @@ impl OrtNmtConfig {
 
     pub fn with_max_new_tokens(mut self, n: usize) -> Self {
         self.max_new_tokens = n.max(1);
+        self
+    }
+
+    /// Beam 宽度（T3/W2 对照用；1 = 现有贪心路径）。
+    pub fn with_beam_width(mut self, width: usize) -> Self {
+        self.beam_width = width.max(1);
         self
     }
 
@@ -181,6 +201,7 @@ pub struct OrtIdentity {
     pub runtime_build: String,
     pub threads: usize,
     pub max_new_tokens: usize,
+    pub beam_width: usize,
     /// 解码策略标识（`DECODE_POLICY`）：同一权重换策略就是另一个身份。
     pub decode_policy: String,
 }
@@ -215,16 +236,17 @@ fn canonical(path: &std::path::Path) -> String {
 /// 共享键：模型三文件内容 + 所有会影响解码/内存的配置。
 fn pool_key(config: &OrtNmtConfig, revision: &str) -> String {
     format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
         canonical(&config.model_dir),
         revision,
         config.source.as_str(),
         config.target.as_str(),
         config.threads,
         config.max_new_tokens,
+        config.beam_width,
         config.protection.as_str(),
         config.steady_bytes,
-        DECODE_POLICY,
+        decode_policy_label(config.beam_width),
     )
 }
 
@@ -465,14 +487,15 @@ impl TranslationEngine for OrtNmtEngine {
         }
         let revision = revision_of(&self.config).ok()?;
         let identity = format!(
-            "{}|{}|{}|{}|{}|{}|{}",
+            "{}|{}|{}|{}|{}|{}|{}|{}",
             ENGINE_ID,
             revision,
             RUNTIME,
             self.config.threads,
             self.config.max_new_tokens,
+            self.config.beam_width,
             self.config.protection.as_str(),
-            DECODE_POLICY,
+            decode_policy_label(self.config.beam_width),
         );
         *self
             .cache_identity
@@ -524,15 +547,243 @@ impl Loaded {
                 ),
                 threads: config.threads,
                 max_new_tokens: config.max_new_tokens,
-                decode_policy: DECODE_POLICY.to_string(),
+                beam_width: config.beam_width,
+                decode_policy: decode_policy_label(config.beam_width),
             },
         })
     }
 
-    /// 一个纯文本段 → 一次贪心解码，返回 `(译文, 是否被上界约束干预过)`。
+    /// Beam search（实验性）：每个候选每步重跑一次 decoder，不共享缓存。
     ///
-    /// 受保护跨度不进这里（由 `ProtectionPlan` 摘走）。
+    /// 这样做的代价是约 `beam_width` 倍延迟，但实现不依赖 batch/cache 布局；
+    /// 质量对照必须用同一金样本与贪心比较后再决定是否进入 Precise 默认。
+    fn translate_segment_beam(&mut self, text: &str) -> Result<(String, bool), TranslationError> {
+        let ids = self
+            .tokenizer
+            .encode(text, false)
+            .map_err(|e| {
+                TranslationError::new(
+                    TranslationErrorCode::InvalidRequest,
+                    format!("分词失败：{e}"),
+                )
+            })?
+            .get_ids()
+            .to_vec();
+        if ids.is_empty() {
+            return Err(TranslationError::new(
+                TranslationErrorCode::InvalidRequest,
+                "分词结果为空（输入没有可用 token）",
+            ));
+        }
+        let mut input: Vec<i64> = ids.into_iter().map(|i| i as i64).collect();
+        input.push(EOS_ID);
+        let src_len = input.len();
+        let hidden = {
+            let feed: Vec<(String, ort::session::SessionInputValue)> = vec![
+                (
+                    "input_ids".to_string(),
+                    ort_tensor_i64(vec![1, src_len as i64], input)?.into(),
+                ),
+                (
+                    "attention_mask".to_string(),
+                    ort_tensor_i64(vec![1, src_len as i64], vec![1i64; src_len])?.into(),
+                ),
+            ];
+            let outputs = self
+                .encoder
+                .run(feed)
+                .map_err(|e| runtime_error("编码器推理失败", e))?;
+            let (shape, data) = outputs[0]
+                .try_extract_tensor::<f32>()
+                .map_err(|e| runtime_error("编码器输出解析失败", e))?;
+            let shape: Vec<i64> = shape.iter().copied().collect();
+            (shape, data.to_vec())
+        };
+
+        let cap = token_cap(src_len, self.identity.max_new_tokens);
+        let beam_width = self.identity.beam_width.max(2);
+
+        #[derive(Clone)]
+        struct Beam {
+            tokens: Vec<u32>,
+            score: f32,
+            past: DecoderPast,
+        }
+
+        // 首步：一次 decoder，得到 logits 与 present；后续每个 beam 只跑 `cur=[last]`。
+        let (logits0, past0, enc_past) = self.decoder_step(
+            &hidden,
+            src_len,
+            &[PAD_ID],
+            &initial_past(src_len),
+            &Vec::new(),
+            false,
+        )?;
+
+        let mut active: Vec<Beam> = Vec::new();
+        let mut completed: Vec<(Vec<u32>, f32)> = Vec::new();
+        for (id, score) in top_candidates(&logits0, &[], beam_width * 2) {
+            if id as i64 == EOS_ID {
+                completed.push((Vec::new(), score));
+            } else {
+                active.push(Beam {
+                    tokens: vec![id],
+                    score,
+                    past: past0.clone(),
+                });
+            }
+        }
+        active.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        active.truncate(beam_width);
+
+        let mut bounded = false;
+        for step in 1..cap {
+            if active.is_empty() {
+                break;
+            }
+            let mut candidates: Vec<Beam> = Vec::new();
+            for beam in &active {
+                let last = *beam.tokens.last().unwrap_or(&0);
+                let (logits, next_past, _) = self.decoder_step(
+                    &hidden,
+                    src_len,
+                    &[last as i64],
+                    &beam.past,
+                    &enc_past,
+                    true,
+                )?;
+                for (id, lp) in top_candidates(&logits, &beam.tokens, beam_width * 2) {
+                    let mut tokens = beam.tokens.clone();
+                    let score = beam.score + lp;
+                    if id as i64 == EOS_ID {
+                        completed.push((tokens, score));
+                    } else {
+                        tokens.push(id);
+                        candidates.push(Beam {
+                            tokens,
+                            score,
+                            past: next_past.clone(),
+                        });
+                    }
+                }
+            }
+            candidates.sort_by(|a, b| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            candidates.truncate(beam_width);
+            active = candidates;
+            if step + 1 == cap {
+                bounded = true;
+            }
+        }
+
+        let mut pool = completed;
+        pool.extend(active.into_iter().map(|b| (b.tokens, b.score)));
+        let (best, _) = pool
+            .into_iter()
+            .max_by(|a, b| {
+                let la = a.0.len().max(1) as f32;
+                let lb = b.0.len().max(1) as f32;
+                (a.1 / la.powf(0.7))
+                    .partial_cmp(&(b.1 / lb.powf(0.7)))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .ok_or_else(|| {
+                TranslationError::new(TranslationErrorCode::BackendFailed, "beam 没有候选")
+            })?;
+        let (kept, truncated) = truncate_repeated_tail(&best);
+        let text = self
+            .tokenizer
+            .decode(kept, true)
+            .map_err(|e| runtime_error("反分词失败", e))?;
+        Ok((unescape_metaspace(&text), bounded || truncated))
+    }
+
+    /// 逐步 decoder（带/不带 cache）。返回 `(last_logits, next_decoder_past, encoder_past)`。
+    fn decoder_step(
+        &mut self,
+        hidden: &(Vec<i64>, Vec<f32>),
+        src_len: usize,
+        cur: &[i64],
+        past: &DecoderPast,
+        enc_past_in: &DecoderPast,
+        use_cache: bool,
+    ) -> Result<(Vec<f32>, DecoderPast, DecoderPast), TranslationError> {
+        let mut feed: Vec<(String, ort::session::SessionInputValue)> = vec![
+            (
+                "input_ids".to_string(),
+                ort_tensor_i64(vec![1, cur.len() as i64], cur.to_vec())?.into(),
+            ),
+            (
+                "encoder_attention_mask".to_string(),
+                ort_tensor_i64(vec![1, src_len as i64], vec![1i64; src_len])?.into(),
+            ),
+            (
+                "encoder_hidden_states".to_string(),
+                ort_tensor_f32(hidden.0.clone(), hidden.1.clone())?.into(),
+            ),
+            (
+                "use_cache_branch".to_string(),
+                ort_tensor_bool(vec![1], vec![use_cache])?.into(),
+            ),
+        ];
+        for (name, shape, data) in past.iter().chain(enc_past_in.iter()) {
+            feed.push((
+                name.clone(),
+                ort_tensor_f32(shape.clone(), data.clone())?.into(),
+            ));
+        }
+        let outputs = self
+            .decoder
+            .run(feed)
+            .map_err(|e| runtime_error("beam decoder 推理失败", e))?;
+        let (shape, logits) = outputs["logits"]
+            .try_extract_tensor::<f32>()
+            .map_err(|e| runtime_error("beam logits 解析失败", e))?;
+        let vocab = *shape.last().unwrap_or(&0) as usize;
+        if vocab == 0 || logits.len() < vocab {
+            return Err(TranslationError::new(
+                TranslationErrorCode::BackendFailed,
+                "beam decoder 输出词表维度异常",
+            ));
+        }
+        let last = logits[logits.len() - vocab..].to_vec();
+
+        let names: Vec<String> = outputs.keys().map(|k| k.to_string()).collect();
+        let mut next: Vec<(String, Vec<i64>, Vec<f32>)> = Vec::new();
+        let mut enc_past: Vec<(String, Vec<i64>, Vec<f32>)> = Vec::new();
+        for name in names {
+            if name == "logits" {
+                continue;
+            }
+            let past_name = name.replace("present.", "past_key_values.");
+            if past_name.contains(".encoder.") {
+                if !use_cache {
+                    let (shape, data) = outputs[&*name]
+                        .try_extract_tensor::<f32>()
+                        .map_err(|e| runtime_error("beam encoder past 解析失败", e))?;
+                    enc_past.push((past_name, shape.iter().copied().collect(), data.to_vec()));
+                }
+                continue;
+            }
+            let (shape, data) = outputs[&*name]
+                .try_extract_tensor::<f32>()
+                .map_err(|e| runtime_error("beam present 解析失败", e))?;
+            next.push((past_name, shape.iter().copied().collect(), data.to_vec()));
+        }
+        Ok((last, next, enc_past))
+    }
+
     fn translate_segment(&mut self, text: &str) -> Result<(String, bool), TranslationError> {
+        if self.identity.beam_width > 1 {
+            return self.translate_segment_beam(text);
+        }
         let ids = self
             .tokenizer
             .encode(text, false)
@@ -719,6 +970,32 @@ impl Loaded {
             .map_err(|e| runtime_error("反分词失败", e))?;
         Ok((unescape_metaspace(&text), bounded || truncated))
     }
+}
+
+/// 从 logits 取 top-k 候选（log-softmax 分值），跳过 pad 与重复 n-gram。
+#[cfg_attr(not(feature = "ort-runtime"), allow(dead_code))]
+fn top_candidates(logits: &[f32], tokens: &[u32], k: usize) -> Vec<(u32, f32)> {
+    let max = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let sum: f32 = logits.iter().map(|v| (v - max).exp()).sum();
+    let logsum = max + sum.ln();
+    let mut top: Vec<(u32, f32)> = Vec::with_capacity(k);
+    for (i, v) in logits.iter().enumerate() {
+        if i as i64 == PAD_ID {
+            continue;
+        }
+        if repeats_ngram(tokens, i as u32, NO_REPEAT_NGRAM) {
+            continue;
+        }
+        let lp = *v - logsum;
+        if top.len() < k {
+            top.push((i as u32, lp));
+            top.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        } else if lp > top[k - 1].1 {
+            top[k - 1] = (i as u32, lp);
+            top.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        }
+    }
+    top
 }
 
 /// 去掉**尾部**连续重复的周期块，只保留一轮。

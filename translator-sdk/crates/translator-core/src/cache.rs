@@ -12,7 +12,10 @@ use std::collections::hash_map::{DefaultHasher, Entry};
 use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
 
-use translator_types::{TranslateRequest, TranslationMode, TranslationPolicy, TranslationResult};
+use translator_types::{
+    TextKind, TranslateOptions, TranslateRequest, TranslationMode, TranslationPolicy,
+    TranslationResult,
+};
 
 use crate::diagnostics::TranslationDiagnostics;
 
@@ -42,6 +45,12 @@ pub struct CacheKey {
     pub rules_version: u32,
     /// 翻译模式（Precise / Fast）。两种模式的执行配置不同，结果不得互相复用。
     pub mode: TranslationMode,
+    /// 文本类型（Word / Sentence / Paragraph / Document / Auto）。
+    pub text_kind: TextKind,
+    /// 分段/组织策略（`word` / `sentence` / `paragraph-group` / `document`…）。
+    pub strategy: String,
+    /// 上下文身份；不同上下文不得错误共享缓存。
+    pub context_fingerprint: String,
     pub decode_config: String,
     /// 隐私隔离域：不同隐私上下文不得共享缓存。
     pub privacy_domain: String,
@@ -89,6 +98,31 @@ impl CacheKey {
         resource_fingerprint: &str,
         mode: TranslationMode,
     ) -> Self {
+        Self::new_with_options(
+            normalized_text,
+            req,
+            source,
+            engine_id,
+            engine_cache_identity,
+            rules_version,
+            resource_fingerprint,
+            &TranslateOptions::new(mode),
+            "",
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_options(
+        normalized_text: &str,
+        req: &TranslateRequest,
+        source: &str,
+        engine_id: &str,
+        engine_cache_identity: Option<&str>,
+        rules_version: u32,
+        resource_fingerprint: &str,
+        options: &TranslateOptions,
+        strategy: &str,
+    ) -> Self {
         let mut hasher = DefaultHasher::new();
         normalized_text.hash(&mut hasher);
 
@@ -101,7 +135,10 @@ impl CacheKey {
             model_id: None,
             glossary_id: req.glossary_id.clone(),
             rules_version,
-            mode,
+            mode: options.mode,
+            text_kind: options.text_kind,
+            strategy: strategy.to_string(),
+            context_fingerprint: options.context_id.clone().unwrap_or_default(),
             decode_config: "default".to_string(),
             // P8.3 / EP-04：远程策略与本地策略不得共享缓存。
             // 显式 engine:<id> 的隐私域由宿主负责；这里只隔离明确的 RemoteOnly。
@@ -329,6 +366,9 @@ mod tests {
                 rules_version: 1,
                 resource_fingerprint: String::new(),
                 mode: TranslationMode::Precise,
+                text_kind: TextKind::Auto,
+                strategy: "single".to_string(),
+                context_id: None,
                 quality: None,
                 rules: None,
                 protected_spans: Vec::new(),

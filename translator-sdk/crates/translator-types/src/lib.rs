@@ -188,6 +188,120 @@ impl fmt::Display for TranslationMode {
     }
 }
 
+/// 文本结构类型（docs/62 §3）。
+///
+/// 四级策略只决定“如何组织翻译”，不改变实际引擎：同一个 `Translator` 仍然用
+/// Dictionary / NMT / Remote 的既有 `TranslationEngine` 执行。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum TextKind {
+    /// 由结构分析器判断（默认）。
+    #[default]
+    Auto,
+    /// 单词/固定短语：优先词典，多义项，不强行选唯一译法。
+    Word,
+    /// 句子：NMT + 句级切分/保护/完整性检查。
+    Sentence,
+    /// 段落：整段 / 逐句 / 句群三种策略。
+    Paragraph,
+    /// 文章：Markdown/纯文本结构化分段，保留标题、列表、代码块。
+    Document,
+}
+
+impl TextKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Word => "word",
+            Self::Sentence => "sentence",
+            Self::Paragraph => "paragraph",
+            Self::Document => "document",
+        }
+    }
+
+    /// 自动判断结果的稳定名字（不含 `Auto`）。
+    pub const fn resolved_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Word => "word",
+            Self::Sentence => "sentence",
+            Self::Paragraph => "paragraph",
+            Self::Document => "document",
+        }
+    }
+}
+
+impl fmt::Display for TextKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// 段落翻译策略（docs/62 §6.2）。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum ParagraphStrategy {
+    /// 按长度/句数自动选择。
+    #[default]
+    Auto,
+    /// A：整段送入模型（上下文完整，但有截断风险）。
+    Whole,
+    /// B：逐句翻译后按原顺序拼接（长度可控，上下文弱）。
+    Sentence,
+    /// C：句群翻译（每 2–3 句一组，兼顾上下文与长度）。
+    Group,
+}
+
+impl ParagraphStrategy {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Whole => "whole",
+            Self::Sentence => "sentence",
+            Self::Group => "group",
+        }
+    }
+}
+
+/// 单请求执行选项（向后兼容：`TranslateRequest` 不加字段）。
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TranslateOptions {
+    pub mode: TranslationMode,
+    pub text_kind: TextKind,
+    pub paragraph_strategy: ParagraphStrategy,
+    /// 分段/组织策略（进入缓存身份）。`None` 表示单路径 `single`。
+    pub strategy: Option<String>,
+    /// 上下文身份（可选）：同一句在不同上下文下需要不同缓存时由宿主提供。
+    pub context_id: Option<String>,
+}
+
+impl TranslateOptions {
+    pub fn new(mode: TranslationMode) -> Self {
+        Self {
+            mode,
+            ..Self::default()
+        }
+    }
+
+    pub fn with_text_kind(mut self, kind: TextKind) -> Self {
+        self.text_kind = kind;
+        self
+    }
+
+    pub fn with_paragraph_strategy(mut self, strategy: ParagraphStrategy) -> Self {
+        self.paragraph_strategy = strategy;
+        self
+    }
+
+    pub fn with_strategy(mut self, strategy: impl Into<String>) -> Self {
+        self.strategy = Some(strategy.into());
+        self
+    }
+
+    pub fn with_context_id(mut self, id: impl Into<String>) -> Self {
+        self.context_id = Some(id.into());
+        self
+    }
+}
+
 /// 引擎选择策略。
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub enum TranslationPolicy {
@@ -286,6 +400,8 @@ pub enum TranslationWarning {
     TermMismatch(String),
     /// 经英语中转（设计文档 §5.2，会降低质量并增加延迟）。
     PivotRoute(String),
+    /// 段落/文章中某一段失败，其余段保留（T7.4 增量恢复）。
+    SegmentFailed(String),
 }
 
 // ============================================================

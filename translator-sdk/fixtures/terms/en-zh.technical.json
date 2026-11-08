@@ -581,6 +581,19 @@
         "HTTP",
         "hypertext transfer protocol"
       ]
+    },
+    {
+      "target": "zh-Hans",
+      "preferred": "订单",
+      "variants": [
+        "命令",
+        "定购",
+        "订购"
+      ],
+      "source_variants": [
+        "order",
+        "orders"
+      ]
     }
   ]
 }

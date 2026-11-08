@@ -1,16 +1,16 @@
 # 已知问题清单（集中记录）
 
 > 依据 `docs/57` §6.3：普通问题直接修，边缘问题集中记录；**不允许把已知 Critical 翻译错误长期藏在 C 级**。
-> 本轮状态：P11 质量优先连续开发（2026-11-08）。人工评审整体 **PENDING**，不得自动视为通过。
+> 本轮状态：P12-Q 四级文本与质量开发（2026-11-08）。人工评审整体 **PENDING**，不得自动视为通过。
 
 | ID | 模块 | 问题 | 级别 | 影响 | 状态 |
 |----|------|------|------|------|------|
 | Q-001 | Dictionary | ECDICT 子集对 Google 10k 覆盖 98.98%；缺失项主要是老网页词/成人站点/拼写变体（`sitemap`、`hentai`、`dont`） | C | 低 | Open（接受） |
 | Q-002 | Dictionary | ECDICT 释义顺序与质量继承上游；部分旧/专业释义不够自然 | C | 中 | Open（人工词义评审 PENDING） |
 | Q-003 | NMT | ORT opus-mt 模型存在臆造/追加内容（如 `Good morning.` → `早上好,我刚从伦敦回来`） | B | 高 | Open（待模型/解码改进） |
-| Q-004 | NMT | 模型会丢/改关键数字（`0x80070005` → `0x8007005`、`50%` 丢失、`11 PM` 句被截断） | B | 高 | Open（严格门禁已能拦截） |
-| Q-005 | NMT | 只实现 greedy 解码；beam search / beam width 未实现，无法做 T3 的 beam 对照 | B | 中 | Open（功能缺口） |
-| Q-006 | NMT | 长句未做句级切分；仅靠 token 上限，超长文本可能截断 | B | 中 | Open |
+| Q-004 | NMT | 模型会丢/改关键数字；P12 已用数字保护/句级切分修复旧 4 条，其他数字仍可能出错 | B | 高 | Partially fixed（P12 320 条 fatal 0） |
+| Q-005 | NMT | Beam 已实现（带 cache，beam2 5.4× / beam4 14.5× 延迟），40 条子集 chrF +0.022/+0.028；未默认 | C | 中 | Fixed（opt-in） |
+| Q-006 | Planner | 句级切分只覆盖单一 `and/but`；其他长句结构仍整句翻译，超长文本仍可能截断 | C | 中 | Partially fixed（P12） |
 | Q-007 | NMT | 当前兼容 ONNX 架构的候选只有 opus-mt 这一份；更强的 NLLB/M2M 需要通用架构支持，未评估 | B | 高 | Open（候选研究未完成） |
 | Q-008 | Rules | 缩写展开实验包在 10 条对照上 chrF +0.0155 / BLEU −0.0414，且 `don't` 出现退化；默认包只保留无损 NFKC/弯引号 | C | 中 | Fixed（默认不加载实验包） |
 | Q-009 | Terms | 术语表只能纠正“已知变体”（如 内存泄露→内存泄漏），不能修复任意错译；本轮真实模型未触发违规，故无质量增益证据 | C | 中 | Open（契约测试通过） |
@@ -29,6 +29,25 @@
 | Q-022 | Android | 真实 Android NMT / ARM64 运行 / ncnn / macOS 仍暂停或 BLOCKED | C | 低 | Open（暂停） |
 | Q-023 | Tooling | `quality-runner` ORT 特性需要本地模型目录，不进入默认 CI；模型不入库 | C | 低 | Open（设计选择） |
 | Q-024 | Quality | 长句/多义词的语义错误没有自动检测，只能靠金样本 chrF 与人工评审 | C | 中 | Open |
+| Q-025 | Word | 带上下文选义未实现：`context_id` 只进缓存身份，不把上下文文本交给词典/模型 | B | 中 | Open |
+| Q-026 | Paragraph | 句群策略（每 2 句）在长句组上会截断；50 段对照 group chrF 0.3909、完整率 0.50，低于逐句 0.3987/0.58 | B | 中 | Fixed（Auto 改为 1–2 句整段、≥3 句逐句；Group 仅实验） |
+| Q-027 | Document | 仅支持纯文本/Markdown 的标题、段落、列表、引用、代码块；表格行原样保留不翻译 | C | 中 | Open（符合 docs/62 §7.1 范围） |
+| Q-028 | Document | 标题/列表翻译质量受模型限制（如 `System status` → `系统系统状态`）；结构正确但语义不佳 | B | 中 | Open |
+| Q-029 | NMT | Beam 已实现（带 cache）：beam2 约 5.4×、beam4 约 14.5× 贪心延迟；40 条子集 chrF +0.0222/+0.0280。未设为默认 | C | 中 | Open（opt-in） |
+| Q-030 | Mode | Fast 仍使用同一 NMT 解码，只少语义启发式；无实时流式路径 | C | 低 | Open（合同明确） |
+| Q-031 | Planner | 句级切分只识别 `and/but/so/because/while/although/or`；其他连接结构仍整句翻译 | C | 中 | Open |
+| Q-032 | Quality | 数字保护可能改变语序（`below 50%` → `以下50%`）；已加范围词换位与标点修复，0286 仍略生硬 | B | 中 | Partially fixed |
+| Q-033 | Document | 段落失败时保留原文并加 `SegmentFailed` 警告；只做了代码路径，缺真实故障注入测试 | C | 低 | Open |
+| Q-034 | Planner | 句子切分的缩写表有限，未列出的缩写可能误切 | C | 低 | Open |
+| Q-035 | Quality | 新增 100 词/100 句/50 段/10 篇的参考译文仍为项目自编，人工评审 PENDING | B | 高 | PENDING_HUMAN |
+| Q-036 | Planner | Auto 分类基于句数/段落/Markdown/长度启发式，可能误判边界文本 | C | 低 | Open |
+| Q-037 | Word | 100/100 词表检查是“输出包含参考义项”，不证明上下文中选对义项 | C | 中 | Open |
+| Q-038 | Document | `document_structure` 只检查标题/列表数量与代码块逐字节保留，不评价译文语义 | C | 低 | Open |
+| Q-039 | API | `translate_with_diagnostics_cancellable()` 仍走单路径，Paragraph/Document 的取消不经过 planner | C | 低 | Open |
+| Q-040 | Planner | Auto 对 2 词短语（`good morning`）按 Word 处理；若词典未命中且无 NMT，错误码为 ResourceNotInstalled（已修） | C | 低 | Open |
+| Q-041 | Planner | Auto 分类阈值（3 词/2 句/2 段）是经验值，边界文本可能误判 | C | 低 | Open |
+| Q-042 | Document | 表格行不翻译，只保留原文；`document_structure` 检查不覆盖表格内容 | C | 低 | Open |
+
 
 ## 质量回归集合（必须持续跑）
 

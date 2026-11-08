@@ -19,7 +19,7 @@
 //! （URL、邮箱、`{变量}`）。诊断对象只应回给发起请求的调用方，
 //! 不要原样写进集中式日志——设计文档 §4.1 明确禁止把用户原文写进日志。
 
-use translator_types::{Capability, TranslationMode};
+use translator_types::{Capability, TextKind, TranslationMode};
 
 use crate::quality::QualityReport;
 use crate::terms::{TermPolicy, TermViolation};
@@ -60,6 +60,12 @@ pub struct TranslationDiagnostics {
     pub resource_fingerprint: String,
     /// 实际使用的翻译模式（Precise / Fast）。
     pub mode: TranslationMode,
+    /// 文本类型（Word / Sentence / Paragraph / Document / Auto）。
+    pub text_kind: TextKind,
+    /// 分段/组织策略名（进入缓存身份）。
+    pub strategy: String,
+    /// 上下文身份（可选）。
+    pub context_id: Option<String>,
     /// 译后完整性检查结果；每次翻译都会跑（Fast 只跑数字/占位符）。
     pub quality: Option<QualityReport>,
     /// 规则包存在时才有。
@@ -78,6 +84,7 @@ impl TranslationDiagnostics {
         let mut parts = vec![
             format!("引擎={} 能力={}", self.engine_id, self.capability.as_str()),
             format!("模式={}", self.mode),
+            format!("类型={} 策略={}", self.text_kind, self.strategy),
         ];
         if self.cache_hit {
             parts.push("缓存命中".to_string());

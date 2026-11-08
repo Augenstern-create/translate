@@ -44,3 +44,22 @@ python3 tools/quality/summarize-quality.py \
 ```
 
 > 人工评审列必须由评审人填写；空白不代表通过。`review_status` 未改为 `reviewed` 前，质量结论保持 PENDING。
+
+## P12-Q 证据
+
+| 文件 | 内容 |
+|---|---|
+| `outputs/word-v1.jsonl` | 100 词/短语（词典） |
+| `outputs/sentence-v1-v4.jsonl` | 100 句验证（新保护+句级切分） |
+| `outputs/paragraph3-{whole,sentence,group}.jsonl` | 50 段 A/B/C |
+| `outputs/document-v1-v4.jsonl` | 10 篇 Markdown |
+| `outputs/beam-cached-{1,2,4}.jsonl` | 40 条 beam 对照 |
+| `outputs/critical-fixes-final.jsonl` | 旧 4 条 Critical 修复 |
+| `reports/compare-p12-v4.{json,md}` | P11 vs P12 baseline/full |
+| `reports/compare-sentence-v4.*` | 句子验证集 |
+| `reports/compare-paragraphs.*` | A/B/C |
+| `reports/compare-documents-v4.*` | 文档结构 |
+| `reports/compare-beam-cached.*` | beam 质量/延迟 |
+| `reports/p12-summary.md` | 汇总 |
+
+> 人工评审仍未完成；P12 结论保持 Conditional。

@@ -32,18 +32,23 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 CONFIGS = {
-    "baseline": {"mode": "precise", "policy": "local", "rules": False, "terms": False, "dict": False},
-    "fast": {"mode": "fast", "policy": "local", "rules": False, "terms": False, "dict": False},
-    "rules": {"mode": "precise", "policy": "local", "rules": True, "terms": False, "dict": False},
-    "terms": {"mode": "precise", "policy": "local", "rules": False, "terms": True, "dict": False},
-    "full": {"mode": "precise", "policy": "auto", "rules": True, "terms": True, "dict": True},
-    "full-fast": {"mode": "fast", "policy": "auto", "rules": True, "terms": True, "dict": True},
+    "baseline": {"mode": "precise", "policy": "local", "rules": False, "terms": False, "dict": False, "text_kind": "sentence"},
+    "fast": {"text_kind": "sentence", "mode": "fast", "policy": "local", "rules": False, "terms": False, "dict": False},
+    "rules": {"text_kind": "sentence", "mode": "precise", "policy": "local", "rules": True, "terms": False, "dict": False},
+    "terms": {"text_kind": "sentence", "mode": "precise", "policy": "local", "rules": False, "terms": True, "dict": False},
+    "full": {"text_kind": "sentence", "mode": "precise", "policy": "auto", "rules": True, "terms": True, "dict": True},
+    "full-fast": {"text_kind": "sentence", "mode": "fast", "policy": "auto", "rules": True, "terms": True, "dict": True},
     # 解码上界比较（T3）：只改 max_new_tokens，其它不变。
-    "baseline-96": {"mode": "precise", "policy": "local", "rules": False, "terms": False, "dict": False, "max_new_tokens": 96},
-    "baseline-256": {"mode": "precise", "policy": "local", "rules": False, "terms": False, "dict": False, "max_new_tokens": 256},
+    "baseline-96": {"text_kind": "sentence", "mode": "precise", "policy": "local", "rules": False, "terms": False, "dict": False, "max_new_tokens": 96},
+    "baseline-256": {"text_kind": "sentence", "mode": "precise", "policy": "local", "rules": False, "terms": False, "dict": False, "max_new_tokens": 256},
     # 术语约束从 Warn 改为 Enforce（只改术语策略，其它不变）。
-    "terms-enforce": {"mode": "precise", "policy": "local", "rules": False, "terms": True, "dict": False, "term_policy": "enforce"},
-    "full-enforce": {"mode": "precise", "policy": "auto", "rules": True, "terms": True, "dict": True, "term_policy": "enforce"},
+    "terms-enforce": {"text_kind": "sentence", "mode": "precise", "policy": "local", "rules": False, "terms": True, "dict": False, "term_policy": "enforce"},
+    "full-enforce": {"text_kind": "sentence", "mode": "precise", "policy": "auto", "rules": True, "terms": True, "dict": True, "term_policy": "enforce"},
+    # P12-Q：Auto 四级策略 / 显式句子 / beam 对照
+    "p12-auto": {"mode": "precise", "policy": "auto", "rules": True, "terms": True, "dict": True, "text_kind": "auto"},
+    "p12-sentence": {"mode": "precise", "policy": "auto", "rules": True, "terms": True, "dict": True, "text_kind": "sentence"},
+    "p12-beam2": {"mode": "precise", "policy": "local", "rules": False, "terms": False, "dict": False, "text_kind": "sentence", "beam": 2},
+    "p12-beam4": {"mode": "precise", "policy": "local", "rules": False, "terms": False, "dict": False, "text_kind": "sentence", "beam": 4},
 }
 
 
@@ -103,6 +108,8 @@ def main() -> int:
             "en",
             "--target",
             "zh-Hans",
+            "--text-kind",
+            cfg["text_kind"],
             "--strict-integrity",
             args.strict_integrity,
             "--summary",
@@ -118,6 +125,10 @@ def main() -> int:
             cmd.extend(["--terms", args.terms])
         if cfg.get("term_policy"):
             cmd.extend(["--term-policy", cfg["term_policy"]])
+        if cfg.get("paragraph_strategy"):
+            cmd.extend(["--paragraph-strategy", cfg["paragraph_strategy"]])
+        if cfg.get("beam"):
+            cmd.extend(["--beam", str(cfg["beam"])])
         if args.limit:
             cmd.extend(["--limit", str(args.limit)])
         max_new = cfg.get("max_new_tokens") or args.max_new_tokens

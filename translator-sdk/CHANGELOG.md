@@ -1,5 +1,37 @@
 # 变更记录
 
+## P12-Q — 四级文本架构与英中质量（2026-11-08，报告 `docs/63`，计划 `docs/62`）
+
+### 新增
+
+- **TextKind / TranslateOptions / TranslationPlanner**：Word/Sentence/Paragraph/Document 四级
+  统一 API；`TranslatorBuilder::text_kind()` / `paragraph_strategy()`；单请求
+  `translate_with_options()`；CLI `--text-kind` / `--paragraph-strategy`。
+- **自动结构分析**：句数/段落/Markdown/代码块综合分类；Word 词/短语走精确词典（有空格也查），
+  Sentence 单路径，Paragraph 整段/逐句/句群，Document 恢复标题/列表/引用/代码块。
+- **数字/格式保护**：百分比、十六进制、日期、版本号进入 `ProtectedKind::Number`；保护片段
+  拼接防数字粘连；`repair_output` 处理 `以下50%`→`50%以下`、重复标点。
+- **句级切分**：仅在**单一** `and/but`、第二段像谓语/主语从句时切；避免拆并列名词。
+- **Beam Search**：`OrtNmtConfig::with_beam_width`；带 cache 的实现（beam2 ~5.4×、beam4 ~14.5×
+  贪心延迟）；`quality-runner --beam`。未设为默认。
+- **缓存身份**：`text_kind`、`strategy`、`context_fingerprint` 进入 `CacheKey`。
+- **新样本**：Word/Phrase 100、Sentence 100、Paragraph 50、Document 10；`dictionary_contains`、
+  `paragraph_complete`、`document_structure` 约束与对照脚本。
+
+### 结果（自动）
+
+- 320 条 P11 金样本：fatal **4→0**，数字保真 **0.8983→1.0**，chrF **0.4577→0.4659**、
+  BLEU **0.4546→0.4641**（P12 full，text_kind=Sentence）。
+- 100 条 Sentence 验证：fatal **1→0**，chrF **0.4466→0.4535**。
+- 50 段 A/B/C：逐句 0.3987 最优；句群在长句组截断。Auto：1–2 句整段、≥3 句逐句。
+- 10 篇 Document：结构保真 **10/10**、代码块逐字节保留、无 fatal。
+- Beam 40 条子集：greedy 0.4402 / beam2 0.4624 / beam4 0.4682；默认仍贪心。
+
+### 明确没有做
+
+- Word 上下文选义（Q-025）、表格翻译（Q-027）、DOCX/PDF、Fast 流式、beam 默认化；
+- 人工评审仍 PENDING_HUMAN；模型语义质量仍是瓶颈。
+
 ## P11 — 质量优先连续开发（2026-11-08，报告 `docs/60` `docs/61`，问题清单 `docs/known-issues.md`）
 
 ### 新增

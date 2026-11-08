@@ -71,6 +71,7 @@ impl ProtectedItem {
             ProtectedKind::Email => "email",
             ProtectedKind::TemplateVar => "template_var",
             ProtectedKind::Code => "code",
+            ProtectedKind::Number => "number",
         }
     }
 }
@@ -200,17 +201,35 @@ impl ProtectionPlan {
             match piece {
                 Piece::Plain(_) => {
                     if let Some(text) = iter.next() {
-                        out.push_str(text);
+                        Self::push_piece(&mut out, text);
                     }
                 }
                 Piece::Protected(id) => {
-                    out.push_str(&self.item(*id)?.original);
+                    Self::push_piece(&mut out, &self.item(*id)?.original);
                 }
                 Piece::Literal(text) => out.push_str(text),
             }
         }
         self.verify_structure(&out)?;
         Ok(out)
+    }
+
+    /// 拼接片段时防止两个数字粘连（`10:30` + `2026` → `10:30 2026`）。
+    fn push_piece(out: &mut String, text: &str) {
+        let last_digit = out
+            .chars()
+            .next_back()
+            .map(|c| c.is_ascii_digit())
+            .unwrap_or(false);
+        let first_digit = text
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_digit())
+            .unwrap_or(false);
+        if last_digit && first_digit {
+            out.push(' ');
+        }
+        out.push_str(text);
     }
 
     /// 标记策略：严格还原。

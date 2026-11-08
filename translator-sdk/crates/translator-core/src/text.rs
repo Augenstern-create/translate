@@ -108,6 +108,11 @@ pub enum ProtectedKind {
     TemplateVar,
     /// 反引号代码片段。
     Code,
+    /// 关键数字格式：百分比、十六进制、时间、日期、版本号（T2/W2）。
+    ///
+    /// 只保护这些“丢失即错”的格式，不保护所有数字：把普通数量词全部摘出来
+    /// 会把句子切碎，反而破坏语序与自然度。
+    Number,
 }
 
 /// 原文里的一段受保护区间。
@@ -186,7 +191,19 @@ pub fn protected_spans(input: &str) -> Vec<ProtectedSpan> {
         } else if c == '`' {
             backtick_end(&chars, i).map(|end| (end, ProtectedKind::Code))
         } else if is_email_char(c) && is_token_start(&chars, i) {
-            email_end(&chars, i).map(|end| (end, ProtectedKind::Email))
+            // 邮箱扫描失败时必须继续尝试数字，否则 `50%` 会被当成
+            // “像邮箱但没找到 @” 而整个分支吞掉。
+            email_end(&chars, i)
+                .map(|end| (end, ProtectedKind::Email))
+                .or_else(|| {
+                    if c.is_ascii_digit() {
+                        numeric_end(&chars, i).map(|end| (end, ProtectedKind::Number))
+                    } else {
+                        None
+                    }
+                })
+        } else if c.is_ascii_digit() {
+            numeric_end(&chars, i).map(|end| (end, ProtectedKind::Number))
         } else {
             None
         };
@@ -229,6 +246,72 @@ pub fn protect(input: &str) -> ProtectedText {
         text: out,
         segments,
     }
+}
+
+/// 识别必须原样保留的数字格式。
+///
+/// 只匹配：
+/// - `50%` / `0.05%`
+/// - `0x80070005`
+/// - `07:15` / `7:15:30`
+/// - `2026-12-01` / `2026/12/01`
+/// - 版本号 `2.4.1`（至少两段点号）
+///
+/// 普通整数/小数不在这里保护；它们由译后数字检查负责。
+fn numeric_end(chars: &[(usize, char)], i: usize) -> Option<usize> {
+    let mut j = i;
+
+    // 0x...
+    if chars[i].1 == '0' && i + 1 < chars.len() && matches!(chars[i + 1].1, 'x' | 'X') {
+        j = i + 2;
+        let start = j;
+        while j < chars.len() && chars[j].1.is_ascii_hexdigit() {
+            j += 1;
+        }
+        if j > start {
+            return Some(j);
+        }
+        return None;
+    }
+
+    // 时间 / 日期 / 版本 / 百分比：先吃掉数字与分隔符
+    let mut saw_colon = false;
+    let mut saw_dash = false;
+    let mut saw_slash = false;
+    let mut dots = 0usize;
+    while j < chars.len() {
+        let c = chars[j].1;
+        if c.is_ascii_digit() {
+            j += 1;
+        } else if c == ':' && !saw_colon && j + 1 < chars.len() && chars[j + 1].1.is_ascii_digit() {
+            saw_colon = true;
+            j += 1;
+        } else if c == '-' && j + 1 < chars.len() && chars[j + 1].1.is_ascii_digit() {
+            saw_dash = true;
+            j += 1;
+        } else if c == '/' && j + 1 < chars.len() && chars[j + 1].1.is_ascii_digit() {
+            saw_slash = true;
+            j += 1;
+        } else if c == '.' && j + 1 < chars.len() && chars[j + 1].1.is_ascii_digit() {
+            dots += 1;
+            j += 1;
+        } else {
+            break;
+        }
+    }
+
+    // 百分比（允许数字与 % 之间没有空格；有空格时只保护数字部分）
+    if j < chars.len() && chars[j].1 == '%' {
+        return Some(j + 1);
+    }
+    // 冒号时间（07:15）不单独保护：模型通常会把 07:15 写成 7: 15，
+    // 数字检查已能识别；强行分段反而会让 “10:30 AM on March 5” 这类
+    // 日期时间短语被拆坏。日期/版本/百分比仍然保护。
+    let _ = saw_colon;
+    if saw_dash || saw_slash || dots >= 2 {
+        return Some(j);
+    }
+    None
 }
 
 fn starts_with_url(chars: &[(usize, char)], i: usize) -> bool {
@@ -463,5 +546,18 @@ mod tests {
         let p = protect("hello {name}");
         let (_, missing) = restore(&p, "你好"); // 引擎吞掉了标记
         assert_eq!(missing, vec!["{name}".to_string()]);
+    }
+    #[test]
+    fn 关键数字格式被保护并可原样还原() {
+        let input = "Usage 50% on 2026-12-01, code 0x80070005, version 2.4.1.";
+        let protected = protect(input);
+        assert_eq!(protected.segments.len(), 4, "{:?}", protected.segments);
+        assert!(protected.segments.iter().any(|s| s == "50%"));
+        assert!(protected.segments.iter().any(|s| s == "2026-12-01"));
+        assert!(protected.segments.iter().any(|s| s == "0x80070005"));
+        assert!(protected.segments.iter().any(|s| s == "2.4.1"));
+        let (restored, missing) = restore(&protected, &protected.text);
+        assert!(missing.is_empty());
+        assert_eq!(restored, input);
     }
 }

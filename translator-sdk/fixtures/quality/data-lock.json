@@ -31,5 +31,43 @@
       "license": "MIT",
       "usage": "local-research"
     }
+  ],
+  "p12_datasets": [
+    {
+      "file": "word-phrases-v1.jsonl",
+      "bytes": 21440,
+      "sha256": "28b2fffbef7aed05ca54a2037bb43534e1720b7ae63fb7e182a7a2079790fd41",
+      "usage": "local-evaluation"
+    },
+    {
+      "file": "sentence-v1.jsonl",
+      "bytes": 27666,
+      "sha256": "f84b2015796eed2ce3421e91a802afc50641713097f227ff4017cb5d68ad9f1c",
+      "usage": "local-evaluation"
+    },
+    {
+      "file": "paragraph-v1.jsonl",
+      "bytes": 26053,
+      "sha256": "c389eac779c7c6d3116112bdf9c0323f524c3ec2922e736c95796f64b12aef39",
+      "usage": "local-evaluation"
+    },
+    {
+      "file": "document-v1.jsonl",
+      "bytes": 5114,
+      "sha256": "c20c4a083d8aedae7ab40b01a2ae7144fcd3808ee94d297b5924a8a2a768855b",
+      "usage": "local-evaluation"
+    },
+    {
+      "file": "beam-subset.jsonl",
+      "bytes": 12296,
+      "sha256": "9730c2eb70e8010ee4be5ac5b70ed00c14b0bce0d0dcdb8e62eba733cfadaee6",
+      "usage": "local-evaluation"
+    },
+    {
+      "file": "critical-fixes.jsonl",
+      "bytes": 952,
+      "sha256": "7364bfaf72c5242de73814398841074631c038febff02d9f4f2ef42aad21075a",
+      "usage": "local-evaluation"
+    }
   ]
 }

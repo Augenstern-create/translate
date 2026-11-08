@@ -109,7 +109,7 @@ def py_numbers(text: str) -> list[str]:
     return out
 
 
-def constraint_results(source: str, output: str, constraints: list[str]) -> dict:
+def constraint_results(source: str, output: str, constraints: list[str], reference: str = "") -> dict:
     output = output or ""
     results = {}
     if "url_preserved" in constraints:
@@ -138,6 +138,21 @@ def constraint_results(source: str, output: str, constraints: list[str]) -> dict
         )
     if "target_language_zh" in constraints:
         results["target_language_zh"] = bool(CJK_RE.search(output))
+    if "dictionary_contains" in constraints:
+        expected = reference.split("|")[0] if reference else ""
+        results["dictionary_contains"] = bool(expected and expected in output)
+    if "paragraph_complete" in constraints:
+        source_marks = len(re.findall(r"[.!?。！？]", source))
+        output_marks = len(re.findall(r"[.!?。！？]", output))
+        results["paragraph_complete"] = output_marks >= max(1, source_marks - 1)
+    if "document_structure" in constraints:
+        code = re.findall(r"```[\s\S]*?```", source)
+        code_ok = all(block in output for block in code)
+        headings = len(re.findall(r"(?m)^#{1,6}\s", source))
+        lists = len(re.findall(r"(?m)^\s*(?:[-*+]|\d+\.)\s", source))
+        headings_out = len(re.findall(r"(?m)^#{1,6}\s", output))
+        lists_out = len(re.findall(r"(?m)^\s*(?:[-*+]|\d+\.)\s", output))
+        results["document_structure"] = code_ok and headings_out >= headings and lists_out >= lists
     return results
 
 
@@ -173,6 +188,12 @@ def evaluate(golden: dict[str, dict], output: dict[str, dict]) -> dict:
     placeholder_pass = 0
     url_total = 0
     url_pass = 0
+    dictionary_total = 0
+    dictionary_pass = 0
+    paragraph_total = 0
+    paragraph_pass = 0
+    document_total = 0
+    document_pass = 0
     negation_total = 0
     negation_pass = 0
     target_total = 0
@@ -196,7 +217,9 @@ def evaluate(golden: dict[str, dict], output: dict[str, dict]) -> dict:
                 critical_issues += 1
         number_total += quality.get("numbers_in_source") or 0
         number_kept += quality.get("numbers_preserved") or 0
-        constraints = constraint_results(g["source"], hyp, g.get("critical_constraints") or [])
+        constraints = constraint_results(
+            g["source"], hyp, g.get("critical_constraints") or [], g.get("reference", "")
+        )
         for key, ok in constraints.items():
             constraint_total += 1
             constraint_pass += int(ok)
@@ -206,6 +229,15 @@ def evaluate(golden: dict[str, dict], output: dict[str, dict]) -> dict:
             if key == "url_preserved":
                 url_total += 1
                 url_pass += int(ok)
+            if key == "dictionary_contains":
+                dictionary_total += 1
+                dictionary_pass += int(ok)
+            if key == "paragraph_complete":
+                paragraph_total += 1
+                paragraph_pass += int(ok)
+            if key == "document_structure":
+                document_total += 1
+                document_pass += int(ok)
             if key == "negation_preserved":
                 negation_total += 1
                 negation_pass += int(ok)
@@ -241,6 +273,9 @@ def evaluate(golden: dict[str, dict], output: dict[str, dict]) -> dict:
         "constraint_accuracy": round(constraint_pass / constraint_total, 4) if constraint_total else None,
         "placeholder_accuracy": round(placeholder_pass / placeholder_total, 4) if placeholder_total else None,
         "url_accuracy": round(url_pass / url_total, 4) if url_total else None,
+        "dictionary_accuracy": round(dictionary_pass / dictionary_total, 4) if dictionary_total else None,
+        "paragraph_completeness": round(paragraph_pass / paragraph_total, 4) if paragraph_total else None,
+        "document_structure_accuracy": round(document_pass / document_total, 4) if document_total else None,
         "negation_accuracy": round(negation_pass / negation_total, 4) if negation_total else None,
         "target_language_accuracy": round(target_pass / target_total, 4) if target_total else None,
         "per_category": {

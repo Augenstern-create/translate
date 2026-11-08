@@ -126,6 +126,13 @@ impl QualityReport {
             .any(|issue| issue.severity == QualitySeverity::Critical)
     }
 
+    /// 合并另一个片段/单元的检查结果（段落、文档聚合用）。
+    pub fn merge(&mut self, other: QualityReport) {
+        self.issues.extend(other.issues);
+        self.numbers_in_source += other.numbers_in_source;
+        self.numbers_preserved += other.numbers_preserved;
+    }
+
     pub fn count(&self, severity: QualitySeverity) -> usize {
         self.issues
             .iter()
@@ -291,6 +298,142 @@ struct NumberToken {
     raw: String,
     canonical: String,
     critical: bool,
+}
+
+/// 受控的译后修复：只处理**确定性的格式/语序**问题，不改写语义。
+///
+/// 1. `以下50%` / `以上20%` → `50%以下` / `20%以上`（数字与汉语范围词换位）；
+/// 2. 去掉数字/字母后多余的空格标点，以及 `. .` / `。 。` 这类重复标点。
+///
+/// 这不是“翻译修正器”：它不会猜一个缺失的动词，也不会改术语。
+pub fn repair_output(output: &str) -> String {
+    let reordered = reorder_measure_phrases(output);
+    collapse_spaced_punctuation(&reordered)
+}
+
+fn reorder_measure_phrases(input: &str) -> String {
+    let mut text = input.to_string();
+    for phrase in ["以下", "以上", "以内", "之外", "之下", "之上"] {
+        let Some(pos) = text.find(phrase) else {
+            continue;
+        };
+        let after = pos + phrase.len();
+        let rest = &text[after..];
+        let Some(len) = measure_number_len(rest) else {
+            continue;
+        };
+        let number = rest[..len].to_string();
+        // 单位跟在数字后：`20度` / `5公里` / `3倍`。单位应留在数字旁边，
+        // 范围词放到单位之后（20度以上），而不是插在数字和单位之间。
+        let tail = &rest[len..];
+        let unit_len = measure_unit_len(tail);
+        let unit = &tail[..unit_len];
+        let mut rebuilt = String::with_capacity(text.len());
+        rebuilt.push_str(&text[..pos]);
+        rebuilt.push_str(&number);
+        rebuilt.push_str(unit);
+        rebuilt.push_str(phrase);
+        rebuilt.push_str(&tail[unit_len..]);
+        text = rebuilt;
+    }
+    text
+}
+
+/// 量词/百分比数字长度（字节）：数字，可选小数部分，可选 `%`。
+fn measure_number_len(rest: &str) -> Option<usize> {
+    let bytes = rest.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() && bytes[i].is_ascii_digit() {
+        i += 1;
+    }
+    if i == 0 {
+        return None;
+    }
+    if i + 1 < bytes.len() && bytes[i] == b'.' && bytes[i + 1].is_ascii_digit() {
+        i += 1;
+        while i < bytes.len() && bytes[i].is_ascii_digit() {
+            i += 1;
+        }
+    }
+    if i < bytes.len() && bytes[i] == b'%' {
+        i += 1;
+    }
+    Some(i)
+}
+
+fn measure_unit_len(rest: &str) -> usize {
+    for unit in [
+        "公里",
+        "公斤",
+        "厘米",
+        "毫米",
+        "千米",
+        "小时",
+        "分钟",
+        "毫秒",
+        "摄氏度",
+        "度",
+        "米",
+        "克",
+        "元",
+        "岁",
+        "倍",
+        "分",
+        "秒",
+        "天",
+        "年",
+        "个",
+        "次",
+        "人",
+        "件",
+        "台",
+        "位",
+        "升",
+        "吨",
+        "瓦",
+        "伏",
+        "安",
+        "页",
+        "行",
+        "条",
+        "张",
+    ] {
+        if rest.starts_with(unit) {
+            return unit.len();
+        }
+    }
+    0
+}
+
+fn collapse_spaced_punctuation(input: &str) -> String {
+    const PUNCT: &[char] = &[
+        '.', ',', '!', '?', ';', ':', '。', '，', '！', '？', '；', '：',
+    ];
+    let mut out = String::with_capacity(input.len());
+    let mut space_since_last = false;
+    for c in input.chars() {
+        if c.is_whitespace() {
+            out.push(c);
+            space_since_last = true;
+            continue;
+        }
+        if PUNCT.contains(&c) {
+            let last = out.chars().rev().find(|x| !x.is_whitespace());
+            if space_since_last && last == Some(c) {
+                while out.ends_with(' ') {
+                    out.pop();
+                }
+                space_since_last = false;
+                continue;
+            }
+            while out.ends_with(' ') {
+                out.pop();
+            }
+        }
+        out.push(c);
+        space_since_last = false;
+    }
+    out
 }
 
 /// 提取数字 token。
@@ -589,6 +732,16 @@ mod tests {
         assert_eq!(report.numbers_in_source, 3);
         assert_eq!(report.numbers_preserved, 3, "{report:?}");
         assert!(!report.has_fatal(), "{report:?}");
+    }
+
+    #[test]
+    fn 修复百分比与范围词顺序() {
+        assert_eq!(
+            repair_output("CPU使用率维持在以下50%. ."),
+            "CPU使用率维持在50%以下."
+        );
+        assert_eq!(repair_output("温度在以上20度。 。"), "温度在20度以上。");
+        assert_eq!(repair_output("版本是2.4.1..."), "版本是2.4.1...");
     }
 
     #[test]

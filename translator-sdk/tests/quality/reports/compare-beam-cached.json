@@ -1,0 +1,2245 @@
+{
+  "schema": "translation-quality/v1",
+  "golden": "fixtures/quality/beam-subset.jsonl",
+  "sample_count": 40,
+  "baseline": "greedy",
+  "paths": {
+    "greedy": "tests/quality/outputs/beam-cached-1.jsonl",
+    "beam2": "tests/quality/outputs/beam-cached-2.jsonl",
+    "beam4": "tests/quality/outputs/beam-cached-4.jsonl"
+  },
+  "runs": {
+    "greedy": {
+      "samples": 40,
+      "errors": 0,
+      "error_rate": 0.0,
+      "fatal_integrity": 0,
+      "critical_quality_issues": 0,
+      "chrf": 0.4402,
+      "bleu": 0.4658,
+      "exact_match": 0.1,
+      "number_fidelity": 1.0,
+      "constraint_accuracy": 1.0,
+      "placeholder_accuracy": null,
+      "url_accuracy": null,
+      "dictionary_accuracy": null,
+      "paragraph_completeness": null,
+      "document_structure_accuracy": null,
+      "negation_accuracy": null,
+      "target_language_accuracy": 1.0,
+      "per_category": {
+        "long": 0.3623,
+        "numbers_units": 0.57
+      },
+      "rows": [
+        {
+          "id": "en-zh-0206",
+          "category": "long",
+          "source": "The library opens at nine in the morning and closes at eight in the evening, but during the summer it stays open until ten so that students can prepare for their exams.",
+          "reference": "图书馆早上九点开门，晚上八点关门；夏季则一直开放到十点，方便学生备考。",
+          "output": "图书馆早上9点开放，晚上8点关闭,夏天10点开放,这样学生可以准备考试.",
+          "chrf": 0.1841,
+          "bleu": 0.1878,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": [
+            {
+              "detail": "译文多出数字 9",
+              "kind": "number_added",
+              "severity": "minor"
+            },
+            {
+              "detail": "译文多出数字 8",
+              "kind": "number_added",
+              "severity": "minor"
+            },
+            {
+              "detail": "译文多出数字 10",
+              "kind": "number_added",
+              "severity": "minor"
+            }
+          ]
+        },
+        {
+          "id": "en-zh-0207",
+          "category": "long",
+          "source": "Although the weather forecast said it would be sunny, heavy rain started in the afternoon and we had to cancel the picnic.",
+          "reference": "虽然天气预报说是晴天，但下午下起了大雨，我们不得不取消野餐。",
+          "output": "虽然天气预报说天气晴晴,但下午开始下大雨，不得不取消野餐.",
+          "chrf": 0.4086,
+          "bleu": 0.4823,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0208",
+          "category": "long",
+          "source": "The new policy requires all employees to complete a security training course before they can access the internal network.",
+          "reference": "新政策要求所有员工在访问内部网络之前完成安全培训课程。",
+          "output": "新政策要求所有雇员在进入内部网络之前完成安全培训课程。",
+          "chrf": 0.6998,
+          "bleu": 0.7569,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0209",
+          "category": "long",
+          "source": "The company announced that it will invest more than two billion yuan in renewable energy projects over the next five years.",
+          "reference": "公司宣布未来五年将在可再生能源项目上投资超过二十亿元。",
+          "output": "该公司宣布,在未来五年内,它将在可再生能源项目上投资20多亿元。",
+          "chrf": 0.53,
+          "bleu": 0.5376,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": [
+            {
+              "detail": "译文多出数字 20",
+              "kind": "number_added",
+              "severity": "minor"
+            }
+          ]
+        },
+        {
+          "id": "en-zh-0210",
+          "category": "long",
+          "source": "When the customer reported the bug, the support team reproduced it within an hour and sent a fix to the development team.",
+          "reference": "客户报告该缺陷后，支持团队在一小时内复现了它，并把修复方案发给了开发团队。",
+          "output": "当客户报告错误时,支助组在一小时之内复制了错误,并向开发组发送了解决办法。",
+          "chrf": 0.147,
+          "bleu": 0.1642,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0211",
+          "category": "long",
+          "source": "The report shows that remote work has increased productivity for some teams while making communication more difficult for others.",
+          "reference": "报告显示，远程办公提高了一些团队的生产力，却让另一些团队的沟通变得更加困难。",
+          "output": "报告表明,一些小组的远程工作提高了生产率，使其他人更难沟通,同时使其他人更加难以沟通.",
+          "chrf": 0.1165,
+          "bleu": 0.0,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0212",
+          "category": "long",
+          "source": "If you want to improve your writing, you should read more, write every day, and ask someone you trust to review your work.",
+          "reference": "如果你想提高写作水平，就应该多读书、每天写作，并请信任的人审阅你的作品。",
+          "output": "如果您想改进写作, 您应该多读, 每天写, 并要求您信任的人来审查您的工作。",
+          "chrf": 0.1805,
+          "bleu": 0.1966,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0213",
+          "category": "long",
+          "source": "The museum's collection includes paintings from the seventeenth century as well as works by contemporary artists from Asia and Africa.",
+          "reference": "博物馆的藏品包括十七世纪的绘画，以及来自亚洲和非洲的当代艺术家作品。",
+          "output": "博物馆收藏的收藏品包括十七世纪的绘画以及亚洲和非洲当代艺术家的作品。",
+          "chrf": 0.5057,
+          "bleu": 0.6012,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0214",
+          "category": "long",
+          "source": "The software update fixes several security problems, improves battery life, and adds support for three new languages.",
+          "reference": "这次软件更新修复了几个安全问题，改善了电池续航，并增加了对三种新语言的支持。",
+          "output": "软件更新解决了几个安全问题,改善了电池使用,增加了三种新语言的支持。",
+          "chrf": 0.4562,
+          "bleu": 0.5427,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0215",
+          "category": "long",
+          "source": "After the earthquake, volunteers from neighboring cities brought food, water, and medical supplies to the affected area.",
+          "reference": "地震发生后，邻近城市的志愿者把食物、水和医疗物资运到了受灾地区。",
+          "output": "地震后,来自邻近城市的志愿者将食物、水和医疗用品带往灾区。",
+          "chrf": 0.383,
+          "bleu": 0.4383,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0216",
+          "category": "long",
+          "source": "The teacher explained the problem again, but some students still did not understand why the answer was correct.",
+          "reference": "老师又解释了一遍这道题，但有些学生仍然不明白为什么这个答案是正确的。",
+          "output": "老师又解释这个问题了，但有些学生仍不明白为什么答案正确.",
+          "chrf": 0.3944,
+          "bleu": 0.4664,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0217",
+          "category": "long",
+          "source": "The train was delayed for two hours because of heavy snow, so we missed our connecting flight.",
+          "reference": "由于大雪，火车晚点了两个小时，所以我们错过了转机航班。",
+          "output": "火车因大雪而推迟了两个小时，错过连接航班.",
+          "chrf": 0.2242,
+          "bleu": 0.2491,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0218",
+          "category": "long",
+          "source": "The research team collected data from more than five hundred participants over a period of eighteen months.",
+          "reference": "研究团队在十八个月的时间里收集了五百多名参与者的数据。",
+          "output": "研究小组在18个月期间收集了500多名参加者的数据。",
+          "chrf": 0.2252,
+          "bleu": 0.2526,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": [
+            {
+              "detail": "译文多出数字 18",
+              "kind": "number_added",
+              "severity": "minor"
+            },
+            {
+              "detail": "译文多出数字 500",
+              "kind": "number_added",
+              "severity": "minor"
+            }
+          ]
+        },
+        {
+          "id": "en-zh-0219",
+          "category": "long",
+          "source": "Please read the instructions carefully before you install the application, and make sure that your device meets the minimum requirements.",
+          "reference": "安装应用程序前请仔细阅读说明，并确保你的设备满足最低要求。",
+          "output": "请在安装应用程序前仔细阅读说明,并确保您的设备符合最低要求。",
+          "chrf": 0.4584,
+          "bleu": 0.5492,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0220",
+          "category": "long",
+          "source": "The restaurant was crowded, the service was slow, and the food was cold, but we still enjoyed the evening because we were together.",
+          "reference": "餐厅很拥挤，服务很慢，菜也凉了，但我们仍然享受那个夜晚，因为我们在一起。",
+          "output": "餐厅人多,服务慢慢，食物是寒冷的, 但我们仍然享受 夜晚因为我们在一起.",
+          "chrf": 0.324,
+          "bleu": 0.3767,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0221",
+          "category": "long",
+          "source": "The government plans to build a new high-speed railway that will connect the capital with the southern coast.",
+          "reference": "政府计划修建一条新的高速铁路，把首都与南部海岸连接起来。",
+          "output": "政府计划修建一条新的高速铁路, 连接首都与南部海岸。",
+          "chrf": 0.6607,
+          "bleu": 0.7115,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0222",
+          "category": "long",
+          "source": "She had been working on the project for six months when she discovered that the original data was incomplete.",
+          "reference": "她在这个项目上已经工作了六个月，才发现原始数据并不完整。",
+          "output": "她六个月来一直在该项目上工作,当时她发现原始数据不完整。",
+          "chrf": 0.2984,
+          "bleu": 0.3607,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0223",
+          "category": "long",
+          "source": "The instructions say that you should unplug the device before cleaning it and wait until it has cooled down completely.",
+          "reference": "说明要求清洁设备前先拔掉电源，并等到它完全冷却。",
+          "output": "指示上说,在清洗之前,你应该拔掉装置,然后等到它完全冷却。",
+          "chrf": 0.2803,
+          "bleu": 0.272,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0224",
+          "category": "long",
+          "source": "The conference will bring together researchers, engineers, and product managers to discuss the future of artificial intelligence.",
+          "reference": "这次会议将汇集研究人员、工程师和产品经理，共同讨论人工智能的未来。",
+          "output": "这次会议将召集研究人员、工程师和产品管理人员讨论人造情报的未来。",
+          "chrf": 0.4796,
+          "bleu": 0.56,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0225",
+          "category": "long",
+          "source": "Even though the price was higher than we expected, we decided to buy the house because it was close to the school.",
+          "reference": "尽管价格比我们预期的高，我们还是决定买下那套房子，因为它离学校很近。",
+          "output": "虽然价格比我们预期的要高 我们决定买房子，因为它离学校很近.",
+          "chrf": 0.5055,
+          "bleu": 0.5574,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0226",
+          "category": "long",
+          "source": "The application crashed when the user opened a file that contained more than ten thousand records.",
+          "reference": "用户打开一个包含一万多条记录的文件时，应用程序崩溃了。",
+          "output": "当用户打开包含一万多记录的文件时程序崩溃。",
+          "chrf": 0.3892,
+          "bleu": 0.4925,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0227",
+          "category": "long",
+          "source": "The team spent several weeks optimizing the query, and the response time eventually dropped from 3 seconds to 200 milliseconds.",
+          "reference": "团队花了几周时间优化查询，响应时间最终从 3 秒降到了 200 毫秒。",
+          "output": "调查队花了几个星期优化查询,最后反应时间从3秒钟下降到200毫秒。",
+          "chrf": 0.3143,
+          "bleu": 0.37,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0228",
+          "category": "long",
+          "source": "The article argues that cities should invest in public transportation rather than building more roads for private cars.",
+          "reference": "这篇文章认为，城市应该投资公共交通，而不是为私家车修建更多道路。",
+          "output": "文章认为,城市应投资于公共交通,而不是为私人汽车修建更多道路。",
+          "chrf": 0.4235,
+          "bleu": 0.5258,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0229",
+          "category": "long",
+          "source": "We need to confirm the delivery address, the contact number, and the preferred delivery time before we can process your order.",
+          "reference": "我们需要确认送货地址、联系电话和首选送货时间，然后才能处理你的订单。",
+          "output": "我们需要确认发送地址 联系号码，优先交付时间,然后才能处理您的订单.",
+          "chrf": 0.3032,
+          "bleu": 0.3602,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0230",
+          "category": "long",
+          "source": "The old bridge was closed for repairs, so drivers had to take a longer route through the neighboring town.",
+          "reference": "老桥因维修关闭，司机们不得不绕道穿过邻近的城镇。",
+          "output": "旧桥被关闭维修，索德瑞人不得不走较长的路经过邻近城镇.",
+          "chrf": 0.1658,
+          "bleu": 0.0,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0281",
+          "category": "numbers_units",
+          "source": "The meeting is scheduled for 10:30 AM on March 5, 2026.",
+          "reference": "会议定于2026年3月5日上午10:30举行。",
+          "output": "会议定于2026年3月5日上午10时30分举行。",
+          "chrf": 0.7647,
+          "bleu": 0.7784,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": [
+            {
+              "detail": "译文多出数字 3",
+              "kind": "number_added",
+              "severity": "minor"
+            }
+          ]
+        },
+        {
+          "id": "en-zh-0282",
+          "category": "numbers_units",
+          "source": "The package weighs 2.5 kilograms.",
+          "reference": "包裹重2.5公斤。",
+          "output": "包件重2.5公斤。",
+          "chrf": 0.6866,
+          "bleu": 0.7506,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0283",
+          "category": "numbers_units",
+          "source": "The temperature dropped to -8°C last night.",
+          "reference": "昨晚气温降到了-8°C。",
+          "output": "昨晚温度降到8摄氏度",
+          "chrf": 0.1177,
+          "bleu": 0.0,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0284",
+          "category": "numbers_units",
+          "source": "Add 3 eggs and 200 grams of sugar.",
+          "reference": "加入3个鸡蛋和200克糖。",
+          "output": "加3个蛋和200克糖",
+          "chrf": 0.4924,
+          "bleu": 0.5584,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0285",
+          "category": "numbers_units",
+          "source": "The flight takes about 12 hours and 45 minutes.",
+          "reference": "飞行大约需要12小时45分钟。",
+          "output": "飞行大约需要12小时45分钟。",
+          "chrf": 1.0,
+          "bleu": 1.0,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0286",
+          "category": "numbers_units",
+          "source": "The discount is 15% for orders over $100.",
+          "reference": "订单超过100美元可享受15%的折扣。",
+          "output": "折扣是15%超过100美元的命令",
+          "chrf": 0.3678,
+          "bleu": 0.424,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0287",
+          "category": "numbers_units",
+          "source": "The file size is 4.7 GB.",
+          "reference": "文件大小为4.7 GB。",
+          "output": "文件大小为4.7GB。",
+          "chrf": 1.0,
+          "bleu": 1.0,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0288",
+          "category": "numbers_units",
+          "source": "The battery lasts up to 18 hours.",
+          "reference": "电池最长可使用18小时。",
+          "output": "电池持续18小时。",
+          "chrf": 0.2979,
+          "bleu": 0.385,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0289",
+          "category": "numbers_units",
+          "source": "The server has 64 CPU cores and 512 GB of memory.",
+          "reference": "服务器有64个CPU核心和512 GB内存。",
+          "output": "服务器有64个CPU核心和512GB内存。",
+          "chrf": 1.0,
+          "bleu": 1.0,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0290",
+          "category": "numbers_units",
+          "source": "The release date is 2026-12-01.",
+          "reference": "发布日期是2026-12-01。",
+          "output": "释放日期是2026-12-01.",
+          "chrf": 0.7741,
+          "bleu": 0.7917,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0291",
+          "category": "numbers_units",
+          "source": "Please send 5 copies to room 302.",
+          "reference": "请送5份到302房间。",
+          "output": "请将5份副本送到302室。",
+          "chrf": 0.251,
+          "bleu": 0.2545,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0292",
+          "category": "numbers_units",
+          "source": "The speed limit is 120 km/h.",
+          "reference": "限速为120 km/h。",
+          "output": "速度限制为120公里/小时。",
+          "chrf": 0.2162,
+          "bleu": 0.2114,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0293",
+          "category": "numbers_units",
+          "source": "The recipe calls for 1/2 cup of milk.",
+          "reference": "食谱需要1/2杯牛奶。",
+          "output": "食谱呼吁1/2牛奶杯,",
+          "chrf": 0.2064,
+          "bleu": 0.0,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0294",
+          "category": "numbers_units",
+          "source": "The company was founded in 1998.",
+          "reference": "该公司成立于1998年。",
+          "output": "该公司成立于1998年。",
+          "chrf": 1.0,
+          "bleu": 1.0,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0295",
+          "category": "numbers_units",
+          "source": "The train departs at 07:15 and arrives at 09:40.",
+          "reference": "火车07:15出发，09:40到达。",
+          "output": "火车于7: 15出发,9: 40抵达。",
+          "chrf": 0.3758,
+          "bleu": 0.4651,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        }
+      ]
+    },
+    "beam2": {
+      "samples": 40,
+      "errors": 0,
+      "error_rate": 0.0,
+      "fatal_integrity": 0,
+      "critical_quality_issues": 0,
+      "chrf": 0.4624,
+      "bleu": 0.4885,
+      "exact_match": 0.075,
+      "number_fidelity": 1.0,
+      "constraint_accuracy": 1.0,
+      "placeholder_accuracy": null,
+      "url_accuracy": null,
+      "dictionary_accuracy": null,
+      "paragraph_completeness": null,
+      "document_structure_accuracy": null,
+      "negation_accuracy": null,
+      "target_language_accuracy": 1.0,
+      "per_category": {
+        "long": 0.3794,
+        "numbers_units": 0.6007
+      },
+      "rows": [
+        {
+          "id": "en-zh-0206",
+          "category": "long",
+          "source": "The library opens at nine in the morning and closes at eight in the evening, but during the summer it stays open until ten so that students can prepare for their exams.",
+          "reference": "图书馆早上九点开门，晚上八点关门；夏季则一直开放到十点，方便学生备考。",
+          "output": "图书馆早上9点开门，晚上8点关闭,夏天开放到10点,这样学生可以准备考试.",
+          "chrf": 0.2585,
+          "bleu": 0.2969,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": [
+            {
+              "detail": "译文多出数字 9",
+              "kind": "number_added",
+              "severity": "minor"
+            },
+            {
+              "detail": "译文多出数字 8",
+              "kind": "number_added",
+              "severity": "minor"
+            },
+            {
+              "detail": "译文多出数字 10",
+              "kind": "number_added",
+              "severity": "minor"
+            }
+          ]
+        },
+        {
+          "id": "en-zh-0207",
+          "category": "long",
+          "source": "Although the weather forecast said it would be sunny, heavy rain started in the afternoon and we had to cancel the picnic.",
+          "reference": "虽然天气预报说是晴天，但下午下起了大雨，我们不得不取消野餐。",
+          "output": "虽然天气预报说天气晴晴,但下午开始下大雨，我们不得不取消野餐.",
+          "chrf": 0.5501,
+          "bleu": 0.6014,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0208",
+          "category": "long",
+          "source": "The new policy requires all employees to complete a security training course before they can access the internal network.",
+          "reference": "新政策要求所有员工在访问内部网络之前完成安全培训课程。",
+          "output": "新政策要求所有雇员在进入内部网络之前完成安全培训课程。",
+          "chrf": 0.6998,
+          "bleu": 0.7569,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0209",
+          "category": "long",
+          "source": "The company announced that it will invest more than two billion yuan in renewable energy projects over the next five years.",
+          "reference": "公司宣布未来五年将在可再生能源项目上投资超过二十亿元。",
+          "output": "该公司宣布,在未来五年内,它将在可再生能源项目上投资20多亿元。",
+          "chrf": 0.53,
+          "bleu": 0.5376,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": [
+            {
+              "detail": "译文多出数字 20",
+              "kind": "number_added",
+              "severity": "minor"
+            }
+          ]
+        },
+        {
+          "id": "en-zh-0210",
+          "category": "long",
+          "source": "When the customer reported the bug, the support team reproduced it within an hour and sent a fix to the development team.",
+          "reference": "客户报告该缺陷后，支持团队在一小时内复现了它，并把修复方案发给了开发团队。",
+          "output": "当客户报告错误时,支助组在1小时内复制了错误,并向开发组发送了解决办法。",
+          "chrf": 0.1386,
+          "bleu": 0.1567,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": [
+            {
+              "detail": "译文多出数字 1",
+              "kind": "number_added",
+              "severity": "minor"
+            }
+          ]
+        },
+        {
+          "id": "en-zh-0211",
+          "category": "long",
+          "source": "The report shows that remote work has increased productivity for some teams while making communication more difficult for others.",
+          "reference": "报告显示，远程办公提高了一些团队的生产力，却让另一些团队的沟通变得更加困难。",
+          "output": "报告表明,一些小组的远程工作提高了生产率，使其他人更难以沟通,同时使其他人更加难以沟通.",
+          "chrf": 0.1159,
+          "bleu": 0.0,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0212",
+          "category": "long",
+          "source": "If you want to improve your writing, you should read more, write every day, and ask someone you trust to review your work.",
+          "reference": "如果你想提高写作水平，就应该多读书、每天写作，并请信任的人审阅你的作品。",
+          "output": "如果您想改进写作, 您应该多读, 每天写, 并要求您信任的人审查您的工作。",
+          "chrf": 0.2017,
+          "bleu": 0.2335,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0213",
+          "category": "long",
+          "source": "The museum's collection includes paintings from the seventeenth century as well as works by contemporary artists from Asia and Africa.",
+          "reference": "博物馆的藏品包括十七世纪的绘画，以及来自亚洲和非洲的当代艺术家作品。",
+          "output": "博物馆收藏的收藏品包括十七世纪的绘画以及亚洲和非洲当代艺术家的作品。",
+          "chrf": 0.5057,
+          "bleu": 0.6012,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0214",
+          "category": "long",
+          "source": "The software update fixes several security problems, improves battery life, and adds support for three new languages.",
+          "reference": "这次软件更新修复了几个安全问题，改善了电池续航，并增加了对三种新语言的支持。",
+          "output": "软件更新解决了若干安全问题,改善了电池使用,并为三种新语言增加了支持。",
+          "chrf": 0.2938,
+          "bleu": 0.3727,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0215",
+          "category": "long",
+          "source": "After the earthquake, volunteers from neighboring cities brought food, water, and medical supplies to the affected area.",
+          "reference": "地震发生后，邻近城市的志愿者把食物、水和医疗物资运到了受灾地区。",
+          "output": "地震发生后,来自邻近城市的志愿者向灾区运送了食物、水和医疗用品。",
+          "chrf": 0.4411,
+          "bleu": 0.5248,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0216",
+          "category": "long",
+          "source": "The teacher explained the problem again, but some students still did not understand why the answer was correct.",
+          "reference": "老师又解释了一遍这道题，但有些学生仍然不明白为什么这个答案是正确的。",
+          "output": "老师又解释了这个问题，但有些学生仍不明白为什么答案正确.",
+          "chrf": 0.4505,
+          "bleu": 0.5232,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0217",
+          "category": "long",
+          "source": "The train was delayed for two hours because of heavy snow, so we missed our connecting flight.",
+          "reference": "由于大雪，火车晚点了两个小时，所以我们错过了转机航班。",
+          "output": "由于大雪,火车被推迟了两个小时，所以错过了连接航班.",
+          "chrf": 0.3633,
+          "bleu": 0.4307,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0218",
+          "category": "long",
+          "source": "The research team collected data from more than five hundred participants over a period of eighteen months.",
+          "reference": "研究团队在十八个月的时间里收集了五百多名参与者的数据。",
+          "output": "研究小组在18个月期间收集了500多名参加者的数据。",
+          "chrf": 0.2252,
+          "bleu": 0.2526,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": [
+            {
+              "detail": "译文多出数字 18",
+              "kind": "number_added",
+              "severity": "minor"
+            },
+            {
+              "detail": "译文多出数字 500",
+              "kind": "number_added",
+              "severity": "minor"
+            }
+          ]
+        },
+        {
+          "id": "en-zh-0219",
+          "category": "long",
+          "source": "Please read the instructions carefully before you install the application, and make sure that your device meets the minimum requirements.",
+          "reference": "安装应用程序前请仔细阅读说明，并确保你的设备满足最低要求。",
+          "output": "请在安装应用程序前仔细阅读说明,并确保您的设备符合最低要求。",
+          "chrf": 0.4584,
+          "bleu": 0.5492,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0220",
+          "category": "long",
+          "source": "The restaurant was crowded, the service was slow, and the food was cold, but we still enjoyed the evening because we were together.",
+          "reference": "餐厅很拥挤，服务很慢，菜也凉了，但我们仍然享受那个夜晚，因为我们在一起。",
+          "output": "餐厅拥挤,服务慢慢，食物是寒冷的, 但我们仍然享受夜晚 因为我们在一起.",
+          "chrf": 0.3382,
+          "bleu": 0.3908,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0221",
+          "category": "long",
+          "source": "The government plans to build a new high-speed railway that will connect the capital with the southern coast.",
+          "reference": "政府计划修建一条新的高速铁路，把首都与南部海岸连接起来。",
+          "output": "政府计划修建一条新的高速铁路, 连接首都与南部海岸。",
+          "chrf": 0.6607,
+          "bleu": 0.7115,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0222",
+          "category": "long",
+          "source": "She had been working on the project for six months when she discovered that the original data was incomplete.",
+          "reference": "她在这个项目上已经工作了六个月，才发现原始数据并不完整。",
+          "output": "她在项目上工作了六个月,发现原始数据不完整。",
+          "chrf": 0.4014,
+          "bleu": 0.4868,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0223",
+          "category": "long",
+          "source": "The instructions say that you should unplug the device before cleaning it and wait until it has cooled down completely.",
+          "reference": "说明要求清洁设备前先拔掉电源，并等到它完全冷却。",
+          "output": "指示上说,你应该在清洗设备之前拔掉装置,然后等到它完全冷却。",
+          "chrf": 0.298,
+          "bleu": 0.2801,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0224",
+          "category": "long",
+          "source": "The conference will bring together researchers, engineers, and product managers to discuss the future of artificial intelligence.",
+          "reference": "这次会议将汇集研究人员、工程师和产品经理，共同讨论人工智能的未来。",
+          "output": "会议将召集研究人员、工程师和产品管理人员讨论人造情报的未来。",
+          "chrf": 0.4368,
+          "bleu": 0.4953,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0225",
+          "category": "long",
+          "source": "Even though the price was higher than we expected, we decided to buy the house because it was close to the school.",
+          "reference": "尽管价格比我们预期的高，我们还是决定买下那套房子，因为它离学校很近。",
+          "output": "虽然价格比我们预期的要高 我们决定买房子，因为它离学校很近.",
+          "chrf": 0.5055,
+          "bleu": 0.5574,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0226",
+          "category": "long",
+          "source": "The application crashed when the user opened a file that contained more than ten thousand records.",
+          "reference": "用户打开一个包含一万多条记录的文件时，应用程序崩溃了。",
+          "output": "当用户打开包含一万多个记录的文件时程序崩溃。",
+          "chrf": 0.3924,
+          "bleu": 0.4968,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0227",
+          "category": "long",
+          "source": "The team spent several weeks optimizing the query, and the response time eventually dropped from 3 seconds to 200 milliseconds.",
+          "reference": "团队花了几周时间优化查询，响应时间最终从 3 秒降到了 200 毫秒。",
+          "output": "小组花了几个星期优化查询,最后反应时间从3秒钟下降到200毫秒。",
+          "chrf": 0.2939,
+          "bleu": 0.3425,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0228",
+          "category": "long",
+          "source": "The article argues that cities should invest in public transportation rather than building more roads for private cars.",
+          "reference": "这篇文章认为，城市应该投资公共交通，而不是为私家车修建更多道路。",
+          "output": "文章认为,城市应投资于公共交通,而不是为私人汽车修建更多道路。",
+          "chrf": 0.4235,
+          "bleu": 0.5258,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0229",
+          "category": "long",
+          "source": "We need to confirm the delivery address, the contact number, and the preferred delivery time before we can process your order.",
+          "reference": "我们需要确认送货地址、联系电话和首选送货时间，然后才能处理你的订单。",
+          "output": "我们需要确认送货地址 联系号码，处理您的订单之前的首选交付时间.",
+          "chrf": 0.3364,
+          "bleu": 0.3714,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0230",
+          "category": "long",
+          "source": "The old bridge was closed for repairs, so drivers had to take a longer route through the neighboring town.",
+          "reference": "老桥因维修关闭，司机们不得不绕道穿过邻近的城镇。",
+          "output": "旧桥被关闭维修，索德瑞人不得不走更长的路经过邻近城镇.",
+          "chrf": 0.1658,
+          "bleu": 0.0,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0281",
+          "category": "numbers_units",
+          "source": "The meeting is scheduled for 10:30 AM on March 5, 2026.",
+          "reference": "会议定于2026年3月5日上午10:30举行。",
+          "output": "会议定于2026年3月5日上午10时30分举行。",
+          "chrf": 0.7647,
+          "bleu": 0.7784,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": [
+            {
+              "detail": "译文多出数字 3",
+              "kind": "number_added",
+              "severity": "minor"
+            }
+          ]
+        },
+        {
+          "id": "en-zh-0282",
+          "category": "numbers_units",
+          "source": "The package weighs 2.5 kilograms.",
+          "reference": "包裹重2.5公斤。",
+          "output": "包件重2.5公斤。",
+          "chrf": 0.6866,
+          "bleu": 0.7506,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0283",
+          "category": "numbers_units",
+          "source": "The temperature dropped to -8°C last night.",
+          "reference": "昨晚气温降到了-8°C。",
+          "output": "昨晚温度下降到8摄氏度",
+          "chrf": 0.1156,
+          "bleu": 0.0,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0284",
+          "category": "numbers_units",
+          "source": "Add 3 eggs and 200 grams of sugar.",
+          "reference": "加入3个鸡蛋和200克糖。",
+          "output": "加3个鸡蛋和200克糖",
+          "chrf": 0.7481,
+          "bleu": 0.774,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0285",
+          "category": "numbers_units",
+          "source": "The flight takes about 12 hours and 45 minutes.",
+          "reference": "飞行大约需要12小时45分钟。",
+          "output": "飞行大约需要12小时45分钟。",
+          "chrf": 1.0,
+          "bleu": 1.0,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0286",
+          "category": "numbers_units",
+          "source": "The discount is 15% for orders over $100.",
+          "reference": "订单超过100美元可享受15%的折扣。",
+          "output": "折扣是15%超过100美元的订单。",
+          "chrf": 0.3998,
+          "bleu": 0.4556,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0287",
+          "category": "numbers_units",
+          "source": "The file size is 4.7 GB.",
+          "reference": "文件大小为4.7 GB。",
+          "output": "文件大小为4.7GB。",
+          "chrf": 1.0,
+          "bleu": 1.0,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0288",
+          "category": "numbers_units",
+          "source": "The battery lasts up to 18 hours.",
+          "reference": "电池最长可使用18小时。",
+          "output": "电池持续到18小时。",
+          "chrf": 0.292,
+          "bleu": 0.3765,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0289",
+          "category": "numbers_units",
+          "source": "The server has 64 CPU cores and 512 GB of memory.",
+          "reference": "服务器有64个CPU核心和512 GB内存。",
+          "output": "该服务器有64个CPU核心和512GB内存。",
+          "chrf": 0.9892,
+          "bleu": 0.9511,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0290",
+          "category": "numbers_units",
+          "source": "The release date is 2026-12-01.",
+          "reference": "发布日期是2026-12-01。",
+          "output": "释放日期是2026-12-01.",
+          "chrf": 0.7741,
+          "bleu": 0.7917,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0291",
+          "category": "numbers_units",
+          "source": "Please send 5 copies to room 302.",
+          "reference": "请送5份到302房间。",
+          "output": "请将5份副本送到302室。",
+          "chrf": 0.251,
+          "bleu": 0.2545,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0292",
+          "category": "numbers_units",
+          "source": "The speed limit is 120 km/h.",
+          "reference": "限速为120 km/h。",
+          "output": "限速为120公里/小时。",
+          "chrf": 0.4074,
+          "bleu": 0.4483,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0293",
+          "category": "numbers_units",
+          "source": "The recipe calls for 1/2 cup of milk.",
+          "reference": "食谱需要1/2杯牛奶。",
+          "output": "食谱呼吁1/2牛奶杯,",
+          "chrf": 0.2064,
+          "bleu": 0.0,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0294",
+          "category": "numbers_units",
+          "source": "The company was founded in 1998.",
+          "reference": "该公司成立于1998年。",
+          "output": "该公司成立于1998年。",
+          "chrf": 1.0,
+          "bleu": 1.0,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0295",
+          "category": "numbers_units",
+          "source": "The train departs at 07:15 and arrives at 09:40.",
+          "reference": "火车07:15出发，09:40到达。",
+          "output": "火车于7: 15出发,9: 40抵达。",
+          "chrf": 0.3758,
+          "bleu": 0.4651,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        }
+      ]
+    },
+    "beam4": {
+      "samples": 40,
+      "errors": 0,
+      "error_rate": 0.0,
+      "fatal_integrity": 0,
+      "critical_quality_issues": 0,
+      "chrf": 0.4682,
+      "bleu": 0.4974,
+      "exact_match": 0.075,
+      "number_fidelity": 1.0,
+      "constraint_accuracy": 1.0,
+      "placeholder_accuracy": null,
+      "url_accuracy": null,
+      "dictionary_accuracy": null,
+      "paragraph_completeness": null,
+      "document_structure_accuracy": null,
+      "negation_accuracy": null,
+      "target_language_accuracy": 1.0,
+      "per_category": {
+        "long": 0.3941,
+        "numbers_units": 0.5917
+      },
+      "rows": [
+        {
+          "id": "en-zh-0206",
+          "category": "long",
+          "source": "The library opens at nine in the morning and closes at eight in the evening, but during the summer it stays open until ten so that students can prepare for their exams.",
+          "reference": "图书馆早上九点开门，晚上八点关门；夏季则一直开放到十点，方便学生备考。",
+          "output": "图书馆早上9点开门，晚上8点关闭,夏天开放到10点,这样学生可以准备考试.",
+          "chrf": 0.2585,
+          "bleu": 0.2969,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": [
+            {
+              "detail": "译文多出数字 9",
+              "kind": "number_added",
+              "severity": "minor"
+            },
+            {
+              "detail": "译文多出数字 8",
+              "kind": "number_added",
+              "severity": "minor"
+            },
+            {
+              "detail": "译文多出数字 10",
+              "kind": "number_added",
+              "severity": "minor"
+            }
+          ]
+        },
+        {
+          "id": "en-zh-0207",
+          "category": "long",
+          "source": "Although the weather forecast said it would be sunny, heavy rain started in the afternoon and we had to cancel the picnic.",
+          "reference": "虽然天气预报说是晴天，但下午下起了大雨，我们不得不取消野餐。",
+          "output": "虽然天气预报说天气晴晴,但下午开始下大雨，我们不得不取消野餐.",
+          "chrf": 0.5501,
+          "bleu": 0.6014,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0208",
+          "category": "long",
+          "source": "The new policy requires all employees to complete a security training course before they can access the internal network.",
+          "reference": "新政策要求所有员工在访问内部网络之前完成安全培训课程。",
+          "output": "新政策要求所有雇员在进入内部网络之前完成安全培训课程。",
+          "chrf": 0.6998,
+          "bleu": 0.7569,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0209",
+          "category": "long",
+          "source": "The company announced that it will invest more than two billion yuan in renewable energy projects over the next five years.",
+          "reference": "公司宣布未来五年将在可再生能源项目上投资超过二十亿元。",
+          "output": "该公司宣布,在未来五年内,它将在可再生能源项目上投资20多亿元。",
+          "chrf": 0.53,
+          "bleu": 0.5376,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": [
+            {
+              "detail": "译文多出数字 20",
+              "kind": "number_added",
+              "severity": "minor"
+            }
+          ]
+        },
+        {
+          "id": "en-zh-0210",
+          "category": "long",
+          "source": "When the customer reported the bug, the support team reproduced it within an hour and sent a fix to the development team.",
+          "reference": "客户报告该缺陷后，支持团队在一小时内复现了它，并把修复方案发给了开发团队。",
+          "output": "当客户报告错误时,支助组在1小时内复制了错误,并向开发组发送了解决办法。",
+          "chrf": 0.1386,
+          "bleu": 0.1567,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": [
+            {
+              "detail": "译文多出数字 1",
+              "kind": "number_added",
+              "severity": "minor"
+            }
+          ]
+        },
+        {
+          "id": "en-zh-0211",
+          "category": "long",
+          "source": "The report shows that remote work has increased productivity for some teams while making communication more difficult for others.",
+          "reference": "报告显示，远程办公提高了一些团队的生产力，却让另一些团队的沟通变得更加困难。",
+          "output": "报告表明,一些小组的远程工作提高了生产率，使其他人更难以沟通,同时使其他人更加难以沟通.",
+          "chrf": 0.1159,
+          "bleu": 0.0,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0212",
+          "category": "long",
+          "source": "If you want to improve your writing, you should read more, write every day, and ask someone you trust to review your work.",
+          "reference": "如果你想提高写作水平，就应该多读书、每天写作，并请信任的人审阅你的作品。",
+          "output": "如果您想改进写作, 您应该多读, 每天写, 并要求您信任的人审查您的工作。",
+          "chrf": 0.2017,
+          "bleu": 0.2335,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0213",
+          "category": "long",
+          "source": "The museum's collection includes paintings from the seventeenth century as well as works by contemporary artists from Asia and Africa.",
+          "reference": "博物馆的藏品包括十七世纪的绘画，以及来自亚洲和非洲的当代艺术家作品。",
+          "output": "该博物馆的收藏品包括十七世纪的绘画以及亚洲和非洲当代艺术家的作品。",
+          "chrf": 0.5246,
+          "bleu": 0.6298,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0214",
+          "category": "long",
+          "source": "The software update fixes several security problems, improves battery life, and adds support for three new languages.",
+          "reference": "这次软件更新修复了几个安全问题，改善了电池续航，并增加了对三种新语言的支持。",
+          "output": "软件更新解决了若干安全问题,改善了电池寿命,增加了三种新语言的支持。",
+          "chrf": 0.3791,
+          "bleu": 0.4604,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0215",
+          "category": "long",
+          "source": "After the earthquake, volunteers from neighboring cities brought food, water, and medical supplies to the affected area.",
+          "reference": "地震发生后，邻近城市的志愿者把食物、水和医疗物资运到了受灾地区。",
+          "output": "地震发生后,来自邻近城市的志愿者向灾区运送了食物、水和医疗用品。",
+          "chrf": 0.4411,
+          "bleu": 0.5248,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0216",
+          "category": "long",
+          "source": "The teacher explained the problem again, but some students still did not understand why the answer was correct.",
+          "reference": "老师又解释了一遍这道题，但有些学生仍然不明白为什么这个答案是正确的。",
+          "output": "老师又解释了这个问题，但有些学生仍不理解为什么答案正确.",
+          "chrf": 0.374,
+          "bleu": 0.4282,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0217",
+          "category": "long",
+          "source": "The train was delayed for two hours because of heavy snow, so we missed our connecting flight.",
+          "reference": "由于大雪，火车晚点了两个小时，所以我们错过了转机航班。",
+          "output": "由于大雪,火车推迟了两个小时，所以我们错过了连接航班.",
+          "chrf": 0.5275,
+          "bleu": 0.59,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0218",
+          "category": "long",
+          "source": "The research team collected data from more than five hundred participants over a period of eighteen months.",
+          "reference": "研究团队在十八个月的时间里收集了五百多名参与者的数据。",
+          "output": "研究小组在18个月期间收集了500多名参加者的数据。",
+          "chrf": 0.2252,
+          "bleu": 0.2526,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": [
+            {
+              "detail": "译文多出数字 18",
+              "kind": "number_added",
+              "severity": "minor"
+            },
+            {
+              "detail": "译文多出数字 500",
+              "kind": "number_added",
+              "severity": "minor"
+            }
+          ]
+        },
+        {
+          "id": "en-zh-0219",
+          "category": "long",
+          "source": "Please read the instructions carefully before you install the application, and make sure that your device meets the minimum requirements.",
+          "reference": "安装应用程序前请仔细阅读说明，并确保你的设备满足最低要求。",
+          "output": "请在安装应用程序前仔细阅读说明,并确保您的设备符合最低要求。",
+          "chrf": 0.4584,
+          "bleu": 0.5492,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0220",
+          "category": "long",
+          "source": "The restaurant was crowded, the service was slow, and the food was cold, but we still enjoyed the evening because we were together.",
+          "reference": "餐厅很拥挤，服务很慢，菜也凉了，但我们仍然享受那个夜晚，因为我们在一起。",
+          "output": "餐厅拥挤,服务很慢，食物是寒冷的, 但我们仍然享受的夜晚 因为我们在一起.",
+          "chrf": 0.3806,
+          "bleu": 0.4577,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0221",
+          "category": "long",
+          "source": "The government plans to build a new high-speed railway that will connect the capital with the southern coast.",
+          "reference": "政府计划修建一条新的高速铁路，把首都与南部海岸连接起来。",
+          "output": "政府计划修建一条新的高速铁路, 连接首都与南部海岸。",
+          "chrf": 0.6607,
+          "bleu": 0.7115,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0222",
+          "category": "long",
+          "source": "She had been working on the project for six months when she discovered that the original data was incomplete.",
+          "reference": "她在这个项目上已经工作了六个月，才发现原始数据并不完整。",
+          "output": "当她发现原始数据不完整时,她已经在该项目上工作了六个月。",
+          "chrf": 0.3759,
+          "bleu": 0.453,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0223",
+          "category": "long",
+          "source": "The instructions say that you should unplug the device before cleaning it and wait until it has cooled down completely.",
+          "reference": "说明要求清洁设备前先拔掉电源，并等到它完全冷却。",
+          "output": "指示上说,你应该在清洗之前拔掉装置,然后等到它完全冷却。",
+          "chrf": 0.2828,
+          "bleu": 0.2823,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0224",
+          "category": "long",
+          "source": "The conference will bring together researchers, engineers, and product managers to discuss the future of artificial intelligence.",
+          "reference": "这次会议将汇集研究人员、工程师和产品经理，共同讨论人工智能的未来。",
+          "output": "会议将汇集研究人员、工程师和产品管理人员,讨论人工智能的未来。",
+          "chrf": 0.6986,
+          "bleu": 0.7364,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0225",
+          "category": "long",
+          "source": "Even though the price was higher than we expected, we decided to buy the house because it was close to the school.",
+          "reference": "尽管价格比我们预期的高，我们还是决定买下那套房子，因为它离学校很近。",
+          "output": "虽然价格比我们预期的要高 我们决定买房子，因为它离学校很近.",
+          "chrf": 0.5055,
+          "bleu": 0.5574,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0226",
+          "category": "long",
+          "source": "The application crashed when the user opened a file that contained more than ten thousand records.",
+          "reference": "用户打开一个包含一万多条记录的文件时，应用程序崩溃了。",
+          "output": "当用户打开包含一万多个记录的文件时程序崩溃。",
+          "chrf": 0.3924,
+          "bleu": 0.4968,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0227",
+          "category": "long",
+          "source": "The team spent several weeks optimizing the query, and the response time eventually dropped from 3 seconds to 200 milliseconds.",
+          "reference": "团队花了几周时间优化查询，响应时间最终从 3 秒降到了 200 毫秒。",
+          "output": "小组花了几个星期优化查询,最后反应时间从3秒钟下降到200毫秒。",
+          "chrf": 0.2939,
+          "bleu": 0.3425,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0228",
+          "category": "long",
+          "source": "The article argues that cities should invest in public transportation rather than building more roads for private cars.",
+          "reference": "这篇文章认为，城市应该投资公共交通，而不是为私家车修建更多道路。",
+          "output": "文章认为,城市应对公共交通进行投资,而不是为私人汽车修建更多道路。",
+          "chrf": 0.418,
+          "bleu": 0.5082,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0229",
+          "category": "long",
+          "source": "We need to confirm the delivery address, the contact number, and the preferred delivery time before we can process your order.",
+          "reference": "我们需要确认送货地址、联系电话和首选送货时间，然后才能处理你的订单。",
+          "output": "我们需要确认发送地址 联系号码，处理您的订单之前的首选交付时间.",
+          "chrf": 0.2267,
+          "bleu": 0.2425,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0230",
+          "category": "long",
+          "source": "The old bridge was closed for repairs, so drivers had to take a longer route through the neighboring town.",
+          "reference": "老桥因维修关闭，司机们不得不绕道穿过邻近的城镇。",
+          "output": "旧桥被关闭维修，索德瑞人不得不走较长的路线 穿过邻近城镇.",
+          "chrf": 0.1931,
+          "bleu": 0.1672,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0281",
+          "category": "numbers_units",
+          "source": "The meeting is scheduled for 10:30 AM on March 5, 2026.",
+          "reference": "会议定于2026年3月5日上午10:30举行。",
+          "output": "会议定于2026年3月5日上午10时30分举行。",
+          "chrf": 0.7647,
+          "bleu": 0.7784,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": [
+            {
+              "detail": "译文多出数字 3",
+              "kind": "number_added",
+              "severity": "minor"
+            }
+          ]
+        },
+        {
+          "id": "en-zh-0282",
+          "category": "numbers_units",
+          "source": "The package weighs 2.5 kilograms.",
+          "reference": "包裹重2.5公斤。",
+          "output": "包件重2.5公斤。",
+          "chrf": 0.6866,
+          "bleu": 0.7506,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0283",
+          "category": "numbers_units",
+          "source": "The temperature dropped to -8°C last night.",
+          "reference": "昨晚气温降到了-8°C。",
+          "output": "昨晚温度下降到8摄氏度",
+          "chrf": 0.1156,
+          "bleu": 0.0,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0284",
+          "category": "numbers_units",
+          "source": "Add 3 eggs and 200 grams of sugar.",
+          "reference": "加入3个鸡蛋和200克糖。",
+          "output": "加3个鸡蛋和200克糖",
+          "chrf": 0.7481,
+          "bleu": 0.774,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0285",
+          "category": "numbers_units",
+          "source": "The flight takes about 12 hours and 45 minutes.",
+          "reference": "飞行大约需要12小时45分钟。",
+          "output": "飞行大约需要12小时45分钟。",
+          "chrf": 1.0,
+          "bleu": 1.0,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0286",
+          "category": "numbers_units",
+          "source": "The discount is 15% for orders over $100.",
+          "reference": "订单超过100美元可享受15%的折扣。",
+          "output": "折扣是15%超过100美元的订单。",
+          "chrf": 0.3998,
+          "bleu": 0.4556,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0287",
+          "category": "numbers_units",
+          "source": "The file size is 4.7 GB.",
+          "reference": "文件大小为4.7 GB。",
+          "output": "文件大小为4.7GB。",
+          "chrf": 1.0,
+          "bleu": 1.0,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0288",
+          "category": "numbers_units",
+          "source": "The battery lasts up to 18 hours.",
+          "reference": "电池最长可使用18小时。",
+          "output": "电池持续到18小时。",
+          "chrf": 0.292,
+          "bleu": 0.3765,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0289",
+          "category": "numbers_units",
+          "source": "The server has 64 CPU cores and 512 GB of memory.",
+          "reference": "服务器有64个CPU核心和512 GB内存。",
+          "output": "该服务器有64个CPU核心和512GB内存。",
+          "chrf": 0.9892,
+          "bleu": 0.9511,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0290",
+          "category": "numbers_units",
+          "source": "The release date is 2026-12-01.",
+          "reference": "发布日期是2026-12-01。",
+          "output": "释放日期是2026-12-01.",
+          "chrf": 0.7741,
+          "bleu": 0.7917,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0291",
+          "category": "numbers_units",
+          "source": "Please send 5 copies to room 302.",
+          "reference": "请送5份到302房间。",
+          "output": "请将5份副本送到302室。",
+          "chrf": 0.251,
+          "bleu": 0.2545,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0292",
+          "category": "numbers_units",
+          "source": "The speed limit is 120 km/h.",
+          "reference": "限速为120 km/h。",
+          "output": "限速为120公里/小时。",
+          "chrf": 0.4074,
+          "bleu": 0.4483,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0293",
+          "category": "numbers_units",
+          "source": "The recipe calls for 1/2 cup of milk.",
+          "reference": "食谱需要1/2杯牛奶。",
+          "output": "食谱呼吁1/2一杯牛奶。",
+          "chrf": 0.3066,
+          "bleu": 0.3417,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0294",
+          "category": "numbers_units",
+          "source": "The company was founded in 1998.",
+          "reference": "该公司成立于1998年。",
+          "output": "该公司成立于1998年。",
+          "chrf": 1.0,
+          "bleu": 1.0,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        },
+        {
+          "id": "en-zh-0295",
+          "category": "numbers_units",
+          "source": "The train departs at 07:15 and arrives at 09:40.",
+          "reference": "火车07:15出发，09:40到达。",
+          "output": "火车于7点15分出发,9点40分抵达",
+          "chrf": 0.1411,
+          "bleu": 0.0,
+          "error": null,
+          "fatal": false,
+          "constraints": {
+            "number_preserved": true,
+            "target_language_zh": true
+          },
+          "quality_issues": []
+        }
+      ]
+    }
+  },
+  "diffs": {
+    "beam2": {
+      "run": "beam2",
+      "chrf_delta": 0.0222,
+      "bleu_delta": 0.0227,
+      "error_delta": 0,
+      "number_fidelity_delta": 0.0,
+      "new_fatal": [],
+      "fixed_fatal": [],
+      "regressions": [
+        {
+          "id": "en-zh-0214",
+          "reason": "chrf_drop",
+          "delta": -0.1624,
+          "source": "The software update fixes several security problems, improves battery life, and adds support for three new languages.",
+          "reference": "这次软件更新修复了几个安全问题，改善了电池续航，并增加了对三种新语言的支持。",
+          "baseline": "软件更新解决了几个安全问题,改善了电池使用,增加了三种新语言的支持。",
+          "run": "软件更新解决了若干安全问题,改善了电池使用,并为三种新语言增加了支持。"
+        },
+        {
+          "id": "en-zh-0224",
+          "reason": "chrf_drop",
+          "delta": -0.0428,
+          "source": "The conference will bring together researchers, engineers, and product managers to discuss the future of artificial intelligence.",
+          "reference": "这次会议将汇集研究人员、工程师和产品经理，共同讨论人工智能的未来。",
+          "baseline": "这次会议将召集研究人员、工程师和产品管理人员讨论人造情报的未来。",
+          "run": "会议将召集研究人员、工程师和产品管理人员讨论人造情报的未来。"
+        }
+      ],
+      "regression_count": 2,
+      "improvements": [
+        {
+          "id": "en-zh-0206",
+          "reason": "chrf_gain",
+          "delta": 0.0744
+        },
+        {
+          "id": "en-zh-0207",
+          "reason": "chrf_gain",
+          "delta": 0.1415
+        },
+        {
+          "id": "en-zh-0215",
+          "reason": "chrf_gain",
+          "delta": 0.0581
+        },
+        {
+          "id": "en-zh-0216",
+          "reason": "chrf_gain",
+          "delta": 0.0561
+        },
+        {
+          "id": "en-zh-0217",
+          "reason": "chrf_gain",
+          "delta": 0.1391
+        },
+        {
+          "id": "en-zh-0222",
+          "reason": "chrf_gain",
+          "delta": 0.103
+        },
+        {
+          "id": "en-zh-0229",
+          "reason": "chrf_gain",
+          "delta": 0.0332
+        },
+        {
+          "id": "en-zh-0284",
+          "reason": "chrf_gain",
+          "delta": 0.2557
+        },
+        {
+          "id": "en-zh-0286",
+          "reason": "chrf_gain",
+          "delta": 0.032
+        },
+        {
+          "id": "en-zh-0292",
+          "reason": "chrf_gain",
+          "delta": 0.1912
+        }
+      ],
+      "improvement_count": 10
+    },
+    "beam4": {
+      "run": "beam4",
+      "chrf_delta": 0.028,
+      "bleu_delta": 0.0316,
+      "error_delta": 0,
+      "number_fidelity_delta": 0.0,
+      "new_fatal": [],
+      "fixed_fatal": [],
+      "regressions": [
+        {
+          "id": "en-zh-0295",
+          "reason": "chrf_drop",
+          "delta": -0.2347,
+          "source": "The train departs at 07:15 and arrives at 09:40.",
+          "reference": "火车07:15出发，09:40到达。",
+          "baseline": "火车于7: 15出发,9: 40抵达。",
+          "run": "火车于7点15分出发,9点40分抵达"
+        },
+        {
+          "id": "en-zh-0214",
+          "reason": "chrf_drop",
+          "delta": -0.0771,
+          "source": "The software update fixes several security problems, improves battery life, and adds support for three new languages.",
+          "reference": "这次软件更新修复了几个安全问题，改善了电池续航，并增加了对三种新语言的支持。",
+          "baseline": "软件更新解决了几个安全问题,改善了电池使用,增加了三种新语言的支持。",
+          "run": "软件更新解决了若干安全问题,改善了电池寿命,增加了三种新语言的支持。"
+        },
+        {
+          "id": "en-zh-0229",
+          "reason": "chrf_drop",
+          "delta": -0.0765,
+          "source": "We need to confirm the delivery address, the contact number, and the preferred delivery time before we can process your order.",
+          "reference": "我们需要确认送货地址、联系电话和首选送货时间，然后才能处理你的订单。",
+          "baseline": "我们需要确认发送地址 联系号码，优先交付时间,然后才能处理您的订单.",
+          "run": "我们需要确认发送地址 联系号码，处理您的订单之前的首选交付时间."
+        }
+      ],
+      "regression_count": 3,
+      "improvements": [
+        {
+          "id": "en-zh-0206",
+          "reason": "chrf_gain",
+          "delta": 0.0744
+        },
+        {
+          "id": "en-zh-0207",
+          "reason": "chrf_gain",
+          "delta": 0.1415
+        },
+        {
+          "id": "en-zh-0215",
+          "reason": "chrf_gain",
+          "delta": 0.0581
+        },
+        {
+          "id": "en-zh-0217",
+          "reason": "chrf_gain",
+          "delta": 0.3033
+        },
+        {
+          "id": "en-zh-0220",
+          "reason": "chrf_gain",
+          "delta": 0.0566
+        },
+        {
+          "id": "en-zh-0222",
+          "reason": "chrf_gain",
+          "delta": 0.0775
+        },
+        {
+          "id": "en-zh-0224",
+          "reason": "chrf_gain",
+          "delta": 0.219
+        },
+        {
+          "id": "en-zh-0284",
+          "reason": "chrf_gain",
+          "delta": 0.2557
+        },
+        {
+          "id": "en-zh-0286",
+          "reason": "chrf_gain",
+          "delta": 0.032
+        },
+        {
+          "id": "en-zh-0292",
+          "reason": "chrf_gain",
+          "delta": 0.1912
+        },
+        {
+          "id": "en-zh-0293",
+          "reason": "chrf_gain",
+          "delta": 0.1002
+        }
+      ],
+      "improvement_count": 11
+    }
+  },
+  "review_status": "PENDING_HUMAN"
+}

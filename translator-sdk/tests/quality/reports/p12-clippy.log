@@ -1,0 +1,7 @@
+    Checking translator-nmt-ort v0.1.0 (/home/nan/deepseek-harness/translate-workspace/translator-sdk/crates/translator-nmt-ort)
+    Checking translator-api v0.1.0 (/home/nan/deepseek-harness/translate-workspace/translator-sdk/crates/translator-api)
+    Checking quality-runner v0.1.0 (/home/nan/deepseek-harness/translate-workspace/translator-sdk/tools/quality-runner)
+    Checking p33-bench v0.1.0 (/home/nan/deepseek-harness/translate-workspace/translator-sdk/tools/p33-bench)
+    Checking translator-cli v0.1.0 (/home/nan/deepseek-harness/translate-workspace/translator-sdk/apps/translator-cli)
+    Checking translator-jni v0.1.0 (/home/nan/deepseek-harness/translate-workspace/translator-sdk/bindings/translator-jni)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.25s
