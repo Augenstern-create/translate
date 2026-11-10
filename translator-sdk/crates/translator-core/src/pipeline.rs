@@ -223,6 +223,8 @@ pub enum SyntaxRelation {
     Auxiliary,
     Agent,
     Complement,
+    Head,
+    Determiner,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -231,6 +233,9 @@ pub struct SyntaxNode {
     pub span: TextSpan,
     pub kind: SyntaxNodeKind,
     pub surface: String,
+    pub lemma: String,
+    pub pos: String,
+    pub past: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -689,11 +694,15 @@ fn push(
     surface: impl Into<String>,
 ) -> usize {
     let id = graph.nodes.len();
+    let surface = surface.into();
     graph.nodes.push(SyntaxNode {
         id,
         span,
         kind,
-        surface: surface.into(),
+        lemma: surface.clone(),
+        pos: String::new(),
+        past: false,
+        surface,
     });
     id
 }
@@ -748,6 +757,472 @@ pub enum MeaningNodeKind {
     Time,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum ChartCategory {
+    Clause,
+    Np,
+    Vp,
+    N,
+    V,
+    Adj,
+    Adv,
+    Det,
+    Num,
+    Aux,
+    Neg,
+}
+
+#[derive(Clone, Debug)]
+pub struct ChartItem {
+    pub id: usize,
+    pub start: usize,
+    pub end: usize,
+    pub category: ChartCategory,
+    pub rule: &'static str,
+    pub children: Vec<usize>,
+    pub head: String,
+    pub lemma: String,
+    pub pos: String,
+    pub negated: bool,
+    pub past: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Chart {
+    pub items: Vec<ChartItem>,
+    by_span: HashMap<(usize, usize, ChartCategory), usize>,
+}
+
+impl Chart {
+    fn add(&mut self, item: ChartItem) -> bool {
+        let key = (item.start, item.end, item.category);
+        if self.by_span.contains_key(&key) {
+            return false;
+        }
+        let id = self.items.len();
+        self.items.push(ChartItem { id, ..item });
+        self.by_span.insert(key, id);
+        true
+    }
+
+    fn get(&self, start: usize, end: usize, category: ChartCategory) -> Option<&ChartItem> {
+        self.by_span
+            .get(&(start, end, category))
+            .and_then(|id| self.items.get(*id))
+    }
+}
+
+/// 基于跨度组合的 chart parser，而不是线性句型扫描。
+pub struct ChartParser<'a> {
+    pub lexicon: &'a CompositionEngine,
+}
+
+impl<'a> ChartParser<'a> {
+    pub fn parse(&self, stream: &TokenStream) -> Option<SyntaxGraph> {
+        if !stream.coverage.complete {
+            return None;
+        }
+        let words: Vec<&SourceToken> = stream
+            .tokens
+            .iter()
+            .filter(|token| matches!(token.kind, TokenKind::Word | TokenKind::Number))
+            .collect();
+        if words.is_empty() {
+            return None;
+        }
+        let mut chart = Chart::default();
+        for (i, token) in words.iter().enumerate() {
+            let surface = token.surface.to_ascii_lowercase();
+            let noun_surface = surface.clone();
+            let is_time = matches!(surface.as_str(), "yesterday" | "today" | "tomorrow");
+            if matches!(
+                surface.as_str(),
+                "did" | "does" | "do" | "is" | "are" | "am" | "was" | "were" | "will" | "can"
+            ) {
+                chart.add(ChartItem {
+                    id: 0,
+                    start: i,
+                    end: i + 1,
+                    category: ChartCategory::Aux,
+                    rule: "lex.aux",
+                    children: vec![],
+                    head: surface.clone(),
+                    lemma: surface.clone(),
+                    pos: "aux".to_string(),
+                    negated: false,
+                    past: matches!(surface.as_str(), "did" | "was" | "were"),
+                });
+            }
+            if matches!(surface.as_str(), "not" | "n't") {
+                chart.add(ChartItem {
+                    id: 0,
+                    start: i,
+                    end: i + 1,
+                    category: ChartCategory::Neg,
+                    rule: "lex.neg",
+                    children: vec![],
+                    head: surface,
+                    lemma: "not".to_string(),
+                    pos: "neg".to_string(),
+                    negated: true,
+                    past: false,
+                });
+            } else if self.lexicon.lexicon_has_pos(&surface, "pronoun") {
+                chart.add(ChartItem {
+                    id: 0,
+                    start: i,
+                    end: i + 1,
+                    category: ChartCategory::Np,
+                    rule: "np.pronoun",
+                    children: vec![],
+                    head: surface.clone(),
+                    lemma: surface,
+                    pos: "pronoun".to_string(),
+                    negated: false,
+                    past: false,
+                });
+            } else if self.lexicon.lexicon_has_pos(&surface, "determiner") {
+                chart.add(ChartItem {
+                    id: 0,
+                    start: i,
+                    end: i + 1,
+                    category: ChartCategory::Det,
+                    rule: "lex.det",
+                    children: vec![],
+                    head: surface.clone(),
+                    lemma: surface,
+                    pos: "determiner".to_string(),
+                    negated: false,
+                    past: false,
+                });
+            } else if let Some(value) = numeral(&surface) {
+                chart.add(ChartItem {
+                    id: 0,
+                    start: i,
+                    end: i + 1,
+                    category: ChartCategory::Num,
+                    rule: "lex.num",
+                    children: vec![],
+                    head: value.to_string(),
+                    lemma: value.to_string(),
+                    pos: "numeral".to_string(),
+                    negated: false,
+                    past: false,
+                });
+            } else if self.lexicon.lexicon_has_pos(&surface, "verb")
+                || self.lexicon.verb_lemma(&surface).is_some()
+            {
+                if let Some(lemma) = self.lexicon.verb_lemma(&surface) {
+                    let past = self.lexicon.is_past_form(&surface, &lemma);
+                    chart.add(ChartItem {
+                        id: 0,
+                        start: i,
+                        end: i + 1,
+                        category: ChartCategory::V,
+                        rule: "lex.verb",
+                        children: vec![],
+                        head: surface.clone(),
+                        lemma,
+                        pos: "verb".to_string(),
+                        negated: false,
+                        past,
+                    });
+                }
+            } else if self.lexicon.lexicon_has_pos(&surface, "adjective") {
+                chart.add(ChartItem {
+                    id: 0,
+                    start: i,
+                    end: i + 1,
+                    category: ChartCategory::Adj,
+                    rule: "lex.adjective",
+                    children: vec![],
+                    head: surface.clone(),
+                    lemma: surface,
+                    pos: "adjective".to_string(),
+                    negated: false,
+                    past: false,
+                });
+            } else if is_time {
+                chart.add(ChartItem {
+                    id: 0,
+                    start: i,
+                    end: i + 1,
+                    category: ChartCategory::Adv,
+                    rule: "lex.time",
+                    children: vec![],
+                    head: surface.clone(),
+                    lemma: surface,
+                    pos: "adverb".to_string(),
+                    negated: false,
+                    past: false,
+                });
+            }
+            if let Some(lemma) = self.lexicon.noun_lemma(&noun_surface) {
+                if self.lexicon.lexicon_has_pos(&noun_surface, "noun")
+                    || self.lexicon.lexicon_has_pos(&lemma, "noun")
+                {
+                    chart.add(ChartItem {
+                        id: 0,
+                        start: i,
+                        end: i + 1,
+                        category: ChartCategory::N,
+                        rule: "lex.noun",
+                        children: vec![],
+                        head: noun_surface.clone(),
+                        lemma,
+                        pos: "noun".to_string(),
+                        negated: false,
+                        past: false,
+                    });
+                }
+            }
+        }
+
+        let mut changed = true;
+        while changed {
+            changed = false;
+            // unary: N -> NP, V -> VP
+            for start in 0..words.len() {
+                for end in (start + 1)..=words.len() {
+                    if let Some(n) = chart.get(start, end, ChartCategory::N).cloned() {
+                        changed |= chart.add(ChartItem {
+                            id: 0,
+                            start,
+                            end,
+                            category: ChartCategory::Np,
+                            rule: "np.noun",
+                            children: vec![n.id],
+                            head: n.head.clone(),
+                            lemma: n.lemma.clone(),
+                            pos: n.pos.clone(),
+                            negated: n.negated,
+                            past: n.past,
+                        });
+                    }
+                    if let Some(v) = chart.get(start, end, ChartCategory::V).cloned() {
+                        changed |= chart.add(ChartItem {
+                            id: 0,
+                            start,
+                            end,
+                            category: ChartCategory::Vp,
+                            rule: "vp.verb",
+                            children: vec![v.id],
+                            head: v.head.clone(),
+                            lemma: v.lemma.clone(),
+                            pos: v.pos.clone(),
+                            negated: v.negated,
+                            past: v.past,
+                        });
+                    }
+                }
+            }
+            // binary combination over adjacent spans.
+            for start in 0..words.len() {
+                for mid in (start + 1)..words.len() {
+                    for end in (mid + 1)..=words.len() {
+                        let add = |chart: &mut Chart,
+                                   left: ChartCategory,
+                                   right: ChartCategory,
+                                   category: ChartCategory,
+                                   rule: &'static str|
+                         -> bool {
+                            let (Some(l), Some(r)) = (
+                                chart.get(start, mid, left).cloned(),
+                                chart.get(mid, end, right).cloned(),
+                            ) else {
+                                return false;
+                            };
+                            let mut children = vec![l.id, r.id];
+                            let mut head = r.head.clone();
+                            let mut lemma = r.lemma.clone();
+                            let mut pos = r.pos.clone();
+                            let mut negated = l.negated || r.negated;
+                            let past = l.past || r.past;
+                            if matches!(
+                                category,
+                                ChartCategory::Np | ChartCategory::Vp | ChartCategory::Clause
+                            ) {
+                                if left == ChartCategory::Np || left == ChartCategory::Vp {
+                                    head = l.head.clone();
+                                    lemma = l.lemma.clone();
+                                    pos = l.pos.clone();
+                                }
+                                if left == ChartCategory::Det
+                                    || left == ChartCategory::Num
+                                    || left == ChartCategory::Adj
+                                {
+                                    head = r.head.clone();
+                                    lemma = r.lemma.clone();
+                                    pos = r.pos.clone();
+                                }
+                            }
+                            if left == ChartCategory::Aux {
+                                negated = r.negated;
+                                head = r.head.clone();
+                                lemma = r.lemma.clone();
+                                pos = r.pos.clone();
+                            }
+                            if left == ChartCategory::Neg {
+                                negated = true;
+                                head = r.head.clone();
+                                lemma = r.lemma.clone();
+                                pos = r.pos.clone();
+                            }
+                            children.shrink_to_fit();
+                            chart.add(ChartItem {
+                                id: 0,
+                                start,
+                                end,
+                                category,
+                                rule,
+                                children,
+                                head,
+                                lemma,
+                                pos,
+                                negated,
+                                past,
+                            })
+                        };
+                        changed |= add(
+                            &mut chart,
+                            ChartCategory::Np,
+                            ChartCategory::Det,
+                            ChartCategory::Np,
+                            "np.det",
+                        );
+                        changed |= add(
+                            &mut chart,
+                            ChartCategory::Num,
+                            ChartCategory::Np,
+                            ChartCategory::Np,
+                            "np.num",
+                        );
+                        changed |= add(
+                            &mut chart,
+                            ChartCategory::Adj,
+                            ChartCategory::Np,
+                            ChartCategory::Np,
+                            "np.adj",
+                        );
+                        changed |= add(
+                            &mut chart,
+                            ChartCategory::V,
+                            ChartCategory::Np,
+                            ChartCategory::Vp,
+                            "vp.verb_np",
+                        );
+                        changed |= add(
+                            &mut chart,
+                            ChartCategory::Aux,
+                            ChartCategory::Vp,
+                            ChartCategory::Vp,
+                            "vp.aux",
+                        );
+                        changed |= add(
+                            &mut chart,
+                            ChartCategory::Neg,
+                            ChartCategory::Vp,
+                            ChartCategory::Vp,
+                            "vp.neg",
+                        );
+                        changed |= add(
+                            &mut chart,
+                            ChartCategory::Vp,
+                            ChartCategory::Adv,
+                            ChartCategory::Vp,
+                            "vp.adv",
+                        );
+                        changed |= add(
+                            &mut chart,
+                            ChartCategory::Np,
+                            ChartCategory::Vp,
+                            ChartCategory::Clause,
+                            "clause.np_vp",
+                        );
+                    }
+                }
+            }
+        }
+
+        let clause = chart.get(0, words.len(), ChartCategory::Clause)?;
+        let mut graph = SyntaxGraph::default();
+        chart_item_to_graph(&chart, clause.id, &words, &mut graph);
+        Some(graph)
+    }
+}
+
+fn chart_item_to_graph(
+    chart: &Chart,
+    id: usize,
+    words: &[&SourceToken],
+    graph: &mut SyntaxGraph,
+) -> usize {
+    let item = &chart.items[id];
+    let kind = match item.category {
+        ChartCategory::Clause => SyntaxNodeKind::Clause,
+        ChartCategory::Np => SyntaxNodeKind::NounPhrase,
+        ChartCategory::Vp => SyntaxNodeKind::VerbPhrase,
+        _ => SyntaxNodeKind::Token,
+    };
+    let span = if item.start < item.end && item.end > 0 {
+        TextSpan::new(words[item.start].span.start, words[item.end - 1].span.end)
+    } else {
+        TextSpan::default()
+    };
+    let node = push(graph, kind, span, item.head.clone());
+    graph.nodes[node].lemma = item.lemma.clone();
+    graph.nodes[node].pos = item.pos.clone();
+    graph.nodes[node].past = item.past;
+    let child_relation = |left: ChartCategory, right: ChartCategory| -> Option<SyntaxRelation> {
+        match (left, right) {
+            (ChartCategory::Np, ChartCategory::Vp) => Some(SyntaxRelation::Subject),
+            (ChartCategory::Vp, ChartCategory::Vp) => None,
+            _ => None,
+        }
+    };
+    let _ = child_relation;
+    for (idx, child_id) in item.children.iter().enumerate() {
+        let child = chart_item_to_graph(chart, *child_id, words, graph);
+        let child_item = &chart.items[*child_id];
+        let relation = match (item.category, idx) {
+            (ChartCategory::Clause, 0) => SyntaxRelation::Subject,
+            (ChartCategory::Clause, 1) => SyntaxRelation::Predicate,
+            (ChartCategory::Vp, 0) if child_item.category == ChartCategory::V => {
+                SyntaxRelation::Head
+            }
+            (ChartCategory::Vp, 1) if child_item.category == ChartCategory::Np => {
+                SyntaxRelation::Object
+            }
+            (ChartCategory::Vp, 0) if child_item.category == ChartCategory::Aux => {
+                SyntaxRelation::Auxiliary
+            }
+            (ChartCategory::Vp, 0) if child_item.category == ChartCategory::Neg => {
+                SyntaxRelation::Negation
+            }
+            (ChartCategory::Vp, 1) if child_item.category == ChartCategory::Adv => {
+                SyntaxRelation::Adverbial
+            }
+            (ChartCategory::Np, 0) if child_item.category == ChartCategory::Det => {
+                SyntaxRelation::Determiner
+            }
+            (ChartCategory::Np, 0) if child_item.category == ChartCategory::Num => {
+                SyntaxRelation::Quantity
+            }
+            (ChartCategory::Np, 0) if child_item.category == ChartCategory::Adj => {
+                SyntaxRelation::Modifier
+            }
+            (ChartCategory::Np, 0) => SyntaxRelation::Head,
+            _ => SyntaxRelation::Head,
+        };
+        graph.edges.push(SyntaxEdge {
+            head: node,
+            dependent: child,
+            relation,
+        });
+    }
+    node
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MeaningNode {
     pub id: usize,
@@ -769,6 +1244,7 @@ pub enum MeaningRelationKind {
     Scope,
     Complement,
     Location,
+    Condition,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -790,11 +1266,276 @@ pub struct MeaningGraph {
     pub conditional: bool,
 }
 
+struct NpFacts {
+    head: usize,
+    quantity: Option<u32>,
+    modifier: Option<usize>,
+}
+
+impl NpFacts {
+    fn collect(graph: &SyntaxGraph, np: usize) -> Option<Self> {
+        let node = graph.nodes.get(np)?;
+        let mut facts = Self {
+            head: np,
+            quantity: None,
+            modifier: None,
+        };
+        for edge in graph.edges.iter().filter(|edge| edge.head == np) {
+            match edge.relation {
+                SyntaxRelation::Head => {
+                    if let Some(child) = graph.nodes.get(edge.dependent) {
+                        if child.kind == SyntaxNodeKind::NounPhrase {
+                            let nested = Self::collect(graph, edge.dependent)?;
+                            facts.head = nested.head;
+                            facts.quantity = facts.quantity.or(nested.quantity);
+                            facts.modifier = facts.modifier.or(nested.modifier);
+                        } else {
+                            facts.head = edge.dependent;
+                        }
+                    }
+                }
+                SyntaxRelation::Quantity => {
+                    if let Some(child) = graph.nodes.get(edge.dependent) {
+                        facts.quantity = child.lemma.parse::<u32>().ok();
+                    }
+                }
+                SyntaxRelation::Determiner => {
+                    if let Some(child) = graph.nodes.get(edge.dependent) {
+                        if child.lemma == "a" {
+                            facts.quantity = Some(1);
+                        }
+                    }
+                }
+                SyntaxRelation::Modifier => facts.modifier = Some(edge.dependent),
+                _ => {}
+            }
+        }
+        let _ = node;
+        Some(facts)
+    }
+}
+
+#[derive(Default)]
+struct VpFacts {
+    verb: Option<usize>,
+    object: Option<usize>,
+    negation: Option<usize>,
+    auxiliary: Option<usize>,
+    adverbial: Option<usize>,
+    modal: Option<String>,
+    past: bool,
+    progressive: bool,
+    future: bool,
+}
+
+impl VpFacts {
+    fn collect(graph: &SyntaxGraph, vp: usize) -> Option<Self> {
+        let mut facts = Self::default();
+        facts.visit(graph, vp, 0);
+        Some(facts)
+    }
+
+    fn visit(&mut self, graph: &SyntaxGraph, vp: usize, depth: usize) {
+        if depth > 8 {
+            return;
+        }
+        let node = match graph.nodes.get(vp) {
+            Some(node) => node,
+            None => return,
+        };
+        if node.kind == SyntaxNodeKind::Token && node.pos == "verb" {
+            if self.verb.is_none() {
+                self.verb = Some(vp);
+            }
+            self.past |= node.past;
+            return;
+        }
+        for edge in graph.edges.iter().filter(|edge| edge.head == vp) {
+            match edge.relation {
+                SyntaxRelation::Head => {
+                    if let Some(child) = graph.nodes.get(edge.dependent) {
+                        if child.kind == SyntaxNodeKind::VerbPhrase {
+                            self.visit(graph, edge.dependent, depth + 1);
+                        } else if child.pos == "verb" {
+                            self.verb.get_or_insert(edge.dependent);
+                        }
+                    }
+                }
+                SyntaxRelation::Object => self.object = Some(edge.dependent),
+                SyntaxRelation::Negation => self.negation = Some(edge.dependent),
+                SyntaxRelation::Auxiliary => {
+                    self.auxiliary = Some(edge.dependent);
+                    if let Some(aux) = graph.nodes.get(edge.dependent) {
+                        match aux.surface.as_str() {
+                            "did" | "was" | "were" => self.past = true,
+                            "will" => self.future = true,
+                            "can" => self.modal = Some("can".to_string()),
+                            "is" | "are" | "am" => self.progressive = true,
+                            _ => {}
+                        }
+                    }
+                }
+                SyntaxRelation::Adverbial => self.adverbial = Some(edge.dependent),
+                _ => {}
+            }
+        }
+    }
+}
+
 pub struct SemanticTransfer<'a> {
     pub lexicon: &'a CompositionEngine,
 }
 
 impl<'a> SemanticTransfer<'a> {
+    /// 新路径：只从 SyntaxGraph 的节点和关系推导语义。
+    pub fn transfer_graph(&self, syntax: &SyntaxGraph) -> Option<MeaningGraph> {
+        let clause = syntax
+            .nodes
+            .iter()
+            .find(|node| node.kind == SyntaxNodeKind::Clause)?;
+        let subject = graph_edge(syntax, clause.id, SyntaxRelation::Subject)?;
+        let predicate = graph_edge(syntax, clause.id, SyntaxRelation::Predicate)?;
+        let facts = VpFacts::collect(syntax, predicate)?;
+        let verb = facts.verb?;
+        let object = facts.object;
+        let neg = facts.negation;
+        let _aux = facts.auxiliary;
+        let adv = facts.adverbial;
+        let mut graph = MeaningGraph {
+            tense_past: facts.past || syntax.nodes.get(verb).is_some_and(|node| node.past),
+            progressive: facts.progressive,
+            modal: facts.modal.clone(),
+            future: facts.future,
+            ..Default::default()
+        };
+        let agent = self.graph_entity(syntax, &mut graph, subject)?;
+        let event = add(
+            &mut graph,
+            MeaningNodeKind::Event,
+            syntax.nodes.get(verb)?.lemma.clone(),
+            "verb",
+            syntax.nodes.get(verb)?.span,
+            self.sense(
+                &syntax.nodes.get(verb)?.lemma,
+                "verb",
+                object
+                    .and_then(|id| NpFacts::collect(syntax, id))
+                    .and_then(|np| syntax.nodes.get(np.head))
+                    .map(|node| node.lemma.as_str()),
+            ),
+        );
+        graph.relations.push(MeaningRelation {
+            head: event,
+            dependent: agent,
+            kind: MeaningRelationKind::Agent,
+        });
+        if let Some(object) = object {
+            let np = NpFacts::collect(syntax, object)?;
+            let patient = self.graph_entity(syntax, &mut graph, np.head)?;
+            graph.relations.push(MeaningRelation {
+                head: event,
+                dependent: patient,
+                kind: MeaningRelationKind::Patient,
+            });
+            if let Some(value) = np.quantity {
+                let node = syntax.nodes.get(np.head)?;
+                let quantity = add(
+                    &mut graph,
+                    MeaningNodeKind::Property,
+                    value.to_string(),
+                    "numeral",
+                    node.span,
+                    SenseResolution::Resolved(format!("quantity:{value}")),
+                );
+                graph.relations.push(MeaningRelation {
+                    head: patient,
+                    dependent: quantity,
+                    kind: MeaningRelationKind::Quantity,
+                });
+            }
+            if let Some(modifier) = np.modifier {
+                let node = syntax.nodes.get(modifier)?;
+                let modifier = add(
+                    &mut graph,
+                    MeaningNodeKind::Property,
+                    node.lemma.clone(),
+                    "adjective",
+                    node.span,
+                    self.sense(&node.lemma, "adjective", None),
+                );
+                graph.relations.push(MeaningRelation {
+                    head: patient,
+                    dependent: modifier,
+                    kind: MeaningRelationKind::Modifier,
+                });
+            }
+        }
+        if let Some(adv) = adv {
+            let node = syntax.nodes.get(adv)?;
+            let time = add(
+                &mut graph,
+                MeaningNodeKind::Time,
+                node.lemma.clone(),
+                "adverb",
+                node.span,
+                self.sense(&node.lemma, "adverb", None),
+            );
+            graph.relations.push(MeaningRelation {
+                head: event,
+                dependent: time,
+                kind: MeaningRelationKind::Time,
+            });
+        }
+        if let Some(neg) = neg {
+            let node = syntax.nodes.get(neg)?;
+            let operator = add(
+                &mut graph,
+                MeaningNodeKind::Operator,
+                "not".to_string(),
+                "adverb",
+                node.span,
+                SenseResolution::Resolved("negation".to_string()),
+            );
+            graph.relations.push(MeaningRelation {
+                head: operator,
+                dependent: event,
+                kind: MeaningRelationKind::Scope,
+            });
+        }
+        Some(graph)
+    }
+
+    fn graph_entity(
+        &self,
+        syntax: &SyntaxGraph,
+        graph: &mut MeaningGraph,
+        id: usize,
+    ) -> Option<usize> {
+        let node = syntax.nodes.get(id)?;
+        let entity = add(
+            graph,
+            MeaningNodeKind::Entity,
+            node.lemma.clone(),
+            if node.pos.is_empty() {
+                "noun"
+            } else {
+                &node.pos
+            },
+            node.span,
+            self.sense(
+                &node.lemma,
+                if node.pos.is_empty() {
+                    "noun"
+                } else {
+                    &node.pos
+                },
+                None,
+            ),
+        );
+        graph.nodes[entity].plural = node.surface.ends_with('s') && node.lemma != "books";
+        Some(entity)
+    }
+
     pub fn transfer(&self, syntax: &SyntaxAnalysis) -> Option<MeaningGraph> {
         let mut graph = MeaningGraph {
             tense_past: syntax.past,
@@ -994,6 +1735,14 @@ impl<'a> SemanticTransfer<'a> {
     }
 }
 
+fn graph_edge(graph: &SyntaxGraph, head: usize, relation: SyntaxRelation) -> Option<usize> {
+    graph
+        .edges
+        .iter()
+        .find(|edge| edge.head == head && edge.relation == relation)
+        .map(|edge| edge.dependent)
+}
+
 fn add(
     graph: &mut MeaningGraph,
     kind: MeaningNodeKind,
@@ -1039,12 +1788,15 @@ pub struct ChineseNode {
     pub kind: ChineseNodeKind,
     pub text: String,
     pub children: Vec<usize>,
+    pub source: Option<usize>,
+    pub role: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ChineseSyntaxTree {
     pub nodes: Vec<ChineseNode>,
     pub root: usize,
+    pub condition: Option<Box<ChineseSyntaxTree>>,
 }
 
 pub struct TargetTransfer<'a> {
@@ -1079,11 +1831,13 @@ impl<'a> TargetTransfer<'a> {
         tree.root = clause;
         if meaning.passive {
             let patient = self.entity(&mut tree, meaning, patient?)?;
+            mark_role(&mut tree, patient, "Patient");
             tree.nodes[clause].children.push(patient);
             let passive = add_ch(&mut tree, ChineseNodeKind::Passive, "被".to_string());
             tree.nodes[clause].children.push(passive);
             if let Some(agent) = relation_node(meaning, event.id, MeaningRelationKind::Agent) {
                 let agent = self.entity(&mut tree, meaning, agent.id)?;
+                mark_role(&mut tree, agent, "Agent");
                 tree.nodes[clause].children.push(agent);
             }
             let verb = add_ch(
@@ -1091,16 +1845,19 @@ impl<'a> TargetTransfer<'a> {
                 ChineseNodeKind::Verb,
                 self.target(event)?.to_string(),
             );
+            tree.nodes[verb].source = Some(event.id);
             tree.nodes[clause].children.push(verb);
             let aspect = add_ch(&mut tree, ChineseNodeKind::Aspect, "了".to_string());
             tree.nodes[clause].children.push(aspect);
             return Some(tree);
         }
         let subject = self.entity(&mut tree, meaning, agent)?;
+        mark_role(&mut tree, subject, "Agent");
         tree.nodes[clause].children.push(subject);
         if let Some(time) = relation_node(meaning, event.id, MeaningRelationKind::Time) {
             let text = self.target(time)?.to_string();
             let node = add_ch(&mut tree, ChineseNodeKind::Time, text);
+            tree.nodes[node].source = Some(time.id);
             tree.nodes[clause].children.push(node);
         }
         let negated = meaning
@@ -1108,12 +1865,21 @@ impl<'a> TargetTransfer<'a> {
             .iter()
             .any(|r| r.kind == MeaningRelationKind::Scope && r.dependent == event.id);
         if negated {
-            let text = if event.lemma == "have" || meaning.tense_past {
+            let text = if meaning.progressive {
+                "没在"
+            } else if event.lemma == "have" || meaning.tense_past {
                 "没"
             } else {
                 "不"
             };
             let node = add_ch(&mut tree, ChineseNodeKind::Negation, text.to_string());
+            tree.nodes[node].source = meaning
+                .relations
+                .iter()
+                .find(|relation| {
+                    relation.kind == MeaningRelationKind::Scope && relation.dependent == event.id
+                })
+                .map(|relation| relation.head);
             tree.nodes[clause].children.push(node);
         }
         if let Some(modal) = &meaning.modal {
@@ -1132,7 +1898,7 @@ impl<'a> TargetTransfer<'a> {
             );
             tree.nodes[clause].children.push(m);
         }
-        if meaning.progressive {
+        if meaning.progressive && !negated {
             let asp = add_ch(&mut tree, ChineseNodeKind::Aspect, "正在".to_string());
             tree.nodes[clause].children.push(asp);
         }
@@ -1144,6 +1910,7 @@ impl<'a> TargetTransfer<'a> {
             ChineseNodeKind::Verb,
             if go_home { "回" } else { self.target(event)? }.to_string(),
         );
+        tree.nodes[verb].source = Some(event.id);
         tree.nodes[clause].children.push(verb);
         if let Some(complement) = relation_node(meaning, event.id, MeaningRelationKind::Complement)
         {
@@ -1152,6 +1919,7 @@ impl<'a> TargetTransfer<'a> {
                 ChineseNodeKind::Verb,
                 self.target(complement)?.to_string(),
             );
+            tree.nodes[c].source = Some(complement.id);
             tree.nodes[clause].children.push(c);
         }
         if meaning.tense_past && !negated && !go_home {
@@ -1165,6 +1933,7 @@ impl<'a> TargetTransfer<'a> {
                 self.target(location)?.to_string()
             };
             let p = add_ch(&mut tree, ChineseNodeKind::Place, text);
+            tree.nodes[p].source = Some(location.id);
             tree.nodes[clause].children.push(p);
             if go_home && meaning.tense_past && !negated {
                 let aspect = add_ch(&mut tree, ChineseNodeKind::Aspect, "了".to_string());
@@ -1173,6 +1942,7 @@ impl<'a> TargetTransfer<'a> {
         }
         if let Some(patient) = patient {
             let object = self.entity(&mut tree, meaning, patient)?;
+            mark_role(&mut tree, object, "Patient");
             tree.nodes[clause].children.push(object);
         }
         Some(tree)
@@ -1192,6 +1962,7 @@ impl<'a> TargetTransfer<'a> {
         if let Some(quantity) = relation_node(meaning, id, MeaningRelationKind::Quantity) {
             if let Ok(value) = quantity.lemma.parse::<u32>() {
                 let q = add_ch(tree, ChineseNodeKind::Quantity, numeral_zh(value));
+                tree.nodes[q].source = Some(quantity.id);
                 tree.nodes[np].children.push(q);
                 if let Some(classifier) = self.lexicon.classifier(&node.lemma) {
                     let c = add_ch(tree, ChineseNodeKind::Classifier, classifier.to_string());
@@ -1205,6 +1976,7 @@ impl<'a> TargetTransfer<'a> {
                 modifier_text.push('的');
             }
             let m = add_ch(tree, ChineseNodeKind::Modifier, modifier_text);
+            tree.nodes[m].source = Some(modifier.id);
             tree.nodes[np].children.push(m);
         }
         let noun_text = if node.plural && node.lemma == "brother" {
@@ -1213,6 +1985,7 @@ impl<'a> TargetTransfer<'a> {
             self.target(node)?.to_string()
         };
         let noun = add_ch(tree, ChineseNodeKind::Noun, noun_text);
+        tree.nodes[noun].source = Some(node.id);
         tree.nodes[np].children.push(noun);
         Some(np)
     }
@@ -1243,6 +2016,8 @@ fn add_ch(tree: &mut ChineseSyntaxTree, kind: ChineseNodeKind, text: String) -> 
         kind,
         text,
         children: Vec::new(),
+        source: None,
+        role: None,
     });
     id
 }
@@ -1264,9 +2039,27 @@ fn numeral_zh(value: u32) -> String {
 }
 
 pub fn render(tree: &ChineseSyntaxTree) -> String {
+    if let Some(condition) = &tree.condition {
+        let cond = render(condition).trim_end_matches(['.', '。']).to_string();
+        let main = render_base(tree);
+        return format!("如果{}，{}。", cond, main.trim_end_matches(['.', '。']));
+    }
+    render_base(tree)
+}
+
+fn render_base(tree: &ChineseSyntaxTree) -> String {
     let mut out = String::new();
     render_node(tree, tree.root, &mut out);
     out.trim_end_matches('。').to_string() + "。"
+}
+
+fn mark_role(tree: &mut ChineseSyntaxTree, np: usize, role: &str) {
+    let children = tree.nodes[np].children.clone();
+    for child in children {
+        if tree.nodes[child].kind == ChineseNodeKind::Noun {
+            tree.nodes[child].role = Some(role.to_string());
+        }
+    }
 }
 
 fn render_node(tree: &ChineseSyntaxTree, id: usize, out: &mut String) {
@@ -1291,11 +2084,18 @@ pub struct Mapping {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RelationMapping {
+    pub meaning_relation: String,
+    pub target_role: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ValidationReport {
     pub valid: bool,
     pub mapped_meanings: usize,
     pub total_meanings: usize,
     pub mappings: Vec<Mapping>,
+    pub relation_mappings: Vec<RelationMapping>,
 }
 
 pub fn validate(meaning: &MeaningGraph, tree: &ChineseSyntaxTree) -> ValidationReport {
@@ -1313,12 +2113,9 @@ pub fn validate(meaning: &MeaningGraph, tree: &ChineseSyntaxTree) -> ValidationR
             }
             MeaningNodeKind::Property => ChineseNodeKind::Modifier,
         };
-        if let Some(chinese) = tree
-            .nodes
-            .iter()
-            .enumerate()
-            .find(|(i, n)| !used[*i] && n.kind == expected)
-        {
+        if let Some(chinese) = tree.nodes.iter().enumerate().find(|(i, n)| {
+            !used[*i] && (n.source == Some(idx) || (n.source.is_none() && n.kind == expected))
+        }) {
             used[chinese.0] = true;
             mappings.push(Mapping {
                 meaning: idx,
@@ -1327,15 +2124,51 @@ pub fn validate(meaning: &MeaningGraph, tree: &ChineseSyntaxTree) -> ValidationR
             });
         }
     }
+    let mut relation_mappings = Vec::new();
+    for relation in &meaning.relations {
+        let has = |kind: ChineseNodeKind, source: usize| {
+            tree.nodes
+                .iter()
+                .any(|node| node.kind == kind && node.source == Some(source))
+        };
+        let role = match relation.kind {
+            MeaningRelationKind::Agent => {
+                tree.nodes.iter().any(|node| {
+                    node.kind == ChineseNodeKind::Noun
+                        && node.source == Some(relation.dependent)
+                        && node.role.as_deref() == Some("Agent")
+                }) && has(ChineseNodeKind::Verb, relation.head)
+            }
+            MeaningRelationKind::Patient => tree.nodes.iter().any(|node| {
+                node.kind == ChineseNodeKind::Noun
+                    && node.source == Some(relation.dependent)
+                    && node.role.as_deref() == Some("Patient")
+            }),
+            MeaningRelationKind::Quantity => has(ChineseNodeKind::Quantity, relation.dependent),
+            MeaningRelationKind::Modifier => has(ChineseNodeKind::Modifier, relation.dependent),
+            MeaningRelationKind::Time => has(ChineseNodeKind::Time, relation.dependent),
+            MeaningRelationKind::Location => has(ChineseNodeKind::Place, relation.dependent),
+            MeaningRelationKind::Scope => has(ChineseNodeKind::Negation, relation.head),
+            MeaningRelationKind::Complement => has(ChineseNodeKind::Verb, relation.dependent),
+            MeaningRelationKind::Condition => tree.condition.is_some(),
+        };
+        if role {
+            relation_mappings.push(RelationMapping {
+                meaning_relation: format!("{:?}", relation.kind),
+                target_role: format!("{:?}", relation.kind),
+            });
+        }
+    }
     let valid = !meaning.nodes.is_empty()
         && tree.root < tree.nodes.len()
         && mappings.len() == meaning.nodes.len()
-        && !meaning.relations.is_empty();
+        && relation_mappings.len() == meaning.relations.len();
     ValidationReport {
         valid,
         mapped_meanings: mappings.len(),
         total_meanings: meaning.nodes.len(),
         mappings,
+        relation_mappings,
     }
 }
 
@@ -1378,18 +2211,53 @@ fn analyze_conditional(
             node.text = "就".to_string();
         }
     }
+    let offset = main.meaning.nodes.len();
+    let condition_event = condition
+        .meaning
+        .nodes
+        .iter()
+        .find(|node| node.kind == MeaningNodeKind::Event)
+        .map(|node| node.id)?;
+    for node in &condition.meaning.nodes {
+        let mut node = node.clone();
+        node.id += offset;
+        main.meaning.nodes.push(node);
+    }
+    for relation in &condition.meaning.relations {
+        let mut relation = relation.clone();
+        relation.head += offset;
+        relation.dependent += offset;
+        main.meaning.relations.push(relation);
+    }
+    let main_event = main
+        .meaning
+        .nodes
+        .iter()
+        .find(|node| node.kind == MeaningNodeKind::Event && node.id < offset)
+        .map(|node| node.id)?;
+    main.meaning.relations.push(MeaningRelation {
+        head: condition_event + offset,
+        dependent: main_event,
+        kind: MeaningRelationKind::Condition,
+    });
+    // Keep the condition as a real target subtree, not a string prefix.
+    let mut condition_chinese = condition.chinese.clone();
+    let subject_id = condition_chinese.nodes.iter().find_map(|node| {
+        (node.kind == ChineseNodeKind::NounPhrase
+            && node
+                .children
+                .iter()
+                .any(|id| condition_chinese.nodes[*id].text == "它"))
+        .then_some(node.id)
+    });
+    if let Some(subject) = subject_id {
+        condition_chinese.nodes[subject].text.clear();
+        condition_chinese.nodes[subject].children.clear();
+    }
+    main.chinese.condition = Some(Box::new(condition_chinese));
     main.text = render(&main.chinese);
-    let condition_text = condition
-        .text
-        .trim_end_matches(['.', '。'])
-        .trim_start_matches('它')
-        .to_string();
-    let main_text = main.text.trim_end_matches(['.', '。']);
-    let text = format!("如果{condition_text}，{main_text}。");
-    let mut output = main;
-    output.condition = Some(Box::new(condition));
-    output.text = text;
-    Some(output)
+    main.condition = Some(Box::new(condition));
+    Some(main)
 }
 
 fn analyze_single(source: &str, lexicon: &CompositionEngine) -> Option<PipelineOutput> {
@@ -1399,6 +2267,28 @@ fn analyze_single(source: &str, lexicon: &CompositionEngine) -> Option<PipelineO
         .to_ascii_lowercase();
     if lexicon.phrase(&key).is_some() {
         return None;
+    }
+    let stream = tokenize_lossless(source);
+    if stream.coverage.complete {
+        if let Some(graph) = (ChartParser { lexicon }).parse(&stream) {
+            if let Some(meaning) = (SemanticTransfer { lexicon }).transfer_graph(&graph) {
+                if let Some(chinese) = (TargetTransfer { lexicon }).transfer(&meaning) {
+                    let validation = validate(&meaning, &chinese);
+                    if validation.valid {
+                        let text = render(&chinese);
+                        return Some(PipelineOutput {
+                            tokens: stream,
+                            condition: None,
+                            syntax: graph,
+                            meaning,
+                            chinese,
+                            text,
+                            validation,
+                        });
+                    }
+                }
+            }
+        }
     }
     let syntax = SyntaxAnalyzer { lexicon }.analyze(source)?;
     let meaning = SemanticTransfer { lexicon }.transfer(&syntax)?;
@@ -1410,7 +2300,7 @@ fn analyze_single(source: &str, lexicon: &CompositionEngine) -> Option<PipelineO
     }) {
         return None;
     }
-    let chinese = TargetTransfer { lexicon }.transfer(&meaning)?;
+    let chinese = (TargetTransfer { lexicon }).transfer(&meaning)?;
     let validation = validate(&meaning, &chinese);
     if !validation.valid {
         return None;

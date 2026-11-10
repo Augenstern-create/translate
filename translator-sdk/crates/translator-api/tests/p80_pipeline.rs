@@ -21,6 +21,13 @@ fn build() -> Translator {
         .unwrap()
 }
 
+fn test_lexicon() -> translator_api::CompositionEngine {
+    translator_api::CompositionEngine::from_file(
+        root().join("fixtures/rules/en-zh.composition.json"),
+    )
+    .unwrap()
+}
+
 #[test]
 fn 纵向链路生成全部中间结构() {
     let t = build();
@@ -135,17 +142,68 @@ fn 纵向链路生成全部中间结构() {
         .retain(|n| n.kind != pipeline::ChineseNodeKind::Verb);
     assert!(!pipeline::validate(&output.meaning, &bad).valid);
 
+    // 关系级错误：交换主语/宾语节点的 source，Agent/Patient 必须拒绝。
+    let mut swapped = output.chinese.clone();
+    let mut nouns: Vec<usize> = swapped
+        .nodes
+        .iter()
+        .filter(|node| node.kind == pipeline::ChineseNodeKind::Noun)
+        .map(|node| node.id)
+        .collect();
+    nouns.sort_by_key(|id| swapped.nodes[*id].source);
+    if nouns.len() >= 2 {
+        let first = swapped.nodes[nouns[0]].source;
+        swapped.nodes[nouns[0]].source = swapped.nodes[nouns[1]].source;
+        swapped.nodes[nouns[1]].source = first;
+        assert!(!pipeline::validate(&output.meaning, &swapped).valid);
+    }
+
+    // 否定作用域丢失必须拒绝。
+    let mut no_neg = output.chinese.clone();
+    for node in &mut no_neg.nodes {
+        if node.kind == pipeline::ChineseNodeKind::Negation {
+            node.source = None;
+        }
+    }
+    assert!(!pipeline::validate(&output.meaning, &no_neg).valid);
+
+    // 数量归属错误必须拒绝。
+    let mut no_quantity = output.chinese.clone();
+    for node in &mut no_quantity.nodes {
+        if node.kind == pipeline::ChineseNodeKind::Quantity {
+            node.source = None;
+        }
+    }
+    assert!(!pipeline::validate(&output.meaning, &no_quantity).valid);
+
     let out = pipeline::analyze("She is reading a book.", &lexicon).expect("progressive");
     assert_eq!(out.text, "她正在读一本书。");
     let out = pipeline::analyze("I can swim.", &lexicon).expect("modal");
     assert_eq!(out.text, "我会游泳。");
     let out = pipeline::analyze("The door was opened by him.", &lexicon).expect("passive");
     assert_eq!(out.text, "门被他打开了。");
+    let chart_graph = (pipeline::ChartParser { lexicon: &lexicon })
+        .parse(&pipeline::tokenize_lossless(
+            "She didn't buy two new books yesterday.",
+        ))
+        .expect("chart");
+    assert!(chart_graph
+        .edges
+        .iter()
+        .any(|edge| edge.relation == pipeline::SyntaxRelation::Head));
     let out = pipeline::analyze("I want to buy a book.", &lexicon).expect("want");
     assert_eq!(out.text, "我想买一本书。");
     let out = pipeline::analyze("If it rains, I will stay home.", &lexicon).expect("condition");
     assert_eq!(out.text, "如果下雨，我就待在家里。");
     assert!(out.condition.is_some());
+    assert!(out
+        .meaning
+        .relations
+        .iter()
+        .any(|relation| { relation.kind == pipeline::MeaningRelationKind::Condition }));
+    let mut bad = out.chinese.clone();
+    bad.condition = None;
+    assert!(!pipeline::validate(&out.meaning, &bad).valid);
 
     let req = TranslateRequest::new(
         "She didn't buy two new books yesterday.",
@@ -157,4 +215,94 @@ fn 纵向链路生成全部中间结构() {
     let out = pollster::block_on(t.translate_with_diagnostics_options(&req, &options)).unwrap();
     assert_eq!(out.diagnostics.route, TranslationRoute::Rule);
     assert_eq!(out.result.text, "她昨天没买两本新书。");
+}
+
+fn semantic_roles(meaning: &pipeline::MeaningGraph) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for relation in &meaning.relations {
+        let head = &meaning.nodes[relation.head];
+        let dependent = &meaning.nodes[relation.dependent];
+        out.push((
+            format!("{:?}", relation.kind),
+            format!("{}->{}", head.lemma, dependent.lemma),
+        ));
+    }
+    out.sort();
+    out
+}
+
+#[test]
+fn 图变形不改变语义关系() {
+    let lexicon = test_lexicon();
+    let source = "She didn't buy two new books yesterday.";
+    let stream = pipeline::tokenize_lossless(source);
+    let graph = (pipeline::ChartParser { lexicon: &lexicon })
+        .parse(&stream)
+        .expect("chart");
+    let transfer = pipeline::SemanticTransfer { lexicon: &lexicon };
+    let original = transfer.transfer_graph(&graph).expect("meaning");
+    let expected = semantic_roles(&original);
+    assert!(expected
+        .iter()
+        .any(|(kind, value)| kind == "Agent" && value.contains("buy->she")));
+    assert!(expected
+        .iter()
+        .any(|(kind, value)| kind == "Patient" && value.contains("buy->book")));
+    assert!(expected.iter().any(|(kind, _)| kind == "Quantity"));
+    assert!(expected.iter().any(|(kind, _)| kind == "Scope"));
+
+    // 节点存储顺序打乱、ID 重映射后，语义角色必须不变。
+    let n = graph.nodes.len();
+    let mut reordered = pipeline::SyntaxGraph::default();
+    for old in (0..n).rev() {
+        let mut node = graph.nodes[old].clone();
+        node.id = n - 1 - old;
+        reordered.nodes.push(node);
+    }
+    for edge in &graph.edges {
+        reordered.edges.push(pipeline::SyntaxEdge {
+            head: n - 1 - edge.head,
+            dependent: n - 1 - edge.dependent,
+            relation: edge.relation.clone(),
+        });
+    }
+    let reordered_meaning = transfer.transfer_graph(&reordered).expect("reordered");
+    assert_eq!(semantic_roles(&reordered_meaning), expected);
+
+    // 交换句法主语/宾语关系，语义 Agent/Patient 必须交换。
+    let mut swapped = graph.clone();
+    let clause = swapped
+        .nodes
+        .iter()
+        .find(|node| node.kind == pipeline::SyntaxNodeKind::Clause)
+        .unwrap()
+        .id;
+    let subject = swapped
+        .edges
+        .iter()
+        .find(|edge| edge.head == clause && edge.relation == pipeline::SyntaxRelation::Subject)
+        .unwrap()
+        .dependent;
+    let object = swapped
+        .edges
+        .iter()
+        .find(|edge| edge.relation == pipeline::SyntaxRelation::Object)
+        .unwrap()
+        .dependent;
+    for edge in &mut swapped.edges {
+        if edge.head == clause && edge.relation == pipeline::SyntaxRelation::Subject {
+            edge.dependent = object;
+        }
+        if edge.relation == pipeline::SyntaxRelation::Object {
+            edge.dependent = subject;
+        }
+    }
+    let swapped_meaning = transfer.transfer_graph(&swapped).expect("swapped");
+    let roles = semantic_roles(&swapped_meaning);
+    assert!(roles
+        .iter()
+        .any(|(kind, value)| kind == "Agent" && value.contains("buy->book")));
+    assert!(roles
+        .iter()
+        .any(|(kind, value)| kind == "Patient" && value.contains("buy->she")));
 }

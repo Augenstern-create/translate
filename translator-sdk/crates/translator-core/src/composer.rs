@@ -425,9 +425,9 @@ impl CompositionEngine {
             .into_iter()
             .flatten()
             .filter(|sense| sense.pos == pos)
-            .filter(|sense| {
-                sense.object.is_none()
-                    || object.is_some_and(|obj| sense.object.as_deref() == Some(obj))
+            .filter(|sense| match object {
+                Some(obj) => sense.object.as_deref() == Some(obj),
+                None => sense.object.is_none(),
             })
             .map(|sense| (sense.zh.clone(), sense.id.clone()))
             .collect()
