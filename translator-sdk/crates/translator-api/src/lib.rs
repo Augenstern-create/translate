@@ -45,8 +45,10 @@ pub use translator_core::evidence::TextSpan;
 pub use translator_core::rules::{NoRules, RuleOutcome, RulePreview, TextRules};
 pub use translator_core::semantic;
 pub use translator_core::semantic::{
-    CandidateValidation, ChineseRealizer, EntityRef, MeaningFrame, MeaningProgram, RejectionReason,
-    SemanticAnalysis, SemanticCompositionEngine, SemanticOutcome,
+    CandidateValidation, ChineseClause, ChineseNounPhrase, ChineseRealizer, ChineseStructure,
+    EntityRef, LexicalEvidence, LexicalSenseCandidate, MeaningFrame, MeaningProgram,
+    RejectionReason, SemanticAnalysis, SemanticCompositionEngine, SemanticOutcome, SyntaxGraph,
+    SyntaxNode, SyntaxRelation, SyntaxRelationKind, TargetLexeme,
 };
 pub use translator_core::templates::{SentenceTemplates, TemplateTable};
 // 术语契约（P2.4）：同上，宿主可自己实现 `TargetTermGuard`。

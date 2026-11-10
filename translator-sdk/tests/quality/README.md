@@ -175,12 +175,12 @@ python3 tools/quality/summarize-quality.py \
 | 文件 | 内容 |
 |---|---|
 | `fixtures/quality/p21-realization-v1.jsonl` | 13 条中文生成专项（NP/量词/时间/否定/情态/体貌/疑问） |
-| `outputs/p21-realization.jsonl` | 19/19 规则，0 NMT |
+| `outputs/p21-realization.jsonl` | 20/20 规则，0 NMT |
 | `fixtures/quality/p21-unseen-v1.jsonl` | 10 条未见组合 + 1 条否定/并列反例 |
 | `outputs/p21-unseen.jsonl` | 14 Rule / 1 NMT |
 | `fixtures/quality/p21-frozen-v1.jsonl` + `outputs/p21-frozen.jsonl` | 20 条后置集，20 Rule |
 | `fixtures/quality/p21-matrix-v1.jsonl` + `outputs/p21-matrix.jsonl` | 100 条结构矩阵，100 Rule |
-| `reports/p21-review-packet.csv` | 98 行统一人工评审包（PENDING_HUMAN） |
+| `reports/p21-review-packet.csv` | 118 行统一人工评审包（PENDING_HUMAN） |
 | `outputs/p21-p19-migration.jsonl` | P19 迁移路由：33 semantic / 4 P19 / 4 NMT（41 条） |
 | `outputs/p21-golden.jsonl` | 320 句 P21 A/B |
 | `outputs/p21-document.jsonl` | 10 篇文档 P21 |

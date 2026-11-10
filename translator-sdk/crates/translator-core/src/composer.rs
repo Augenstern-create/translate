@@ -66,6 +66,16 @@ struct PhrasalSpec {
     verb: String,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SenseSpec {
+    id: String,
+    pos: String,
+    zh: String,
+    #[serde(default)]
+    object: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Spec {
@@ -77,6 +87,8 @@ struct Spec {
     words: BTreeMap<String, WordSpec>,
     #[serde(default)]
     collocations: BTreeMap<String, String>,
+    #[serde(default)]
+    senses: BTreeMap<String, Vec<SenseSpec>>,
     #[serde(default)]
     phrases: BTreeMap<String, String>,
     #[serde(default)]
@@ -119,6 +131,7 @@ pub struct CompositionEngine {
     target: LanguageTag,
     words: HashMap<String, WordSpec>,
     collocations: HashMap<String, String>,
+    senses: HashMap<String, Vec<SenseSpec>>,
     phrases: HashMap<String, String>,
     phrasal_verbs: HashMap<String, PhrasalSpec>,
     past_forms: HashSet<String>,
@@ -190,6 +203,7 @@ impl CompositionEngine {
                 .into_iter()
                 .map(|(k, v)| (normalize_composition_key(&k), v))
                 .collect(),
+            senses: spec.senses.into_iter().collect(),
             phrases: spec
                 .phrases
                 .into_iter()
@@ -237,7 +251,7 @@ impl CompositionEngine {
     /// 该输入是否值得尝试组合。用于避免对每个 NMT 句子都做多次词典查询。
     pub fn is_candidate(&self, text: &str) -> bool {
         let tokenized = tokenize(text);
-        if tokenized.tokens.is_empty() {
+        if tokenized.tokens.is_empty() || !tokenized.uncovered.is_empty() {
             return false;
         }
         if self.phrases.contains_key(&tokenized.key) {
@@ -307,7 +321,7 @@ impl CompositionEngine {
             return None;
         }
         let tokenized = tokenize(text);
-        if tokenized.tokens.is_empty() {
+        if tokenized.tokens.is_empty() || !tokenized.uncovered.is_empty() {
             return None;
         }
         let dict = DictView { entries };
@@ -390,6 +404,25 @@ impl CompositionEngine {
 
     pub(crate) fn phrasal_verb(&self, key: &str) -> Option<&str> {
         self.phrasal_verbs.get(key).map(|spec| spec.verb.as_str())
+    }
+
+    pub(crate) fn sense_targets(
+        &self,
+        lemma: &str,
+        pos: &str,
+        object: Option<&str>,
+    ) -> Vec<(String, String)> {
+        self.senses
+            .get(lemma)
+            .into_iter()
+            .flatten()
+            .filter(|sense| sense.pos == pos)
+            .filter(|sense| {
+                sense.object.is_none()
+                    || object.is_some_and(|obj| sense.object.as_deref() == Some(obj))
+            })
+            .map(|sense| (sense.zh.clone(), sense.id.clone()))
+            .collect()
     }
 
     pub(crate) fn collocation(&self, key: &str) -> Option<&str> {
@@ -499,6 +532,9 @@ fn push_unique(items: &mut Vec<String>, value: String) {
 
 pub(crate) struct Tokenized {
     pub(crate) tokens: Vec<CompositionToken>,
+    /// 非字母、非可忽略标点的原文片段（数字、货币、百分号、Unicode 等）。
+    /// 现阶段组合解析不处理这些片段，必须显式保留并拒绝完整覆盖声明。
+    pub(crate) uncovered: Vec<TextSpan>,
     pub(crate) question: bool,
     pub(crate) key: String,
 }
@@ -506,17 +542,17 @@ pub(crate) struct Tokenized {
 pub(crate) fn tokenize(text: &str) -> Tokenized {
     let question = text.trim_end().ends_with('?');
     let mut raw_tokens = Vec::new();
-    let bytes = text.as_bytes();
+    let mut uncovered: Vec<TextSpan> = Vec::new();
     let mut i = 0usize;
-    while i < bytes.len() {
-        let b = bytes[i] as char;
-        if b.is_ascii_alphabetic() {
+    while i < text.len() {
+        let ch = text[i..].chars().next().expect("valid char boundary");
+        if ch.is_ascii_alphabetic() {
             let start = i;
-            i += 1;
-            while i < bytes.len() {
-                let c = bytes[i] as char;
+            i += ch.len_utf8();
+            while i < text.len() {
+                let c = text[i..].chars().next().expect("valid char boundary");
                 if c.is_ascii_alphabetic() || c == '\'' || c == '-' {
-                    i += 1;
+                    i += c.len_utf8();
                 } else {
                     break;
                 }
@@ -529,9 +565,40 @@ pub(crate) fn tokenize(text: &str) -> Tokenized {
                     end: i,
                 });
             }
-        } else {
-            i += 1;
+            continue;
         }
+        // 空白与句读可忽略；数字、货币、百分号、Unicode 字母等必须记录。
+        if ch.is_whitespace()
+            || matches!(
+                ch,
+                '.' | ','
+                    | '?'
+                    | '!'
+                    | ';'
+                    | ':'
+                    | '\''
+                    | '"'
+                    | '('
+                    | ')'
+                    | '['
+                    | ']'
+                    | '{'
+                    | '}'
+                    | '-'
+            )
+        {
+            i += ch.len_utf8();
+            continue;
+        }
+        let start = i;
+        i += ch.len_utf8();
+        if let Some(last) = uncovered.last_mut() {
+            if last.end == start {
+                last.end = i;
+                continue;
+            }
+        }
+        uncovered.push(TextSpan::new(start, i));
     }
     let key = normalize_composition_key(
         &raw_tokens
@@ -542,6 +609,7 @@ pub(crate) fn tokenize(text: &str) -> Tokenized {
     );
     Tokenized {
         tokens: raw_tokens,
+        uncovered,
         question,
         key,
     }

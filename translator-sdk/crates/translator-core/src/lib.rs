@@ -58,10 +58,12 @@ pub use quality::{QualityIssue, QualityIssueKind, QualityReport, QualitySeverity
 pub use routing::RouteOutcome;
 pub use rules::{NoRules, RuleOutcome, RulePreview, TextRules};
 pub use semantic::{
-    CandidateSelector, CandidateValidation, ChineseRealizer, Determiner, EntityRef, Lexeme,
-    MeaningFrame, MeaningProgram, Modifier, Polarity, ProgramRelation, QuestionType,
-    RealizationCandidate, Rejection, RejectionReason, SemanticAnalysis, SemanticCompositionEngine,
-    SemanticOutcome, TenseAspect,
+    CandidateSelector, CandidateValidation, ChineseClause, ChineseNounPhrase, ChineseRealizer,
+    ChineseRelation, ChineseStructure, Determiner, EntityRef, Lexeme, LexicalEvidence,
+    LexicalSenseCandidate, MeaningFrame, MeaningProgram, Modifier, Polarity, ProgramRelation,
+    QuestionType, RealizationCandidate, Rejection, RejectionReason, ScopeTarget, SemanticAnalysis,
+    SemanticCompositionEngine, SemanticOutcome, SyntaxGraph, SyntaxNode, SyntaxRelation,
+    SyntaxRelationKind, TargetLexeme, TenseAspect,
 };
 pub use templates::{SentenceTemplates, TemplateTable};
 pub use terms::{

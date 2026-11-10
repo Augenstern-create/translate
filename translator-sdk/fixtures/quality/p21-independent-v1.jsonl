@@ -1,0 +1,20 @@
+{"id":"ind-001","source":"He didn't buy a new phone yesterday.","allowed":["他昨天没买一部新手机。"],"focus":"negation/past/quantity"}
+{"id":"ind-002","source":"They didn't buy two new computers last week.","allowed":["他们上周没买两台新电脑。"],"focus":"negation/past/quantity"}
+{"id":"ind-003","source":"We bought three blue bags yesterday.","allowed":["我们昨天买了三个蓝色的包。"],"focus":"quantity/adj/time"}
+{"id":"ind-004","source":"My brother needs two computers.","allowed":["我的哥哥需要两台电脑。"],"focus":"possessive/quantity"}
+{"id":"ind-005","source":"She has three new phones.","allowed":["她有三部新手机。"],"focus":"have/quantity"}
+{"id":"ind-006","source":"Does he need a new computer?","allowed":["他需要一台新电脑吗？"],"focus":"question/np"}
+{"id":"ind-007","source":"Please close the box.","allowed":["请关盒子。"],"focus":"imperative"}
+{"id":"ind-008","source":"I take two photos.","allowed":["我拍两张照片。"],"focus":"collocation/quantity"}
+{"id":"ind-009","source":"She runs two companies.","allowed":["她经营两家公司。"],"focus":"collocation/quantity"}
+{"id":"ind-010","source":"They bought a new computer last month.","allowed":["他们上个月买了一台新电脑。"],"focus":"past/time"}
+{"id":"ind-011","source":"I don't need coffee.","allowed":["我不需要咖啡。"],"focus":"negation"}
+{"id":"ind-012","source":"He doesn't have two phones.","allowed":["他没有两部手机。"],"focus":"have-negation"}
+{"id":"ind-013","source":"This phone is heavier than that phone.","allowed":["这个手机比那个手机重。"],"focus":"comparison"}
+{"id":"ind-014","source":"If it rains, restart the server.","allowed":["如果下雨，请重新启动服务器。"],"focus":"conditional-imperative"}
+{"id":"ind-015","source":"She is reading two books.","allowed":["她正在读两本书。"],"focus":"progressive"}
+{"id":"ind-016","source":"I have read three books.","allowed":["我读过三本书。"],"focus":"experiential"}
+{"id":"ind-017","source":"The door was opened by the teacher.","allowed":["门被老师打开了。"],"focus":"passive-agent"}
+{"id":"ind-018","source":"These two blue bags are heavy.","allowed":["这两个蓝色的包很重。"],"focus":"demonstrative/quantity"}
+{"id":"ind-019","source":"We like tea and coffee.","allowed":["我们喜欢茶和咖啡。"],"focus":"coordination"}
+{"id":"ind-020","source":"He is happy.","allowed":["他很开心。"],"focus":"be-adjective"}

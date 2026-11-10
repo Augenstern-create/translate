@@ -8,7 +8,7 @@
   短语动词/固定表达/条件/比较/简单被动进入同一路径。
 - **MeaningFrame 深化**：数量、时间/地点、疑问、情态、极性、补语、来源 span；
   ChineseRealizer 支持 NP/量词/领属/指示、时间多语序、否定、can/can't、进行/形容词。
-- **P21 中文专项**：19/19，增加 的/地/得、着/过；
+- **P21 中文专项**：20/20，增加 的/地/得、着/过；
 - **高级结构**：8/8（条件、比较、简单被动、by 被动、条件祈使、短语动词、固定表达）。
 - **未见组合泛化**：14/14 正例、1 反例回退；100 条结构矩阵 100/100；
   新词 brother/computer、数量/时间、宾语并列、bare imperative、WSD 搭配。
@@ -18,13 +18,13 @@
 
 ### 结果
 
-- 默认 **537 passed / 0 failed / 60 ignored**；全特性 **550 passed / 0 failed / 67 ignored**；
+- 默认 **542 passed / 0 failed / 60 ignored**；全特性 **555 passed / 0 failed / 67 ignored**；
 - 文档结构 **1.0**；fmt / clippy 通过。
 
 ### 未完成
 
 - 复杂从句、PP 附着、相对从句和完整 WSD 未覆盖；语义层仍 opt-in；
-- 19 条中文专项、8 条高级结构、14 条未见组合与 7 条 P20 对抗集人工评审 PENDING_HUMAN。
+- 20 条中文专项、8 条高级结构、14 条未见组合与 7 条 P20 对抗集人工评审 PENDING_HUMAN。
 
 ## P20-C — 语义驱动组合翻译与中文生成核心（2026-11-09，报告 `docs/75`）
 
@@ -70,7 +70,7 @@
 - 独立组合集：36/36 正例、5/5 反例回退；
 - 320 句：chrF **0.5074 → 0.5172**、BLEU **0.5060 → 0.5192**、
   NMT **300 → 291**、Rule **22 → 31**、fatal 0、回归 0；
-- 默认 **526 passed / 0 failed / 60 ignored**；全特性 **539 passed / 0 failed / 67 ignored**；
+- 默认 **526 passed / 0 failed / 60 ignored**；全特性 **542 passed / 0 failed / 67 ignored**；
 - fmt / clippy 通过。
 
 ### 未完成

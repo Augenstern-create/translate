@@ -62,9 +62,46 @@ pub struct Rejection {
 pub struct Lexeme {
     pub word: String,
     pub lemma: String,
+    /// 兼容旧路径的默认中文词形；新路径优先使用 `targets`。
     pub zh: String,
     pub pos: String,
     pub span: TextSpan,
+    /// 英语词义/目标词分离后的义项证据。
+    pub sense_id: Option<String>,
+    pub targets: Vec<TargetLexeme>,
+}
+
+impl Lexeme {
+    pub fn target_zh(&self) -> &str {
+        self.targets
+            .first()
+            .map(|target| target.zh.as_str())
+            .unwrap_or(self.zh.as_str())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LexicalEvidence {
+    pub word: String,
+    pub lemma: String,
+    pub pos: String,
+    pub span: TextSpan,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LexicalSenseCandidate {
+    pub sense_id: String,
+    pub pos: String,
+    pub target_zh: String,
+    pub constraints: Vec<String>,
+    pub source: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TargetLexeme {
+    pub zh: String,
+    pub sense_id: String,
+    pub source: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -85,6 +122,8 @@ pub struct EntityRef {
     pub determiner: Option<Determiner>,
     /// 显式数量（two/three…）；`None` 表示没有数量词。
     pub quantity: Option<u32>,
+    /// 并列实体节点；保留每个实体的数量、修饰和量词，而不是压平成一个词形。
+    pub coordinated: Vec<EntityRef>,
     pub classifier: Option<String>,
     pub plural: bool,
     pub span: TextSpan,
@@ -94,6 +133,12 @@ pub struct EntityRef {
 pub enum Polarity {
     Affirmative,
     Negative,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ScopeTarget {
+    Predicate,
+    Complement,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -136,6 +181,8 @@ pub struct MeaningFrame {
     pub comparison: Option<EntityRef>,
     pub modifiers: Vec<Modifier>,
     pub polarity: Polarity,
+    /// 否定/情态作用目标；旧兼容 frame 可以为空，新组合路径尽量填 Predicate。
+    pub negation_scope: Option<ScopeTarget>,
     pub tense_aspect: TenseAspect,
     pub question: QuestionType,
     pub source_spans: Vec<TextSpan>,
@@ -154,11 +201,132 @@ pub struct MeaningProgram {
     pub relation: ProgramRelation,
 }
 
+/// 轻量句法节点：保留词汇、来源跨度，不直接绑定中文。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SyntaxNode {
+    pub id: usize,
+    pub surface: String,
+    pub lemma: String,
+    pub pos: String,
+    pub span: TextSpan,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SyntaxRelationKind {
+    Subject,
+    Object,
+    Adverbial,
+    Negation,
+    Complement,
+    Condition,
+    Modifier,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SyntaxRelation {
+    pub head: usize,
+    pub dependent: usize,
+    pub kind: SyntaxRelationKind,
+}
+
+/// 局部可组合句法图；当前只覆盖可安全转换的简单陈述/否定/时间结构。
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SyntaxGraph {
+    pub nodes: Vec<SyntaxNode>,
+    pub relations: Vec<SyntaxRelation>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SemanticAnalysis {
     pub program: Option<MeaningProgram>,
+    /// 由局部结构分析产生的句法图；旧兼容句型可以为空。
+    pub syntax: Option<SyntaxGraph>,
     pub rejections: Vec<Rejection>,
     pub question: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChineseNounPhrase {
+    pub text: String,
+    pub classifier: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChineseClause {
+    pub subject: String,
+    pub predicate: String,
+    pub object: String,
+    pub time: Option<String>,
+    pub negation: String,
+    pub modal: String,
+    pub aspect: String,
+    pub passive_agent: Option<String>,
+}
+
+impl ChineseClause {
+    pub fn render(&self) -> String {
+        if let Some(agent) = &self.passive_agent {
+            let time = self.time.as_deref().unwrap_or("");
+            return format!("{}{}被{}{}了", self.subject, time, agent, self.predicate);
+        }
+        let time = self.time.as_deref().unwrap_or("");
+        let aspect = match self.aspect.as_str() {
+            "正在" => "正在",
+            "了" => "",
+            "过" => "",
+            _ => "",
+        };
+        let suffix = match self.aspect.as_str() {
+            "了" | "过" => self.aspect.as_str(),
+            _ => "",
+        };
+        format!(
+            "{}{}{}{}{}{}{}{}",
+            self.subject,
+            time,
+            self.negation,
+            self.modal,
+            aspect,
+            self.predicate,
+            suffix,
+            self.object
+        )
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ChineseRelation {
+    Single,
+    Conditional,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChineseStructure {
+    pub clauses: Vec<ChineseClause>,
+    pub relation: ChineseRelation,
+    pub condition: Option<String>,
+}
+
+impl ChineseStructure {
+    pub fn render(&self) -> String {
+        match self.relation {
+            ChineseRelation::Conditional => {
+                let condition = self.condition.as_deref().unwrap_or("");
+                let main = self
+                    .clauses
+                    .first()
+                    .map(ChineseClause::render)
+                    .unwrap_or_default();
+                format!("如果{condition}，{main}")
+            }
+            ChineseRelation::Single => self
+                .clauses
+                .iter()
+                .map(ChineseClause::render)
+                .collect::<Vec<_>>()
+                .join("，"),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -167,6 +335,8 @@ pub struct RealizationCandidate {
     pub rule_id: String,
     /// 确定性排序：越小越优先（不是语言模型分数）。
     pub rank: u8,
+    /// 生成时的中文结构证据；自由文本候选可以为空。
+    pub structure: Option<ChineseStructure>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -183,6 +353,67 @@ pub struct SemanticOutcome {
 pub struct ChineseRealizer;
 
 impl ChineseRealizer {
+    /// 目标语中间结构；当前用于可解释的简单/否定/时间子集。
+    pub fn structure(&self, program: &MeaningProgram) -> ChineseStructure {
+        let clauses = program
+            .frames
+            .iter()
+            .map(|frame| ChineseClause {
+                subject: if frame.tense_aspect == TenseAspect::Passive {
+                    frame
+                        .patient
+                        .as_ref()
+                        .map(|p| self.entity_zh(p))
+                        .unwrap_or_default()
+                } else {
+                    frame
+                        .agent
+                        .as_ref()
+                        .map(|a| self.entity_zh(a))
+                        .unwrap_or_default()
+                },
+                predicate: frame.predicate.target_zh().to_string(),
+                object: if frame.tense_aspect == TenseAspect::Passive {
+                    String::new()
+                } else {
+                    frame
+                        .patient
+                        .as_ref()
+                        .map(|p| self.entity_zh(p))
+                        .unwrap_or_default()
+                },
+                time: frame.modifiers.iter().find_map(|m| match m {
+                    Modifier::Time(t) => Some(t.clone()),
+                    _ => None,
+                }),
+                negation: match frame.polarity {
+                    Polarity::Negative => "不".to_string(),
+                    Polarity::Affirmative => String::new(),
+                },
+                modal: match frame.tense_aspect {
+                    TenseAspect::Modal(_) => "会".to_string(),
+                    _ => String::new(),
+                },
+                aspect: match frame.tense_aspect {
+                    TenseAspect::Past => "了".to_string(),
+                    TenseAspect::Progressive => "正在".to_string(),
+                    TenseAspect::Experiential => "过".to_string(),
+                    _ => String::new(),
+                },
+                passive_agent: if frame.tense_aspect == TenseAspect::Passive {
+                    frame.agent.as_ref().map(|a| self.entity_zh(a))
+                } else {
+                    None
+                },
+            })
+            .collect();
+        ChineseStructure {
+            clauses,
+            relation: ChineseRelation::Single,
+            condition: None,
+        }
+    }
+
     pub fn realize(&self, program: &MeaningProgram) -> Vec<RealizationCandidate> {
         match program.relation {
             ProgramRelation::Coordination => {
@@ -211,7 +442,7 @@ impl ChineseRealizer {
                 let condition_text = if condition
                     .agent
                     .as_ref()
-                    .is_some_and(|agent| agent.head.zh == "它")
+                    .is_some_and(|agent| agent.head.target_zh() == "它")
                     && condition.predicate.lemma == "rain"
                 {
                     "如果下雨".to_string()
@@ -223,16 +454,36 @@ impl ChineseRealizer {
                         .unwrap_or_default();
                     format!("如果{text}")
                 };
-                let main_text = self
-                    .realize_frame(main)
-                    .first()
-                    .map(|c| c.text.trim_end_matches(['.', '。', '?', '？']).to_string())
-                    .unwrap_or_default();
-                vec![candidate(
-                    format!("{condition_text}，{main_text}"),
-                    "realize.conditional",
-                    0,
-                )]
+                let main_program = MeaningProgram {
+                    frames: vec![main.clone()],
+                    relation: ProgramRelation::Single,
+                };
+                let mut structure = self.structure(&main_program);
+                structure.relation = ChineseRelation::Conditional;
+                structure.condition = Some(
+                    condition_text
+                        .strip_prefix("如果")
+                        .unwrap_or(&condition_text)
+                        .to_string(),
+                );
+                if let Some(clause) = structure.clauses.first_mut() {
+                    if main.tense_aspect == TenseAspect::Future {
+                        clause.predicate = if main.predicate.lemma == "stay"
+                            && main
+                                .modifiers
+                                .iter()
+                                .any(|m| matches!(m, Modifier::Place(p) if p == "家"))
+                        {
+                            "就待在家里".to_string()
+                        } else {
+                            format!("就{}", main.predicate.target_zh())
+                        };
+                    } else if main.tense_aspect == TenseAspect::Imperative {
+                        clause.predicate = format!("请{}", main.predicate.target_zh());
+                    }
+                }
+                let text = structure.render();
+                vec![structured_candidate(text, "realize.conditional", structure)]
             }
             ProgramRelation::Single => {
                 let Some(frame) = program.frames.first() else {
@@ -266,7 +517,7 @@ impl ChineseRealizer {
         if let QuestionType::Wh(word) = &frame.question {
             if word == "phrase" {
                 return vec![question_candidate(
-                    frame.predicate.zh.clone(),
+                    frame.predicate.target_zh().to_string(),
                     "realize.fixed-phrase-question",
                 )];
             }
@@ -281,7 +532,7 @@ impl ChineseRealizer {
         }
         if frame.question == QuestionType::YesNo {
             return vec![question_candidate(
-                format!("{}{}{}吗", subject, frame.predicate.zh, obj),
+                format!("{}{}{}吗", subject, frame.predicate.target_zh(), obj),
                 "realize.yes-no-question",
             )];
         }
@@ -292,22 +543,50 @@ impl ChineseRealizer {
             } else {
                 "会"
             };
-            return vec![candidate(
-                format!("{}{}{}{}", subject, modal, frame.predicate.zh, obj),
+            let clause = ChineseClause {
+                subject,
+                predicate: frame.predicate.target_zh().to_string(),
+                object: obj,
+                time: None,
+                negation: String::new(),
+                modal: modal.to_string(),
+                aspect: String::new(),
+                passive_agent: None,
+            };
+            return vec![structured_candidate(
+                clause.render(),
                 "realize.modal",
-                0,
+                ChineseStructure {
+                    clauses: vec![clause],
+                    relation: ChineseRelation::Single,
+                    condition: None,
+                },
             )];
         }
         if frame.tense_aspect == TenseAspect::Progressive {
-            let aspect = if matches!(frame.polarity, Polarity::Negative) {
-                "没在"
+            let (negation, aspect) = if matches!(frame.polarity, Polarity::Negative) {
+                ("没在".to_string(), String::new())
             } else {
-                "正在"
+                (String::new(), "正在".to_string())
             };
-            return vec![candidate(
-                format!("{}{}{}{}", subject, aspect, frame.predicate.zh, obj),
+            let clause = ChineseClause {
+                subject,
+                predicate: frame.predicate.target_zh().to_string(),
+                object: obj,
+                time: None,
+                negation,
+                modal: String::new(),
+                aspect,
+                passive_agent: None,
+            };
+            return vec![structured_candidate(
+                clause.render(),
                 "realize.progressive",
-                0,
+                ChineseStructure {
+                    clauses: vec![clause],
+                    relation: ChineseRelation::Single,
+                    condition: None,
+                },
             )];
         }
 
@@ -318,7 +597,7 @@ impl ChineseRealizer {
                         "{}比{}{}",
                         subject,
                         self.entity_zh(than),
-                        frame.predicate.zh
+                        frame.predicate.target_zh()
                     ),
                     "realize.comparison",
                     0,
@@ -340,7 +619,7 @@ impl ChineseRealizer {
                 "很"
             };
             return vec![candidate(
-                format!("{}{}{}", subject, adv, frame.predicate.zh),
+                format!("{}{}{}", subject, adv, frame.predicate.target_zh()),
                 "realize.be-adjective",
                 0,
             )];
@@ -356,7 +635,11 @@ impl ChineseRealizer {
                 return vec![candidate(
                     format!(
                         "{}{}{}{}{}",
-                        subject, neg, frame.predicate.zh, complement.zh, obj
+                        subject,
+                        neg,
+                        frame.predicate.target_zh(),
+                        complement.target_zh(),
+                        obj
                     ),
                     "realize.want-complement",
                     0,
@@ -377,10 +660,28 @@ impl ChineseRealizer {
             } else {
                 "不"
             };
-            return vec![candidate(
-                format!("{}{}{}{}", subject, neg, frame.predicate.zh, obj),
+            let time = frame.modifiers.iter().find_map(|m| match m {
+                Modifier::Time(t) => Some(t.clone()),
+                _ => None,
+            });
+            let clause = ChineseClause {
+                subject,
+                predicate: frame.predicate.target_zh().to_string(),
+                object: obj,
+                time,
+                negation: neg.to_string(),
+                modal: String::new(),
+                aspect: String::new(),
+                passive_agent: None,
+            };
+            return vec![structured_candidate(
+                clause.render(),
                 "realize.negative",
-                0,
+                ChineseStructure {
+                    clauses: vec![clause],
+                    relation: ChineseRelation::Single,
+                    condition: None,
+                },
             )];
         }
 
@@ -395,17 +696,45 @@ impl ChineseRealizer {
                 .as_ref()
                 .map(|a| self.entity_zh(a))
                 .unwrap_or_default();
-            return vec![candidate(
-                format!("{patient}被{agent}{}了", frame.predicate.zh),
+            let clause = ChineseClause {
+                subject: patient,
+                predicate: frame.predicate.target_zh().to_string(),
+                object: String::new(),
+                time: None,
+                negation: String::new(),
+                modal: String::new(),
+                aspect: String::new(),
+                passive_agent: Some(agent),
+            };
+            return vec![structured_candidate(
+                clause.render(),
                 "realize.passive",
-                0,
+                ChineseStructure {
+                    clauses: vec![clause],
+                    relation: ChineseRelation::Single,
+                    condition: None,
+                },
             )];
         }
         if frame.tense_aspect == TenseAspect::Experiential {
-            return vec![candidate(
-                format!("{subject}{}过{obj}", frame.predicate.zh),
+            let clause = ChineseClause {
+                subject,
+                predicate: frame.predicate.target_zh().to_string(),
+                object: obj,
+                time: None,
+                negation: String::new(),
+                modal: String::new(),
+                aspect: "过".to_string(),
+                passive_agent: None,
+            };
+            return vec![structured_candidate(
+                clause.render(),
                 "realize.experiential",
-                0,
+                ChineseStructure {
+                    clauses: vec![clause],
+                    relation: ChineseRelation::Single,
+                    condition: None,
+                },
             )];
         }
         if frame.tense_aspect == TenseAspect::Future {
@@ -422,7 +751,7 @@ impl ChineseRealizer {
             }
             let tail = place.unwrap_or_else(|| obj.clone());
             return vec![candidate(
-                format!("{}就{}{}", subject, frame.predicate.zh, tail),
+                format!("{}就{}{}", subject, frame.predicate.target_zh(), tail),
                 "realize.future",
                 0,
             )];
@@ -432,7 +761,7 @@ impl ChineseRealizer {
             _ => None,
         }) {
             return vec![candidate(
-                format!("{subject}{manner}地{}{}", frame.predicate.zh, obj),
+                format!("{subject}{manner}地{}{}", frame.predicate.target_zh(), obj),
                 "realize.manner",
                 0,
             )];
@@ -442,7 +771,7 @@ impl ChineseRealizer {
             _ => None,
         }) {
             return vec![candidate(
-                format!("{subject}{}得{degree}", frame.predicate.zh),
+                format!("{subject}{}得{degree}", frame.predicate.target_zh()),
                 "realize.degree",
                 0,
             )];
@@ -464,6 +793,42 @@ impl ChineseRealizer {
                 Modifier::Place(p) => p.clone(),
                 _ => unreachable!(),
             });
+        if past && place.is_none() && frame.collocation.is_none() {
+            let clause = ChineseClause {
+                subject: subject.clone(),
+                predicate: frame.predicate.target_zh().to_string(),
+                object: obj.clone(),
+                time: time.clone(),
+                negation: String::new(),
+                modal: String::new(),
+                aspect: "了".to_string(),
+                passive_agent: None,
+            };
+            let structure = ChineseStructure {
+                clauses: vec![clause.clone()],
+                relation: ChineseRelation::Single,
+                condition: None,
+            };
+            return match time {
+                Some(time) => vec![
+                    structured_candidate(
+                        clause.render(),
+                        "realize.past-time.subject-first",
+                        structure,
+                    ),
+                    candidate(
+                        format!("{time}{subject}{}了{obj}", frame.predicate.target_zh()),
+                        "realize.past-time.time-first",
+                        1,
+                    ),
+                ],
+                None => vec![structured_candidate(
+                    clause.render(),
+                    "realize.past",
+                    structure,
+                )],
+            };
+        }
         if past {
             let phrase = if let Some(place) = &place {
                 if matches!(frame.predicate.lemma.as_str(), "go" | "come") && place == "家" {
@@ -471,10 +836,10 @@ impl ChineseRealizer {
                 } else if frame.predicate.lemma == "stay" && place == "家" {
                     "待在家里了".to_string()
                 } else {
-                    format!("{}{}{}", frame.predicate.zh, "了", place)
+                    format!("{}{}{}", frame.predicate.target_zh(), "了", place)
                 }
             } else {
-                format!("{}{}{}", frame.predicate.zh, "了", obj)
+                format!("{}{}{}", frame.predicate.target_zh(), "了", obj)
             };
             match time {
                 Some(time) => vec![
@@ -491,6 +856,46 @@ impl ChineseRealizer {
                 ],
                 None => vec![candidate(format!("{subject}{phrase}"), "realize.past", 0)],
             }
+        } else if let Some(collocation) = &frame.collocation {
+            let clause = ChineseClause {
+                subject,
+                predicate: collocation.clone(),
+                object: obj,
+                time,
+                negation: String::new(),
+                modal: String::new(),
+                aspect: String::new(),
+                passive_agent: None,
+            };
+            vec![structured_candidate(
+                clause.render(),
+                "realize.collocation",
+                ChineseStructure {
+                    clauses: vec![clause],
+                    relation: ChineseRelation::Single,
+                    condition: None,
+                },
+            )]
+        } else if frame.collocation.is_none() && place.is_none() {
+            let clause = ChineseClause {
+                subject,
+                predicate: frame.predicate.target_zh().to_string(),
+                object: obj,
+                time,
+                negation: String::new(),
+                modal: String::new(),
+                aspect: String::new(),
+                passive_agent: None,
+            };
+            vec![structured_candidate(
+                clause.render(),
+                "realize.simple",
+                ChineseStructure {
+                    clauses: vec![clause],
+                    relation: ChineseRelation::Single,
+                    condition: None,
+                },
+            )]
         } else {
             let phrase = if let Some(collocation) = &frame.collocation {
                 format!("{collocation}{obj}")
@@ -500,10 +905,10 @@ impl ChineseRealizer {
                 } else if frame.predicate.lemma == "stay" && place == "家" {
                     "待在家里".to_string()
                 } else {
-                    format!("{}{}", frame.predicate.zh, place)
+                    format!("{}{}", frame.predicate.target_zh(), place)
                 }
             } else {
-                format!("{}{}", frame.predicate.zh, obj)
+                format!("{}{}", frame.predicate.target_zh(), obj)
             };
             vec![candidate(format!("{subject}{phrase}"), "realize.simple", 0)]
         }
@@ -518,21 +923,29 @@ impl ChineseRealizer {
         if let Some(collocation) = &frame.collocation {
             return format!("请{collocation}{obj}");
         }
-        format!("请{}{}", frame.predicate.zh, obj)
+        format!("请{}{}", frame.predicate.target_zh(), obj)
     }
 
     fn entity_zh(&self, entity: &EntityRef) -> String {
+        let mut parts = vec![self.entity_single_zh(entity)];
+        for item in &entity.coordinated {
+            parts.push(self.entity_single_zh(item));
+        }
+        parts.join("和")
+    }
+
+    fn entity_single_zh(&self, entity: &EntityRef) -> String {
         let mut adjectives = String::new();
         for adj in &entity.adjectives {
-            adjectives.push_str(&adj.zh);
-            if adj.zh.chars().count() > 1 {
+            adjectives.push_str(adj.target_zh());
+            if adj.target_zh().chars().count() > 1 {
                 adjectives.push('的');
             }
         }
         let noun = if entity.plural && entity.head.lemma == "brother" {
             "兄弟"
         } else {
-            entity.head.zh.as_str()
+            entity.head.target_zh()
         };
         if let Some(quantity) = entity.quantity {
             let classifier = entity.classifier.as_deref().unwrap_or("");
@@ -583,6 +996,20 @@ fn candidate(text: String, rule_id: &str, rank: u8) -> RealizationCandidate {
         text: text.trim_end_matches(['.', '。', '?', '？']).to_string() + "。",
         rule_id: rule_id.to_string(),
         rank,
+        structure: None,
+    }
+}
+
+fn structured_candidate(
+    text: String,
+    rule_id: &str,
+    structure: ChineseStructure,
+) -> RealizationCandidate {
+    RealizationCandidate {
+        text: text.trim_end_matches(['.', '。']).to_string() + "。",
+        rule_id: rule_id.to_string(),
+        rank: 0,
+        structure: Some(structure),
     }
 }
 
@@ -591,6 +1018,7 @@ fn question_candidate(text: String, rule_id: &str) -> RealizationCandidate {
         text: text.trim_end_matches(['.', '。', '?', '？']).to_string() + "？",
         rule_id: rule_id.to_string(),
         rank: 0,
+        structure: None,
     }
 }
 
@@ -614,6 +1042,51 @@ impl CandidateSelector {
         let mut reasons = Vec::new();
         if candidate.text.trim().is_empty() {
             reasons.push("empty");
+        }
+        if let Some(structure) = &candidate.structure {
+            let Some(clause) = structure.clauses.first() else {
+                reasons.push("empty-structure");
+                return CandidateValidation {
+                    valid: false,
+                    reasons,
+                };
+            };
+            let trace_frame = if program.relation == ProgramRelation::Conditional {
+                program.frames.last()
+            } else {
+                program.frames.first()
+            };
+            if let Some(frame) = trace_frame {
+                if !clause.predicate.contains(frame.predicate.target_zh()) {
+                    reasons.push("trace-predicate-mismatch");
+                }
+                if let Some(agent) = &frame.agent {
+                    let subject_text = if clause.passive_agent.is_some() {
+                        clause.passive_agent.as_deref().unwrap_or("")
+                    } else {
+                        &clause.subject
+                    };
+                    if !subject_text.contains(agent.head.target_zh()) {
+                        reasons.push("trace-subject-mismatch");
+                    }
+                }
+                if let Some(patient) = &frame.patient {
+                    let object_text = if clause.passive_agent.is_some() {
+                        &clause.subject
+                    } else {
+                        &clause.object
+                    };
+                    if !object_text.contains(patient.head.target_zh()) {
+                        reasons.push("trace-object-mismatch");
+                    }
+                }
+                if matches!(frame.polarity, Polarity::Negative)
+                    && clause.negation.is_empty()
+                    && clause.modal.is_empty()
+                {
+                    reasons.push("trace-negation-missing");
+                }
+            }
         }
         if program.relation == ProgramRelation::Conditional {
             let main_imperative = program
@@ -640,7 +1113,7 @@ impl CandidateSelector {
                 frame
                     .collocation
                     .as_deref()
-                    .unwrap_or(frame.predicate.zh.as_str())
+                    .unwrap_or(frame.predicate.target_zh())
             };
             let where_question =
                 matches!(&frame.question, QuestionType::Wh(word) if word == "where");
@@ -651,24 +1124,30 @@ impl CandidateSelector {
             }
             if let Some(agent) = &frame.agent {
                 let weather_condition = program.relation == ProgramRelation::Conditional
-                    && agent.head.zh == "它"
+                    && agent.head.target_zh() == "它"
                     && frame.predicate.lemma == "rain";
-                if !weather_condition && !candidate.text.contains(&agent.head.zh) {
+                if !weather_condition && !candidate.text.contains(agent.head.target_zh()) {
                     reasons.push("missing-agent");
                 }
             }
             if let Some(patient) = &frame.patient {
-                if !candidate.text.contains(&patient.head.zh) {
+                if !candidate.text.contains(patient.head.target_zh())
+                    || patient
+                        .coordinated
+                        .iter()
+                        .any(|item| !candidate.text.contains(item.head.target_zh()))
+                {
                     reasons.push("missing-patient");
                 }
             }
             if let Some(complement) = &frame.complement {
-                if !candidate.text.contains(&complement.zh) {
+                if !candidate.text.contains(complement.target_zh()) {
                     reasons.push("missing-complement");
                 }
             }
             if let Some(than) = &frame.comparison {
-                if !candidate.text.contains('比') || !candidate.text.contains(&than.head.zh) {
+                if !candidate.text.contains('比') || !candidate.text.contains(than.head.target_zh())
+                {
                     reasons.push("missing-comparison");
                 }
             }
@@ -735,6 +1214,59 @@ impl CandidateSelector {
                     reasons.push("missing-where")
                 }
                 _ => {}
+            }
+            if let (Some(agent), Some(patient)) = (&frame.agent, &frame.patient) {
+                let pos = |text: &str| candidate.text.find(text);
+                let agent_pos = pos(agent.head.target_zh());
+                let patient_pos = pos(patient.head.target_zh());
+                let predicate_pos = pos(predicate_text);
+                if frame.tense_aspect == TenseAspect::Passive {
+                    if let (Some(patient_pos), Some(predicate_pos)) = (patient_pos, predicate_pos) {
+                        let passive_pos = pos("被");
+                        let agent_pos = frame.agent.as_ref().and_then(|a| pos(a.head.target_zh()));
+                        let order_ok = passive_pos.is_some_and(|bei| {
+                            patient_pos < bei
+                                && agent_pos.map_or(true, |agent| bei < agent)
+                                && bei < predicate_pos
+                        });
+                        if !order_ok {
+                            reasons.push("wrong-role-order");
+                        }
+                    }
+                } else if let (Some(agent_pos), Some(predicate_pos), Some(patient_pos)) =
+                    (agent_pos, predicate_pos, patient_pos)
+                {
+                    if agent_pos >= predicate_pos || predicate_pos >= patient_pos {
+                        reasons.push("wrong-role-order");
+                    }
+                }
+            }
+            if let (Some(complement), Some(predicate_pos)) =
+                (&frame.complement, candidate.text.find(predicate_text))
+            {
+                if let Some(complement_pos) = candidate.text.find(complement.target_zh()) {
+                    if complement_pos <= predicate_pos {
+                        reasons.push("wrong-complement-order");
+                    }
+                }
+            }
+            if let Some(than) = &frame.comparison {
+                let pos = |text: &str| candidate.text.find(text);
+                if let (Some(agent_pos), Some(predicate_pos), Some(than_pos), Some(bi_pos)) = (
+                    frame.agent.as_ref().and_then(|a| pos(a.head.target_zh())),
+                    pos(predicate_text),
+                    pos("比").and_then(|bi| {
+                        candidate
+                            .text
+                            .get(bi..)
+                            .and_then(|tail| tail.find(than.head.target_zh()).map(|p| bi + p))
+                    }),
+                    pos("比"),
+                ) {
+                    if !(agent_pos < bi_pos && bi_pos < than_pos && than_pos < predicate_pos) {
+                        reasons.push("wrong-comparison-order");
+                    }
+                }
             }
         }
         CandidateValidation {
@@ -900,6 +1432,127 @@ impl SemanticCompositionEngine {
         out
     }
 
+    fn syntax_from_program(program: &MeaningProgram) -> SyntaxGraph {
+        let mut graph = SyntaxGraph::default();
+        let mut frame_predicates = Vec::new();
+        for frame in &program.frames {
+            let pid = graph.nodes.len();
+            graph.nodes.push(SyntaxNode {
+                id: pid,
+                surface: frame.predicate.word.clone(),
+                lemma: frame.predicate.lemma.clone(),
+                pos: frame.predicate.pos.clone(),
+                span: frame.predicate.span,
+            });
+            frame_predicates.push(pid);
+            if let Some(agent) = &frame.agent {
+                let id = graph.nodes.len();
+                graph.nodes.push(SyntaxNode {
+                    id,
+                    surface: agent.head.word.clone(),
+                    lemma: agent.head.lemma.clone(),
+                    pos: agent.head.pos.clone(),
+                    span: agent.head.span,
+                });
+                graph.relations.push(SyntaxRelation {
+                    head: pid,
+                    dependent: id,
+                    kind: SyntaxRelationKind::Subject,
+                });
+            }
+            if let Some(patient) = &frame.patient {
+                let id = graph.nodes.len();
+                graph.nodes.push(SyntaxNode {
+                    id,
+                    surface: patient.head.word.clone(),
+                    lemma: patient.head.lemma.clone(),
+                    pos: patient.head.pos.clone(),
+                    span: patient.head.span,
+                });
+                graph.relations.push(SyntaxRelation {
+                    head: pid,
+                    dependent: id,
+                    kind: SyntaxRelationKind::Object,
+                });
+            }
+        }
+        if program.relation == ProgramRelation::Conditional && frame_predicates.len() >= 2 {
+            graph.relations.push(SyntaxRelation {
+                head: frame_predicates[1],
+                dependent: frame_predicates[0],
+                kind: SyntaxRelationKind::Condition,
+            });
+        }
+        graph
+    }
+
+    fn attach_targets(&self, program: &mut MeaningProgram) {
+        for frame in &mut program.frames {
+            let object = frame.patient.as_ref().map(|p| p.head.lemma.clone());
+            Self::attach_one(&self.lexical, &mut frame.predicate, object.as_deref());
+            if let Some(agent) = &mut frame.agent {
+                Self::attach_one(&self.lexical, &mut agent.head, None);
+                for adj in &mut agent.adjectives {
+                    Self::attach_one(&self.lexical, adj, None);
+                }
+                for item in &mut agent.coordinated {
+                    Self::attach_one(&self.lexical, &mut item.head, None);
+                }
+            }
+            if let Some(patient) = &mut frame.patient {
+                Self::attach_one(&self.lexical, &mut patient.head, None);
+                for adj in &mut patient.adjectives {
+                    Self::attach_one(&self.lexical, adj, None);
+                }
+                for item in &mut patient.coordinated {
+                    Self::attach_one(&self.lexical, &mut item.head, None);
+                }
+            }
+            if let Some(complement) = &mut frame.complement {
+                Self::attach_one(&self.lexical, complement, object.as_deref());
+            }
+            if let Some(than) = &mut frame.comparison {
+                Self::attach_one(&self.lexical, &mut than.head, None);
+            }
+        }
+    }
+
+    fn attach_one(
+        lexical: &crate::composer::CompositionEngine,
+        lexeme: &mut Lexeme,
+        object: Option<&str>,
+    ) {
+        if !lexeme.targets.is_empty() {
+            return;
+        }
+        let candidates = lexical.sense_targets(&lexeme.lemma, &lexeme.pos, object);
+        if candidates.is_empty() {
+            let sense_id = format!("lex:{}:{}", lexeme.lemma, lexeme.pos);
+            lexeme.sense_id = Some(sense_id.clone());
+            let zh = lexical
+                .zh(&lexeme.lemma, &lexeme.pos)
+                .unwrap_or(lexeme.zh.as_str())
+                .to_string();
+            lexeme.targets.push(TargetLexeme {
+                zh,
+                sense_id,
+                source: "lexicon".to_string(),
+            });
+            lexeme.zh.clear();
+        } else {
+            for (zh, sense_id) in candidates {
+                lexeme.targets.push(TargetLexeme {
+                    zh,
+                    sense_id: sense_id.clone(),
+                    source: "sense_table".to_string(),
+                });
+                if lexeme.sense_id.is_none() {
+                    lexeme.sense_id = Some(sense_id);
+                }
+            }
+        }
+    }
+
     pub fn analyze(
         &self,
         text: &str,
@@ -910,6 +1563,7 @@ impl SemanticCompositionEngine {
         if words.is_empty() {
             return SemanticAnalysis {
                 program: None,
+                syntax: None,
                 rejections: Vec::new(),
                 question: t.question,
             };
@@ -966,6 +1620,7 @@ impl SemanticCompositionEngine {
 
         if let Some(chinese) = self.lexical.phrase(&t.key) {
             return SemanticAnalysis {
+                syntax: None,
                 program: Some(MeaningProgram {
                     frames: vec![MeaningFrame {
                         predicate: Lexeme {
@@ -973,6 +1628,8 @@ impl SemanticCompositionEngine {
                             lemma: t.key.clone(),
                             zh: chinese.to_string(),
                             pos: "phrase".to_string(),
+                            sense_id: None,
+                            targets: Vec::new(),
                             span: TextSpan::new(0, text.len()),
                         },
                         agent: None,
@@ -982,6 +1639,7 @@ impl SemanticCompositionEngine {
                         comparison: None,
                         modifiers: Vec::new(),
                         polarity: Polarity::Affirmative,
+                        negation_scope: None,
                         tense_aspect: TenseAspect::Simple,
                         question: if t.question {
                             QuestionType::Wh("phrase".to_string())
@@ -1002,15 +1660,31 @@ impl SemanticCompositionEngine {
             dict: &dict,
             words,
         };
-        let program = parser.parse();
-        match program {
-            Some(program) => SemanticAnalysis {
+        if let Some((mut program, syntax)) = parser.parse_compositional() {
+            self.attach_targets(&mut program);
+            return SemanticAnalysis {
                 program: Some(program),
+                syntax: Some(syntax),
                 rejections: Vec::new(),
                 question: t.question,
-            },
+            };
+        }
+        let program = parser.parse();
+        match program {
+            Some(mut program) => {
+                self.attach_targets(&mut program);
+                let syntax = (program.relation == ProgramRelation::Conditional)
+                    .then(|| Self::syntax_from_program(&program));
+                SemanticAnalysis {
+                    program: Some(program),
+                    syntax,
+                    rejections: Vec::new(),
+                    question: t.question,
+                }
+            }
             None => SemanticAnalysis {
                 program: None,
+                syntax: None,
                 rejections: vec![Rejection {
                     span: TextSpan::new(0, text.len()),
                     reason: RejectionReason::UnsupportedPattern,
@@ -1067,6 +1741,7 @@ fn rejected(
 ) -> SemanticAnalysis {
     SemanticAnalysis {
         program: None,
+        syntax: None,
         rejections: vec![Rejection {
             span: TextSpan::new(token.start.min(text.len()), token.end.min(text.len())),
             reason,
@@ -1132,19 +1807,21 @@ impl SemanticParser<'_> {
         {
             return None;
         }
-        let zh = self.engine.lexical.zh(&token.text, "pronoun")?.to_string();
         Some((
             EntityRef {
                 head: Lexeme {
                     word: token.text.clone(),
                     lemma: token.text.clone(),
-                    zh,
+                    zh: String::new(),
                     pos: "pronoun".to_string(),
+                    sense_id: None,
+                    targets: Vec::new(),
                     span: TextSpan::new(token.start, token.end),
                 },
                 adjectives: Vec::new(),
                 determiner: None,
                 quantity: None,
+                coordinated: Vec::new(),
                 classifier: None,
                 plural: false,
                 span: TextSpan::new(token.start, token.end),
@@ -1209,6 +1886,8 @@ impl SemanticParser<'_> {
                     lemma: "light blue".to_string(),
                     zh: "浅蓝色".to_string(),
                     pos: "adjective".to_string(),
+                    sense_id: None,
+                    targets: Vec::new(),
                     span: self.span(idx, idx + 2),
                 });
                 idx += 2;
@@ -1226,17 +1905,13 @@ impl SemanticParser<'_> {
             if !next_is_noun || !self.dict.has_pos(&token.text, &lemma, "adjective") {
                 break;
             }
-            let zh = self
-                .engine
-                .lexical
-                .zh(&lemma, "adjective")
-                .or_else(|| self.engine.lexical.zh(&token.text, "adjective"))?
-                .to_string();
             adjectives.push(Lexeme {
                 word: token.text.clone(),
                 lemma,
-                zh,
+                zh: String::new(),
                 pos: "adjective".to_string(),
+                sense_id: None,
+                targets: Vec::new(),
                 span: TextSpan::new(token.start, token.end),
             });
             idx += 1;
@@ -1246,12 +1921,6 @@ impl SemanticParser<'_> {
         if !self.dict.has_pos(&token.text, &lemma, "noun") {
             return None;
         }
-        let zh = self
-            .engine
-            .lexical
-            .zh(&lemma, "noun")
-            .or_else(|| self.engine.lexical.zh(&token.text, "noun"))?
-            .to_string();
         let classifier = self.engine.lexical.classifier(&lemma).map(str::to_string);
         let plural = token.text.ends_with('s') && token.text != lemma;
         Some((
@@ -1259,13 +1928,16 @@ impl SemanticParser<'_> {
                 head: Lexeme {
                     word: token.text.clone(),
                     lemma,
-                    zh,
+                    zh: String::new(),
                     pos: "noun".to_string(),
+                    sense_id: None,
+                    targets: Vec::new(),
                     span: TextSpan::new(token.start, token.end),
                 },
                 adjectives,
                 determiner,
                 quantity,
+                coordinated: Vec::new(),
                 classifier,
                 plural,
                 span: self.span(start, idx + 1),
@@ -1280,25 +1952,10 @@ impl SemanticParser<'_> {
             return Some((first, end));
         }
         let (second, next) = self.entity(end + 1)?;
-        let zh = format!("{}和{}", first.head.zh, second.head.zh);
-        Some((
-            EntityRef {
-                head: Lexeme {
-                    word: first.head.word.clone(),
-                    lemma: first.head.lemma.clone(),
-                    zh,
-                    pos: "noun".to_string(),
-                    span: self.span(i, next),
-                },
-                adjectives: Vec::new(),
-                determiner: None,
-                quantity: None,
-                classifier: None,
-                plural: false,
-                span: self.span(i, next),
-            },
-            next,
-        ))
+        let mut first = first;
+        first.coordinated.push(second);
+        first.span = self.span(i, next);
+        Some((first, next))
     }
 
     fn verb(&self, i: usize) -> Option<(Lexeme, bool, usize)> {
@@ -1312,6 +1969,8 @@ impl SemanticParser<'_> {
                         lemma: phrase,
                         zh: zh.to_string(),
                         pos: "verb".to_string(),
+                        sense_id: None,
+                        targets: Vec::new(),
                         span: self.span(i, i + 2),
                     },
                     false,
@@ -1325,19 +1984,15 @@ impl SemanticParser<'_> {
         {
             return None;
         }
-        let zh = self
-            .engine
-            .lexical
-            .zh(&lemma, "verb")
-            .or_else(|| self.engine.lexical.zh(&token.text, "verb"))?
-            .to_string();
         let past = self.engine.lexical.is_past_form(&token.text, &lemma);
         Some((
             Lexeme {
                 word: token.text.clone(),
                 lemma,
-                zh,
+                zh: String::new(),
                 pos: "verb".to_string(),
+                sense_id: None,
+                targets: Vec::new(),
                 span: TextSpan::new(token.start, token.end),
             },
             past,
@@ -1353,18 +2008,14 @@ impl SemanticParser<'_> {
         {
             return None;
         }
-        let zh = self
-            .engine
-            .lexical
-            .zh(&lemma, "adjective")
-            .or_else(|| self.engine.lexical.zh(&token.text, "adjective"))?
-            .to_string();
         Some((
             Lexeme {
                 word: token.text.clone(),
                 lemma,
-                zh,
+                zh: String::new(),
                 pos: "adjective".to_string(),
+                sense_id: None,
+                targets: Vec::new(),
                 span: TextSpan::new(token.start, token.end),
             },
             i + 1,
@@ -1455,6 +2106,188 @@ impl SemanticParser<'_> {
         }
     }
 
+    fn attach_target(&self, lexeme: &mut Lexeme, object: Option<&str>) {
+        if lexeme.targets.is_empty() {
+            let candidates = self
+                .engine
+                .lexical
+                .sense_targets(&lexeme.lemma, &lexeme.pos, object);
+            if candidates.is_empty() {
+                let sense_id = format!("lex:{}:{}", lexeme.lemma, lexeme.pos);
+                lexeme.sense_id = Some(sense_id.clone());
+                let zh = self
+                    .engine
+                    .lexical
+                    .zh(&lexeme.lemma, &lexeme.pos)
+                    .unwrap_or(lexeme.zh.as_str())
+                    .to_string();
+                lexeme.targets.push(TargetLexeme {
+                    zh,
+                    sense_id,
+                    source: "lexicon".to_string(),
+                });
+            } else {
+                for (zh, sense_id) in candidates {
+                    lexeme.targets.push(TargetLexeme {
+                        zh,
+                        sense_id: sense_id.clone(),
+                        source: "sense_table".to_string(),
+                    });
+                    if lexeme.sense_id.is_none() {
+                        lexeme.sense_id = Some(sense_id);
+                    }
+                }
+                lexeme.zh.clear();
+            }
+        }
+    }
+
+    fn syntax_graph(
+        &self,
+        agent: &EntityRef,
+        predicate: &Lexeme,
+        patient: &EntityRef,
+        time: Option<&str>,
+    ) -> SyntaxGraph {
+        let mut nodes = vec![
+            SyntaxNode {
+                id: 0,
+                surface: agent.head.word.clone(),
+                lemma: agent.head.lemma.clone(),
+                pos: agent.head.pos.clone(),
+                span: agent.head.span,
+            },
+            SyntaxNode {
+                id: 1,
+                surface: predicate.word.clone(),
+                lemma: predicate.lemma.clone(),
+                pos: predicate.pos.clone(),
+                span: predicate.span,
+            },
+            SyntaxNode {
+                id: 2,
+                surface: patient.head.word.clone(),
+                lemma: patient.head.lemma.clone(),
+                pos: patient.head.pos.clone(),
+                span: patient.head.span,
+            },
+        ];
+        let mut relations = vec![
+            SyntaxRelation {
+                head: 1,
+                dependent: 0,
+                kind: SyntaxRelationKind::Subject,
+            },
+            SyntaxRelation {
+                head: 1,
+                dependent: 2,
+                kind: SyntaxRelationKind::Object,
+            },
+        ];
+        for (head, adjectives) in [(0usize, &agent.adjectives), (2usize, &patient.adjectives)] {
+            for adjective in adjectives {
+                let id = nodes.len();
+                nodes.push(SyntaxNode {
+                    id,
+                    surface: adjective.word.clone(),
+                    lemma: adjective.lemma.clone(),
+                    pos: adjective.pos.clone(),
+                    span: adjective.span,
+                });
+                relations.push(SyntaxRelation {
+                    head,
+                    dependent: id,
+                    kind: SyntaxRelationKind::Modifier,
+                });
+            }
+        }
+        if let Some(time) = time {
+            let id = nodes.len();
+            nodes.push(SyntaxNode {
+                id,
+                surface: time.to_string(),
+                lemma: time.to_string(),
+                pos: "adverb".to_string(),
+                span: TextSpan::default(),
+            });
+            relations.push(SyntaxRelation {
+                head: 1,
+                dependent: id,
+                kind: SyntaxRelationKind::Adverbial,
+            });
+        }
+        SyntaxGraph { nodes, relations }
+    }
+
+    fn parse_compositional(&self) -> Option<(MeaningProgram, SyntaxGraph)> {
+        let (mut agent, idx) = self.subject(0)?;
+        self.attach_target(&mut agent.head, None);
+        let mut i = idx;
+        let mut negative = false;
+        let mut auxiliary_past = false;
+        if matches!(self.words.get(i)?.text.as_str(), "do" | "does" | "did")
+            && self.words.get(i + 1).map(|w| w.text.as_str()) == Some("not")
+        {
+            negative = true;
+            auxiliary_past = self.words[i].text == "did";
+            i += 2;
+        }
+        let (mut predicate, past, mut end) = self.verb(i)?;
+        let (mut patient, next) = self.entity_coordinated(end)?;
+        self.attach_target(&mut predicate, Some(&patient.head.lemma));
+        self.attach_target(&mut patient.head, None);
+        for adj in &mut patient.adjectives {
+            self.attach_target(adj, None);
+        }
+        end = next;
+        if negative && !patient.coordinated.is_empty() {
+            return None;
+        }
+        let mut time = None;
+        if let Some((value, next)) = self.time(end) {
+            time = Some(value);
+            end = next;
+        }
+        if end != self.words.len() {
+            return None;
+        }
+        let tense = if past || auxiliary_past {
+            TenseAspect::Past
+        } else {
+            TenseAspect::Simple
+        };
+        let collocation = self.collocation(&predicate, Some(&patient));
+        let syntax = self.syntax_graph(&agent, &predicate, &patient, time.as_deref());
+        let mut modifiers = Vec::new();
+        if let Some(time) = time {
+            modifiers.push(Modifier::Time(time));
+        }
+        Some((
+            MeaningProgram {
+                frames: vec![MeaningFrame {
+                    predicate,
+                    agent: Some(agent),
+                    patient: Some(patient),
+                    complement: None,
+                    collocation,
+                    comparison: None,
+                    modifiers,
+                    polarity: if negative {
+                        Polarity::Negative
+                    } else {
+                        Polarity::Affirmative
+                    },
+                    negation_scope: negative.then_some(ScopeTarget::Predicate),
+                    tense_aspect: tense,
+                    question: QuestionType::None,
+                    source_spans: vec![self.span(0, self.words.len())],
+                }],
+                relation: ProgramRelation::Single,
+            },
+            syntax,
+        ))
+    }
+
     fn parse(&self) -> Option<MeaningProgram> {
         if self.words.first()?.text == "if" {
             return self.parse_if();
@@ -1503,6 +2336,7 @@ impl SemanticParser<'_> {
                 comparison: None,
                 modifiers: Vec::new(),
                 polarity: Polarity::Affirmative,
+                negation_scope: None,
                 tense_aspect: TenseAspect::Simple,
                 question: QuestionType::None,
                 source_spans: vec![self.span(0, condition_end)],
@@ -1532,6 +2366,7 @@ impl SemanticParser<'_> {
                 comparison: None,
                 modifiers: modifiers.clone(),
                 polarity: Polarity::Affirmative,
+                negation_scope: None,
                 tense_aspect: TenseAspect::Future,
                 question: QuestionType::None,
                 source_spans: vec![self.span(0, self.words.len())],
@@ -1548,6 +2383,7 @@ impl SemanticParser<'_> {
                 comparison: None,
                 modifiers: Vec::new(),
                 polarity: Polarity::Affirmative,
+                negation_scope: None,
                 tense_aspect: TenseAspect::Simple,
                 question: QuestionType::None,
                 source_spans: vec![self.span(0, condition_end)],
@@ -1570,6 +2406,7 @@ impl SemanticParser<'_> {
             comparison: None,
             modifiers: Vec::new(),
             polarity: Polarity::Affirmative,
+            negation_scope: None,
             tense_aspect: TenseAspect::Simple,
             question: QuestionType::None,
             source_spans: vec![self.span(0, condition_end)],
@@ -1583,6 +2420,7 @@ impl SemanticParser<'_> {
             comparison: None,
             modifiers,
             polarity: Polarity::Affirmative,
+            negation_scope: None,
             tense_aspect: TenseAspect::Future,
             question: QuestionType::None,
             source_spans: vec![self.span(will_pos, self.words.len())],
@@ -1618,6 +2456,7 @@ impl SemanticParser<'_> {
                 comparison: None,
                 modifiers: Vec::new(),
                 polarity: Polarity::Affirmative,
+                negation_scope: None,
                 tense_aspect: TenseAspect::Imperative,
                 question: QuestionType::None,
                 source_spans: vec![self.span(start, end)],
@@ -1654,6 +2493,8 @@ impl SemanticParser<'_> {
                     lemma: "be".to_string(),
                     zh: String::new(),
                     pos: "verb".to_string(),
+                    sense_id: None,
+                    targets: Vec::new(),
                     span: TextSpan::default(),
                 },
                 agent: Some(agent),
@@ -1663,6 +2504,7 @@ impl SemanticParser<'_> {
                 comparison: None,
                 modifiers: Vec::new(),
                 polarity: Polarity::Affirmative,
+                negation_scope: None,
                 tense_aspect: TenseAspect::Simple,
                 question: QuestionType::Wh("where".to_string()),
                 source_spans: vec![self.span(0, self.words.len())],
@@ -1692,6 +2534,7 @@ impl SemanticParser<'_> {
                 comparison: None,
                 modifiers: Vec::new(),
                 polarity: Polarity::Affirmative,
+                negation_scope: None,
                 tense_aspect: TenseAspect::Simple,
                 question: QuestionType::YesNo,
                 source_spans: vec![self.span(0, self.words.len())],
@@ -1737,6 +2580,7 @@ impl SemanticParser<'_> {
                 } else {
                     Polarity::Affirmative
                 },
+                negation_scope: None,
                 tense_aspect: TenseAspect::Simple,
                 question: QuestionType::None,
                 source_spans: vec![self.span(0, self.words.len())],
@@ -1771,6 +2615,7 @@ impl SemanticParser<'_> {
                 comparison: None,
                 modifiers: Vec::new(),
                 polarity: Polarity::Negative,
+                negation_scope: None,
                 tense_aspect: if aux == "did" {
                     TenseAspect::Past
                 } else {
@@ -1808,6 +2653,7 @@ impl SemanticParser<'_> {
                 comparison: None,
                 modifiers: Vec::new(),
                 polarity: Polarity::Affirmative,
+                negation_scope: None,
                 tense_aspect: TenseAspect::Passive,
                 question: QuestionType::None,
                 source_spans: vec![self.span(0, self.words.len())],
@@ -1849,6 +2695,7 @@ impl SemanticParser<'_> {
                 comparison: None,
                 modifiers: Vec::new(),
                 polarity: Polarity::Affirmative,
+                negation_scope: None,
                 tense_aspect: TenseAspect::Experiential,
                 question: QuestionType::None,
                 source_spans: vec![self.span(0, self.words.len())],
@@ -1886,6 +2733,7 @@ impl SemanticParser<'_> {
                 } else {
                     Polarity::Affirmative
                 },
+                negation_scope: None,
                 tense_aspect: TenseAspect::Modal("can".to_string()),
                 question: QuestionType::None,
                 source_spans: vec![self.span(0, self.words.len())],
@@ -1926,6 +2774,7 @@ impl SemanticParser<'_> {
                 } else {
                     Polarity::Affirmative
                 },
+                negation_scope: None,
                 tense_aspect: TenseAspect::Progressive,
                 question: QuestionType::None,
                 source_spans: vec![self.span(0, self.words.len())],
@@ -1949,8 +2798,10 @@ impl SemanticParser<'_> {
         let predicate = Lexeme {
             word: "afraid".to_string(),
             lemma: "afraid".to_string(),
-            zh: "害怕".to_string(),
+            zh: String::new(),
             pos: "adjective".to_string(),
+            sense_id: None,
+            targets: Vec::new(),
             span: self.span(idx + 1, idx + 2),
         };
         Some(MeaningProgram {
@@ -1963,6 +2814,7 @@ impl SemanticParser<'_> {
                 comparison: None,
                 modifiers: Vec::new(),
                 polarity: Polarity::Affirmative,
+                negation_scope: None,
                 tense_aspect: TenseAspect::Simple,
                 question: QuestionType::None,
                 source_spans: vec![self.span(0, self.words.len())],
@@ -1994,6 +2846,7 @@ impl SemanticParser<'_> {
                 comparison: Some(than),
                 modifiers: Vec::new(),
                 polarity: Polarity::Affirmative,
+                negation_scope: None,
                 tense_aspect: TenseAspect::Simple,
                 question: QuestionType::None,
                 source_spans: vec![self.span(0, self.words.len())],
@@ -2026,6 +2879,7 @@ impl SemanticParser<'_> {
                 } else {
                     Polarity::Affirmative
                 },
+                negation_scope: None,
                 tense_aspect: TenseAspect::Simple,
                 question: QuestionType::None,
                 source_spans: vec![self.span(0, self.words.len())],
@@ -2045,7 +2899,7 @@ impl SemanticParser<'_> {
         if let Some((place, next)) = self.place(end) {
             modifiers.push(Modifier::Place(place));
             end = next;
-        } else if let Some((p, next)) = self.entity(end) {
+        } else if let Some((p, next)) = self.entity_coordinated(end) {
             patient = Some(p);
             end = next;
         }
@@ -2066,6 +2920,7 @@ impl SemanticParser<'_> {
                 comparison: None,
                 modifiers,
                 polarity: Polarity::Affirmative,
+                negation_scope: None,
                 tense_aspect: TenseAspect::Past,
                 question: QuestionType::None,
                 source_spans: vec![self.span(0, self.words.len())],
@@ -2088,9 +2943,10 @@ impl SemanticParser<'_> {
         } else if let Some((manner, next)) = self.adverb(end) {
             modifiers.push(Modifier::Manner(manner));
             end = next;
-        } else if let Some((degree, next)) = self.adjective(end) {
+        } else if let Some((mut degree, next)) = self.adjective(end) {
             if next == self.words.len() {
-                modifiers.push(Modifier::Degree(degree.zh));
+                self.attach_target(&mut degree, None);
+                modifiers.push(Modifier::Degree(degree.target_zh().to_string()));
                 end = next;
             }
         } else if let Some((p, next)) = self.entity_coordinated(end) {
@@ -2111,6 +2967,7 @@ impl SemanticParser<'_> {
                 comparison: None,
                 modifiers,
                 polarity: Polarity::Affirmative,
+                negation_scope: None,
                 tense_aspect: TenseAspect::Simple,
                 question: QuestionType::None,
                 source_spans: vec![self.span(0, self.words.len())],

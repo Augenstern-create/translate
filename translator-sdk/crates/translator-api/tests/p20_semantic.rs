@@ -108,6 +108,8 @@ fn 多语序候选由确定性排序选择() {
                 lemma: "buy".into(),
                 zh: "买".into(),
                 pos: "verb".into(),
+                sense_id: None,
+                targets: Vec::new(),
                 span: translator_api::TextSpan::new(0, 0),
             },
             agent: Some(translator_api::semantic::EntityRef {
@@ -116,11 +118,14 @@ fn 多语序候选由确定性排序选择() {
                     lemma: "she".into(),
                     zh: "她".into(),
                     pos: "pronoun".into(),
+                    sense_id: None,
+                    targets: Vec::new(),
                     span: translator_api::TextSpan::new(0, 0),
                 },
                 adjectives: vec![],
                 determiner: None,
                 quantity: None,
+                coordinated: vec![],
                 classifier: None,
                 plural: false,
                 span: translator_api::TextSpan::new(0, 0),
@@ -131,6 +136,8 @@ fn 多语序候选由确定性排序选择() {
                     lemma: "phone".into(),
                     zh: "手机".into(),
                     pos: "noun".into(),
+                    sense_id: None,
+                    targets: Vec::new(),
                     span: translator_api::TextSpan::new(0, 0),
                 },
                 adjectives: vec![translator_api::semantic::Lexeme {
@@ -138,10 +145,13 @@ fn 多语序候选由确定性排序选择() {
                     lemma: "new".into(),
                     zh: "新".into(),
                     pos: "adjective".into(),
+                    sense_id: None,
+                    targets: Vec::new(),
                     span: translator_api::TextSpan::new(0, 0),
                 }],
                 determiner: Some(translator_api::semantic::Determiner::A),
                 quantity: None,
+                coordinated: vec![],
                 classifier: Some("部".into()),
                 plural: false,
                 span: translator_api::TextSpan::new(0, 0),
@@ -151,6 +161,7 @@ fn 多语序候选由确定性排序选择() {
             comparison: None,
             modifiers: vec![translator_api::semantic::Modifier::Time("昨天".into())],
             polarity: translator_api::semantic::Polarity::Affirmative,
+            negation_scope: None,
             tense_aspect: translator_api::semantic::TenseAspect::Past,
             question: translator_api::semantic::QuestionType::None,
             source_spans: vec![],
@@ -198,6 +209,8 @@ fn 候选验证拒绝错误否定范围() {
                 lemma: "go".into(),
                 zh: "去".into(),
                 pos: "verb".into(),
+                sense_id: None,
+                targets: Vec::new(),
                 span: translator_api::TextSpan::new(0, 0),
             },
             agent: Some(translator_api::semantic::EntityRef {
@@ -206,11 +219,14 @@ fn 候选验证拒绝错误否定范围() {
                     lemma: "he".into(),
                     zh: "他".into(),
                     pos: "pronoun".into(),
+                    sense_id: None,
+                    targets: Vec::new(),
                     span: translator_api::TextSpan::new(0, 0),
                 },
                 adjectives: vec![],
                 determiner: None,
                 quantity: None,
+                coordinated: vec![],
                 classifier: None,
                 plural: false,
                 span: translator_api::TextSpan::new(0, 0),
@@ -221,6 +237,7 @@ fn 候选验证拒绝错误否定范围() {
             comparison: None,
             modifiers: vec![],
             polarity: translator_api::semantic::Polarity::Negative,
+            negation_scope: None,
             tense_aspect: translator_api::semantic::TenseAspect::Past,
             question: translator_api::semantic::QuestionType::None,
             source_spans: vec![],
@@ -232,14 +249,149 @@ fn 候选验证拒绝错误否定范围() {
         text: "他没去。".into(),
         rule_id: "good".into(),
         rank: 0,
+        structure: None,
     };
     let bad = translator_api::semantic::RealizationCandidate {
         text: "他不想去。".into(),
         rule_id: "bad".into(),
         rank: 0,
+        structure: None,
     };
     assert!(selector.validate(&program, &good).valid);
     let bad_result = selector.validate(&program, &bad);
     assert!(!bad_result.valid);
     assert!(bad_result.reasons.contains(&"wrong-negation"));
+}
+
+#[test]
+fn 候选验证拒绝主客体交换() {
+    let entity = |word: &str, zh: &str| translator_api::semantic::EntityRef {
+        head: translator_api::semantic::Lexeme {
+            word: word.into(),
+            lemma: word.into(),
+            zh: zh.into(),
+            pos: "noun".into(),
+            sense_id: None,
+            targets: Vec::new(),
+            span: translator_api::TextSpan::new(0, 0),
+        },
+        adjectives: vec![],
+        determiner: None,
+        quantity: None,
+        coordinated: vec![],
+        classifier: None,
+        plural: false,
+        span: translator_api::TextSpan::new(0, 0),
+    };
+    let program = translator_api::semantic::MeaningProgram {
+        frames: vec![translator_api::semantic::MeaningFrame {
+            predicate: translator_api::semantic::Lexeme {
+                word: "chase".into(),
+                lemma: "chase".into(),
+                zh: "追".into(),
+                pos: "verb".into(),
+                sense_id: None,
+                targets: Vec::new(),
+                span: translator_api::TextSpan::new(0, 0),
+            },
+            agent: Some(entity("dog", "狗")),
+            patient: Some(entity("cat", "猫")),
+            complement: None,
+            collocation: None,
+            comparison: None,
+            modifiers: vec![],
+            polarity: translator_api::semantic::Polarity::Affirmative,
+            negation_scope: None,
+            tense_aspect: translator_api::semantic::TenseAspect::Simple,
+            question: translator_api::semantic::QuestionType::None,
+            source_spans: vec![],
+        }],
+        relation: translator_api::semantic::ProgramRelation::Single,
+    };
+    let selector = translator_api::semantic::CandidateSelector;
+    let good = translator_api::semantic::RealizationCandidate {
+        text: "狗追猫。".into(),
+        rule_id: "good".into(),
+        rank: 0,
+        structure: None,
+    };
+    let bad = translator_api::semantic::RealizationCandidate {
+        text: "猫追狗。".into(),
+        rule_id: "bad".into(),
+        rank: 0,
+        structure: None,
+    };
+    assert!(selector.validate(&program, &good).valid);
+    let bad_result = selector.validate(&program, &bad);
+    assert!(!bad_result.valid);
+    assert!(bad_result.reasons.contains(&"wrong-role-order"));
+}
+
+#[test]
+fn 候选结构trace拒绝错误施事() {
+    let entity = |word: &str, zh: &str| translator_api::semantic::EntityRef {
+        head: translator_api::semantic::Lexeme {
+            word: word.into(),
+            lemma: word.into(),
+            zh: zh.into(),
+            pos: "noun".into(),
+            span: translator_api::TextSpan::new(0, 0),
+            sense_id: None,
+            targets: vec![],
+        },
+        adjectives: vec![],
+        determiner: None,
+        quantity: None,
+        coordinated: vec![],
+        classifier: None,
+        plural: false,
+        span: translator_api::TextSpan::new(0, 0),
+    };
+    let program = translator_api::semantic::MeaningProgram {
+        frames: vec![translator_api::semantic::MeaningFrame {
+            predicate: translator_api::semantic::Lexeme {
+                word: "chase".into(),
+                lemma: "chase".into(),
+                zh: "追".into(),
+                pos: "verb".into(),
+                span: translator_api::TextSpan::new(0, 0),
+                sense_id: None,
+                targets: vec![],
+            },
+            agent: Some(entity("dog", "狗")),
+            patient: Some(entity("cat", "猫")),
+            complement: None,
+            collocation: None,
+            comparison: None,
+            modifiers: vec![],
+            polarity: translator_api::semantic::Polarity::Affirmative,
+            negation_scope: None,
+            tense_aspect: translator_api::semantic::TenseAspect::Simple,
+            question: translator_api::semantic::QuestionType::None,
+            source_spans: vec![],
+        }],
+        relation: translator_api::semantic::ProgramRelation::Single,
+    };
+    let bad = translator_api::semantic::RealizationCandidate {
+        text: "猫追狗。".into(),
+        rule_id: "bad".into(),
+        rank: 0,
+        structure: Some(translator_api::semantic::ChineseStructure {
+            clauses: vec![translator_api::semantic::ChineseClause {
+                subject: "猫".into(),
+                predicate: "追".into(),
+                object: "狗".into(),
+                time: None,
+                negation: String::new(),
+                modal: String::new(),
+                aspect: String::new(),
+                passive_agent: None,
+            }],
+            relation: translator_api::semantic::ChineseRelation::Single,
+            condition: None,
+        }),
+    };
+    let result = translator_api::semantic::CandidateSelector.validate(&program, &bad);
+    assert!(!result.valid);
+    assert!(result.reasons.contains(&"trace-subject-mismatch"));
 }

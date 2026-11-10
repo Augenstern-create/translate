@@ -11,6 +11,24 @@
     "run company": "经营",
     "play football": "踢"
   },
+  "senses": {
+    "book": [
+      {"id":"book.noun.volume","pos":"noun","zh":"书"},
+      {"id":"book.verb.reserve","pos":"verb","zh":"预订"}
+    ],
+    "light": [
+      {"id":"light.noun.lamp","pos":"noun","zh":"灯"},
+      {"id":"light.adj.weight","pos":"adjective","zh":"轻"}
+    ],
+    "run": [
+      {"id":"run.verb.manage","pos":"verb","zh":"经营","object":"company"},
+      {"id":"run.verb.move","pos":"verb","zh":"跑"}
+    ],
+    "take": [
+      {"id":"take.verb.photo","pos":"verb","zh":"拍","object":"photo"},
+      {"id":"take.verb.grasp","pos":"verb","zh":"拿"}
+    ]
+  },
   "words": {
     "i": {
       "pos": "pronoun",
@@ -671,6 +689,11 @@
       "zh": "朋友",
       "classifier": "个"
     },
+    "teacher": {
+      "pos": "noun",
+      "zh": "老师",
+      "classifier": "位"
+    },
     "brother": {
       "pos": "noun",
       "zh": "哥哥",
@@ -680,6 +703,11 @@
       "pos": "noun",
       "zh": "电脑",
       "classifier": "台"
+    },
+    "pen": {
+      "pos": "noun",
+      "zh": "笔",
+      "classifier": "支"
     },
     "photo": {
       "pos": "noun",

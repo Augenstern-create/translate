@@ -9,7 +9,7 @@
   "errors": 0,
   "label": "p21-golden",
   "mode": "precise",
-  "resource_fingerprint": "dictionary.ecdict.en-zh@0.2.0#95dabf3cd899a348;rules.en-zh.quality@2#ba904a404902d0b140f55a25f39a79cf23106e85df8115d8862761dfcea47e24;templates.en-zh.core@1#0d37a8c3e8a80630b081ecdcd06329ae9e35a5a682f802f31bb8eca324a7c1c5;composition.en-zh.daily@1#2a1c12a78a87fae287e6c48147f981ef5aaf457ede0e931a3a133e875035105d;semantic.composition.en-zh.daily@1#2a1c12a78a87fae287e6c48147f981ef5aaf457ede0e931a3a133e875035105d;terms.en-zh.technical@1#5d4fde05647fdd64a09e68a45cc01103aa837e293743ebd22c9ceac1df634402",
+  "resource_fingerprint": "dictionary.ecdict.en-zh@0.2.0#95dabf3cd899a348;rules.en-zh.quality@2#ba904a404902d0b140f55a25f39a79cf23106e85df8115d8862761dfcea47e24;templates.en-zh.core@1#0d37a8c3e8a80630b081ecdcd06329ae9e35a5a682f802f31bb8eca324a7c1c5;composition.en-zh.daily@1#27586d7ef35b7d44cca71c29ababb0f82e10230ed9e392ce53b64206150125ce;semantic.composition.en-zh.daily@1#27586d7ef35b7d44cca71c29ababb0f82e10230ed9e392ce53b64206150125ce;terms.en-zh.technical@1#5d4fde05647fdd64a09e68a45cc01103aa837e293743ebd22c9ceac1df634402",
   "route_stats": {
     "best_candidates": 0,
     "cache_hits": 0,
@@ -23,5 +23,5 @@
     "rule_matches": 32
   },
   "success": 320,
-  "total_wall_ms": 59299
+  "total_wall_ms": 58419
 }

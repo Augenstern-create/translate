@@ -90,7 +90,7 @@
   },
   "p19_composition": {
     "rules": "fixtures/rules/en-zh.composition.json",
-    "rules_sha256": "2a1c12a78a87fae287e6c48147f981ef5aaf457ede0e931a3a133e875035105d",
+    "rules_sha256": "27586d7ef35b7d44cca71c29ababb0f82e10230ed9e392ce53b64206150125ce",
     "cases": "fixtures/quality/composition-v1.jsonl",
     "cases_sha256": "60168d69d39282a6b16b6b6baf7e5b85e8f03a651141221b58bf635508e3bf0f",
     "results": "tests/quality/outputs/p19-composition.jsonl",
@@ -105,14 +105,14 @@
     "p20_results": "tests/quality/outputs/p20-semantic.jsonl",
     "validation": "tests/quality/reports/p20-semantic-validation.json",
     "rules_reused": "fixtures/rules/en-zh.composition.json",
-    "rules_sha256": "2a1c12a78a87fae287e6c48147f981ef5aaf457ede0e931a3a133e875035105d",
+    "rules_sha256": "27586d7ef35b7d44cca71c29ababb0f82e10230ed9e392ce53b64206150125ce",
     "usage": "opt-in semantic composition; human review PENDING"
   },
   "p21_realization": {
     "rules": "fixtures/rules/en-zh.composition.json",
-    "rules_sha256": "2a1c12a78a87fae287e6c48147f981ef5aaf457ede0e931a3a133e875035105d",
+    "rules_sha256": "27586d7ef35b7d44cca71c29ababb0f82e10230ed9e392ce53b64206150125ce",
     "cases": "fixtures/quality/p21-realization-v1.jsonl",
-    "cases_sha256": "ea0ed9bbfff3fd75e4ca742f71728b6ff7cba43979b239b0a5568d6642fef740",
+    "cases_sha256": "5b76baea92fdefa0bb9146d40d97acacf73a01599b7023490b7281f16a7fabf2",
     "results": "tests/quality/outputs/p21-realization.jsonl",
     "golden": "tests/quality/outputs/p21-golden.jsonl",
     "migration": "tests/quality/outputs/p21-p19-migration.jsonl",
@@ -128,8 +128,8 @@
   },
   "p21_review": {
     "packet": "tests/quality/reports/p21-review-packet.csv",
-    "packet_sha256": "50c731ddd3507b02c17353540c5f084b55edc4ed7acc03510553a92322607311",
-    "rows": 98,
+    "packet_sha256": "4e2fe765032fba3b633267f13b0a1c6413a284b728ebcaaadd94d3d5a4527d81",
+    "rows": 118,
     "status": "PENDING_HUMAN",
     "note": "P19/P20/P21/unseen dedup; scores intentionally blank"
   },
@@ -153,5 +153,12 @@
     "results": "tests/quality/outputs/p21-advanced.jsonl",
     "summary": "tests/quality/reports/p21-advanced.summary.json",
     "usage": "remaining P19 paths + condition/comparison/passive; PENDING_HUMAN"
+  },
+  "p21_independent": {
+    "cases": "fixtures/quality/p21-independent-v1.jsonl",
+    "cases_sha256": "f79712db9daed5d1b9d73c00d3e3cc7125fae86176905fa4c8690b4b9821c5a3",
+    "results": "tests/quality/outputs/p21-independent.jsonl",
+    "summary": "tests/quality/reports/p21-independent.summary.json",
+    "usage": "post-hoc 20-case set; not strictly untouched; PENDING_HUMAN"
   }
 }

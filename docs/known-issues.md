@@ -111,7 +111,7 @@
 | Q-099 | P21-R | 36/36 P19 正例已走新 MeaningFrame/Realizer；短语动词/固定表达/条件/比较/简单被动已接入 | C | 中 | Fixed（P21-R scope） |
 | Q-100 | P21-R | ChineseRealizer 已有 的/地/得基础、着/过、简单比较/被动，但复杂补语、相对从句、全部体貌/量词仍缺 | B | 高 | Open（后续） |
 | Q-101 | P21-R | CandidateValidation 只检查谓语/论元/否定/时间/地点/疑问标记等硬约束，不能证明语义等价或自然度 | B | 高 | Open（有意保守） |
-| Q-102 | P21-R | P21 19 条中文专项、8 条高级结构、14 条未见组合、20 条后置集、7 条 P20 对抗集均为项目自编；统一评审包 98 行仍 PENDING_HUMAN | B | 高 | PENDING_HUMAN |
+| Q-102 | P21-R | P21 20 条中文专项、8 条高级结构、14 条未见组合、20 条后置集、7 条 P20 对抗集均为项目自编；统一评审包 118 行仍 PENDING_HUMAN | B | 高 | PENDING_HUMAN |
 | Q-103 | P21-R | 320 chrF +0.0017 仅来自 2 条样本改善；不能据此宣称整体质量显著提升 | C | 中 | Open（口径已注明） |
 | Q-104 | P21-R | 时间表达只覆盖 yesterday/today/tomorrow/last week/this week 等少量形式；复杂时间未支持 | C | 中 | Open（按需扩充） |
 | Q-105 | P21-R | 未实现完整英语句法/语义解析；PP 附着、嵌套否定、长距离指代仍保持安全回退 | B | 高 | Open（范围边界） |

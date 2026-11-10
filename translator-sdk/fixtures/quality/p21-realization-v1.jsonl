@@ -17,3 +17,4 @@
 {"id":"p21-017","source":"I have read two books.","allowed":["我读过两本书。"],"focus":"experiential-过"}
 {"id":"p21-018","source":"My two new phones are heavy.","allowed":["我的两部新手机很重。"],"focus":"possessive-quantity"}
 {"id":"p21-019","source":"She bought two books two days ago.","allowed":["她两天前买了两本书。"],"focus":"ago-time"}
+{"id":"p21-020","source":"I bought two books and three pens.","allowed":["我买了两本书和三支笔。"],"focus":"coordination-nodes"}
