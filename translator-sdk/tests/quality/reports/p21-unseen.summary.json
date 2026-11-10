@@ -9,7 +9,7 @@
   "errors": 0,
   "label": "p21-unseen",
   "mode": "precise",
-  "resource_fingerprint": "dictionary.ecdict.en-zh@0.2.0#95dabf3cd899a348;composition.en-zh.daily@1#e082defbce1be72146479ad1ad87e5991a0213dda8b534f419730aaa8e4b4515;semantic.composition.en-zh.daily@1#e082defbce1be72146479ad1ad87e5991a0213dda8b534f419730aaa8e4b4515",
+  "resource_fingerprint": "dictionary.ecdict.en-zh@0.2.0#95dabf3cd899a348;composition.en-zh.daily@1#6cef3df0757efbcfc028017458af905ade63004aa5b8edfc8b69aac08b38f477;semantic.composition.en-zh.daily@1#6cef3df0757efbcfc028017458af905ade63004aa5b8edfc8b69aac08b38f477",
   "route_stats": {
     "best_candidates": 0,
     "cache_hits": 0,
@@ -23,5 +23,5 @@
     "rule_matches": 14
   },
   "success": 15,
-  "total_wall_ms": 2132
+  "total_wall_ms": 2096
 }

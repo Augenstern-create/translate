@@ -26,6 +26,7 @@ pub mod context_sense;
 pub mod coordinator;
 pub mod diagnostics;
 pub mod evidence;
+pub mod pipeline;
 pub mod plan;
 pub mod plan_cache;
 pub mod planner;
@@ -49,6 +50,13 @@ pub use diagnostics::{
 pub use evidence::{
     ContextRef, LanguageEvidence, PatternKind, PatternMatch, SenseCandidate, TextSpan,
     TranslationConstraint, UnitKind,
+};
+pub use pipeline::{
+    analyze as analyze_pipeline, compose as compose_pipeline, render as render_chinese_tree,
+    validate as validate_chinese_tree, ChineseNode, ChineseNodeKind, ChineseSyntaxTree,
+    CoverageReport, CoverageState, MeaningGraph, MeaningNode, MeaningNodeKind, MeaningRelation,
+    MeaningRelationKind, PipelineOutput, SourceToken, SyntaxAnalysis, SyntaxAnalyzer, SyntaxEdge,
+    SyntaxNodeKind, TargetTransfer, TokenKind, TokenStream,
 };
 pub use planner::{
     analyze, classify_fallback, plan as plan_text, plan_request, split_sentences, PlanShape,

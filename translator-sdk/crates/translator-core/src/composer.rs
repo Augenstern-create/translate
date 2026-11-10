@@ -406,6 +406,14 @@ impl CompositionEngine {
         self.phrasal_verbs.get(key).map(|spec| spec.verb.as_str())
     }
 
+    pub(crate) fn target_for_sense(&self, sense_id: &str) -> Option<&str> {
+        self.senses
+            .values()
+            .flatten()
+            .find(|sense| sense.id == sense_id)
+            .map(|sense| sense.zh.as_str())
+    }
+
     pub(crate) fn sense_targets(
         &self,
         lemma: &str,

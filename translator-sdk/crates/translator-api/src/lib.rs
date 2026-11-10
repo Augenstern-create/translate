@@ -52,6 +52,7 @@ pub use translator_core::semantic::{
 };
 pub use translator_core::templates::{SentenceTemplates, TemplateTable};
 // 术语契约（P2.4）：同上，宿主可自己实现 `TargetTermGuard`。
+pub use translator_core::pipeline;
 pub use translator_core::terms::{
     NoTermGuard, TargetTermGuard, TermOutcome, TermPolicy, TermViolation,
 };

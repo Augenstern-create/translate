@@ -13,12 +13,12 @@
 - **未见组合泛化**：14/14 正例、1 反例回退；100 条结构矩阵 100/100；
   新词 brother/computer、数量/时间、宾语并列、bare imperative、WSD 搭配。
 - **CandidateValidation**：谓语/论元/否定/时间/地点/疑问标记硬约束。
-- **A/B**：P20→P21 320 chrF 0.5172→0.5189、BLEU 0.5192→0.5206；NMT 291→290、
-  Rule 31→32、fatal 0、回归 0、改善 2。
+- **A/B**：P20→P21 320 chrF 0.5172→0.5196、BLEU 0.5192→0.5210；NMT 291→289、
+  Rule 31→33、fatal 0、回归 0、改善 3。
 
 ### 结果
 
-- 默认 **542 passed / 0 failed / 60 ignored**；全特性 **555 passed / 0 failed / 67 ignored**；
+- 默认 **543 passed / 0 failed / 60 ignored**；全特性 **556 passed / 0 failed / 67 ignored**；
 - 文档结构 **1.0**；fmt / clippy 通过。
 
 ### 未完成
@@ -70,7 +70,7 @@
 - 独立组合集：36/36 正例、5/5 反例回退；
 - 320 句：chrF **0.5074 → 0.5172**、BLEU **0.5060 → 0.5192**、
   NMT **300 → 291**、Rule **22 → 31**、fatal 0、回归 0；
-- 默认 **526 passed / 0 failed / 60 ignored**；全特性 **542 passed / 0 failed / 67 ignored**；
+- 默认 **526 passed / 0 failed / 60 ignored**；全特性 **543 passed / 0 failed / 67 ignored**；
 - fmt / clippy 通过。
 
 ### 未完成
@@ -162,7 +162,7 @@
 - Word/Phrase 100/100，NMT **0**；
 - 40 条模板 40/40，NMT **0**，chrF/BLEU **1.0**；
 - 320 句：NMT **322→300（−6.8%）**、规则 22、chrF **0.4703→0.5074（+0.0371）**、
-  BLEU **+0.0419**、回归 0、改善 20、fatal 0、数字 1.0；
+  BLEU **+0.0419**、回归 0、改善 30、fatal 0、数字 1.0；
 - 复杂句仍进入真实 NMT；50 段/10 篇结构保持。
 
 ### 未做

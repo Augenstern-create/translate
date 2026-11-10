@@ -122,6 +122,18 @@
       "pos": "interjection",
       "zh": "请"
     },
+    "yesterday": {
+      "pos": "adverb",
+      "zh": "昨天"
+    },
+    "today": {
+      "pos": "adverb",
+      "zh": "今天"
+    },
+    "tomorrow": {
+      "pos": "adverb",
+      "zh": "明天"
+    },
     "not": {
       "pos": "adverb",
       "zh": "不"

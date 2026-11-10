@@ -5303,9 +5303,9 @@
         "number_added": 7,
         "possible_omission": 1
       },
-      "chrf": 0.5189,
-      "bleu": 0.5206,
-      "exact_match": 0.1656,
+      "chrf": 0.5196,
+      "bleu": 0.521,
+      "exact_match": 0.1688,
       "number_fidelity": 1.0,
       "constraint_accuracy": 1.0,
       "placeholder_accuracy": 1.0,
@@ -5317,7 +5317,7 @@
       "negation_accuracy": 1.0,
       "target_language_accuracy": 1.0,
       "per_category": {
-        "basic": 0.6275,
+        "basic": 0.6332,
         "conditional": 0.3629,
         "daily": 0.4144,
         "format": 0.6964,
@@ -5693,9 +5693,9 @@
           "category": "basic",
           "source": "I have two brothers.",
           "reference": "我有两个兄弟。",
-          "output": "我有两个兄弟",
-          "chrf": 0.7728,
-          "bleu": 0.8571,
+          "output": "我有两个兄弟。",
+          "chrf": 1.0,
+          "bleu": 1.0,
           "error": null,
           "fatal": false,
           "constraints": {
@@ -10578,8 +10578,8 @@
   "diffs": {
     "p21": {
       "run": "p21",
-      "chrf_delta": 0.0017,
-      "bleu_delta": 0.0014,
+      "chrf_delta": 0.0024,
+      "bleu_delta": 0.0018,
       "error_delta": 0,
       "number_fidelity_delta": 0.0,
       "new_fatal": [],
@@ -10587,6 +10587,11 @@
       "regressions": [],
       "regression_count": 0,
       "improvements": [
+        {
+          "id": "en-zh-0023",
+          "reason": "chrf_gain",
+          "delta": 0.2272
+        },
         {
           "id": "en-zh-0034",
           "reason": "chrf_gain",
@@ -10598,7 +10603,7 @@
           "delta": 0.1377
         }
       ],
-      "improvement_count": 2
+      "improvement_count": 3
     }
   },
   "review_status": "PENDING_HUMAN"

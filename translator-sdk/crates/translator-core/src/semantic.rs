@@ -1704,6 +1704,9 @@ impl SemanticCompositionEngine {
         if source != self.source() || target != self.target() {
             return None;
         }
+        if let Some(outcome) = crate::pipeline::compose(text, &self.lexical, entries) {
+            return Some(outcome);
+        }
         let analysis = self.analyze(text, entries);
         let program = analysis.program?;
         let candidates = ChineseRealizer.realize(&program);

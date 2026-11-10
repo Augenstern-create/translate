@@ -90,7 +90,7 @@
   },
   "p19_composition": {
     "rules": "fixtures/rules/en-zh.composition.json",
-    "rules_sha256": "27586d7ef35b7d44cca71c29ababb0f82e10230ed9e392ce53b64206150125ce",
+    "rules_sha256": "6cef3df0757efbcfc028017458af905ade63004aa5b8edfc8b69aac08b38f477",
     "cases": "fixtures/quality/composition-v1.jsonl",
     "cases_sha256": "60168d69d39282a6b16b6b6baf7e5b85e8f03a651141221b58bf635508e3bf0f",
     "results": "tests/quality/outputs/p19-composition.jsonl",
@@ -105,12 +105,12 @@
     "p20_results": "tests/quality/outputs/p20-semantic.jsonl",
     "validation": "tests/quality/reports/p20-semantic-validation.json",
     "rules_reused": "fixtures/rules/en-zh.composition.json",
-    "rules_sha256": "27586d7ef35b7d44cca71c29ababb0f82e10230ed9e392ce53b64206150125ce",
+    "rules_sha256": "6cef3df0757efbcfc028017458af905ade63004aa5b8edfc8b69aac08b38f477",
     "usage": "opt-in semantic composition; human review PENDING"
   },
   "p21_realization": {
     "rules": "fixtures/rules/en-zh.composition.json",
-    "rules_sha256": "27586d7ef35b7d44cca71c29ababb0f82e10230ed9e392ce53b64206150125ce",
+    "rules_sha256": "6cef3df0757efbcfc028017458af905ade63004aa5b8edfc8b69aac08b38f477",
     "cases": "fixtures/quality/p21-realization-v1.jsonl",
     "cases_sha256": "5b76baea92fdefa0bb9146d40d97acacf73a01599b7023490b7281f16a7fabf2",
     "results": "tests/quality/outputs/p21-realization.jsonl",
