@@ -221,6 +221,8 @@ pub enum SyntaxRelation {
     Adverbial,
     Negation,
     Auxiliary,
+    Agent,
+    Complement,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -250,6 +252,7 @@ pub enum Np {
         token: usize,
         span: TextSpan,
         surface: String,
+        consumed: usize,
     },
     Noun {
         token: usize,
@@ -259,6 +262,7 @@ pub enum Np {
         adjective: Option<(usize, TextSpan, String)>,
         classifier: Option<String>,
         plural: bool,
+        consumed: usize,
     },
 }
 
@@ -268,10 +272,17 @@ pub struct SyntaxAnalysis {
     pub graph: SyntaxGraph,
     pub subject: Np,
     pub predicate: (usize, TextSpan, String),
-    pub object: Np,
+    pub object: Option<Np>,
     pub negated: bool,
     pub neg_span: Option<TextSpan>,
     pub past: bool,
+    pub progressive: bool,
+    pub modal: Option<String>,
+    pub complement: Option<(usize, TextSpan, String)>,
+    pub place: Option<(TextSpan, String)>,
+    pub future: bool,
+    pub passive: bool,
+    pub by_agent: Option<Np>,
     pub time: Option<(usize, TextSpan, String, String)>,
 }
 
@@ -294,13 +305,49 @@ impl<'a> SyntaxAnalyzer<'a> {
         if words.is_empty() {
             return None;
         }
+        if words.iter().any(|word| {
+            let surface = word.surface.to_ascii_lowercase();
+            self.lexicon.lexicon_has_pos(&surface, "adverb")
+                && !matches!(
+                    surface.as_str(),
+                    "yesterday" | "today" | "tomorrow" | "not" | "home" | "here" | "there"
+                )
+        }) {
+            return None;
+        }
         let subject = self.np(&words, 0)?;
         let mut i = subject_len(&subject);
         let mut negated = false;
         let mut neg_span = None;
         let mut past = false;
+        let mut progressive = false;
+        let mut future = false;
+        let mut passive = false;
+        let mut modal = None;
+        let mut aux_span = None;
+        let mut aux_surface = String::new();
         if let Some(aux) = words.get(i) {
-            if matches!(aux.surface.as_str(), "did" | "does" | "do") {
+            if matches!(aux.surface.as_str(), "was" | "were") {
+                passive = true;
+                aux_span = Some(aux.span);
+                aux_surface = aux.surface.to_ascii_lowercase();
+                i += 1;
+            } else if matches!(aux.surface.as_str(), "is" | "are" | "am") {
+                progressive = true;
+                aux_span = Some(aux.span);
+                aux_surface = aux.surface.to_ascii_lowercase();
+                i += 1;
+            } else if aux.surface == "will" {
+                future = true;
+                aux_span = Some(aux.span);
+                aux_surface = "will".to_string();
+                i += 1;
+            } else if aux.surface == "can" {
+                modal = Some("can".to_string());
+                aux_span = Some(aux.span);
+                aux_surface = "can".to_string();
+                i += 1;
+            } else if matches!(aux.surface.as_str(), "did" | "does" | "do") {
                 i += 1;
                 if words.get(i).map(|t| t.surface.as_str()) == Some("not") {
                     negated = true;
@@ -319,11 +366,49 @@ impl<'a> SyntaxAnalyzer<'a> {
             return None;
         }
         self.lexicon.zh(&lemma, "verb")?;
+        if progressive && !verb_surface.ends_with("ing") {
+            return None;
+        }
         past = past || self.lexicon.is_past_form(&verb_surface, &lemma);
-        let predicate = (i, verb.span, lemma.clone());
+        let mut complement = None;
+        if lemma == "want" && words.get(i + 1).map(|w| w.surface.as_str()) == Some("to") {
+            let target = words.get(i + 2)?;
+            let target_lower = target.surface.to_ascii_lowercase();
+            let target_lemma = self.lexicon.verb_lemma(&target_lower)?;
+            if !self.lexicon.lexicon_has_pos(&target_lower, "verb")
+                && !self.lexicon.lexicon_has_pos(&target_lemma, "verb")
+            {
+                return None;
+            }
+            self.lexicon.zh(&target_lemma, "verb")?;
+            complement = Some((i + 2, target.span, target_lemma));
+            i += 2;
+        }
+        let predicate = (
+            i.saturating_sub(if complement.is_some() { 2 } else { 0 }),
+            verb.span,
+            lemma.clone(),
+        );
         i += 1;
-        let object = self.np(&words, i)?;
-        i += subject_len(&object);
+        let mut by_agent = None;
+        let mut place = None;
+        let object = if passive {
+            if words.get(i).map(|w| w.surface.as_str()) == Some("by") {
+                let agent = self.np(&words, i + 1)?;
+                i = i + 1 + subject_len(&agent);
+                by_agent = Some(agent);
+            }
+            None
+        } else if let Some((span, surface)) = self.place(&words, i) {
+            place = Some((span, surface));
+            i += 1;
+            None
+        } else {
+            self.np(&words, i)
+        };
+        if let Some(object) = &object {
+            i += subject_len(object);
+        }
         let mut time = None;
         if let Some(token) = words.get(i) {
             let surface = token.surface.to_ascii_lowercase();
@@ -355,6 +440,32 @@ impl<'a> SyntaxAnalyzer<'a> {
             dependent: pred,
             relation: SyntaxRelation::Predicate,
         });
+        if let Some((_, span, surface)) = &complement {
+            let c = push(
+                &mut graph,
+                SyntaxNodeKind::VerbPhrase,
+                *span,
+                surface.clone(),
+            );
+            graph.edges.push(SyntaxEdge {
+                head: pred,
+                dependent: c,
+                relation: SyntaxRelation::Complement,
+            });
+        }
+        if progressive || modal.is_some() {
+            let aux = push(
+                &mut graph,
+                SyntaxNodeKind::VerbPhrase,
+                aux_span.unwrap_or_default(),
+                aux_surface,
+            );
+            graph.edges.push(SyntaxEdge {
+                head: pred,
+                dependent: aux,
+                relation: SyntaxRelation::Auxiliary,
+            });
+        }
         if negated {
             let neg = push(
                 &mut graph,
@@ -368,12 +479,35 @@ impl<'a> SyntaxAnalyzer<'a> {
                 relation: SyntaxRelation::Negation,
             });
         }
-        let obj = push_np(&mut graph, &object);
-        graph.edges.push(SyntaxEdge {
-            head: pred,
-            dependent: obj,
-            relation: SyntaxRelation::Object,
-        });
+        if let Some(object) = &object {
+            let obj = push_np(&mut graph, object);
+            graph.edges.push(SyntaxEdge {
+                head: pred,
+                dependent: obj,
+                relation: SyntaxRelation::Object,
+            });
+        }
+        if let Some(agent) = &by_agent {
+            let node = push_np(&mut graph, agent);
+            graph.edges.push(SyntaxEdge {
+                head: pred,
+                dependent: node,
+                relation: SyntaxRelation::Agent,
+            });
+        }
+        if let Some((span, surface)) = &place {
+            let node = push(
+                &mut graph,
+                SyntaxNodeKind::Adverbial,
+                *span,
+                surface.clone(),
+            );
+            graph.edges.push(SyntaxEdge {
+                head: pred,
+                dependent: node,
+                relation: SyntaxRelation::Adverbial,
+            });
+        }
         if let Some((_, span, surface, _)) = &time {
             let adv = push(
                 &mut graph,
@@ -396,8 +530,24 @@ impl<'a> SyntaxAnalyzer<'a> {
             negated,
             neg_span,
             past,
+            progressive,
+            modal,
+            complement,
+            place,
+            future,
+            passive,
+            by_agent,
             time,
         })
+    }
+
+    fn place(&self, words: &[&SourceToken], i: usize) -> Option<(TextSpan, String)> {
+        let surface = words.get(i)?.surface.to_ascii_lowercase();
+        if matches!(surface.as_str(), "home" | "here" | "there") {
+            Some((words[i].span, surface))
+        } else {
+            None
+        }
     }
 
     fn np(&self, words: &[&SourceToken], start: usize) -> Option<Np> {
@@ -408,6 +558,7 @@ impl<'a> SyntaxAnalyzer<'a> {
                 token: start,
                 span: token.span,
                 surface,
+                consumed: 1,
             });
         }
         let mut i = start;
@@ -426,7 +577,46 @@ impl<'a> SyntaxAnalyzer<'a> {
                 | "these"
                 | "those"
         ) {
+            let article_quantity =
+                matches!(surface.as_str(), "a" | "an").then_some((start, 1, token.span));
             i += 1;
+            let mut quantity = article_quantity;
+            if let Some(token) = words.get(i) {
+                if let Some(value) = numeral(&token.surface) {
+                    quantity = Some((i, value, token.span));
+                    i += 1;
+                }
+            }
+            let mut adjective = None;
+            if let Some(token) = words.get(i) {
+                if self
+                    .lexicon
+                    .adjective_lemma(&token.surface.to_ascii_lowercase())
+                    .is_some()
+                {
+                    adjective = Some((i, token.span, token.surface.to_ascii_lowercase()));
+                    i += 1;
+                }
+            }
+            let token = words.get(i)?;
+            let surface = token.surface.to_ascii_lowercase();
+            let lemma = self.lexicon.noun_lemma(&surface)?;
+            if !self.lexicon.lexicon_has_pos(&surface, "noun")
+                && !self.lexicon.lexicon_has_pos(&lemma, "noun")
+            {
+                return None;
+            }
+            self.lexicon.zh(&lemma, "noun")?;
+            return Some(Np::Noun {
+                token: i,
+                span: TextSpan::new(words[start].span.start, token.span.end),
+                surface: lemma.clone(),
+                quantity,
+                adjective,
+                classifier: self.lexicon.classifier(&lemma).map(str::to_string),
+                plural: token.surface.ends_with('s') && token.surface.to_ascii_lowercase() != lemma,
+                consumed: i - start + 1,
+            });
         }
         let mut quantity = None;
         if let Some(token) = words.get(i) {
@@ -463,29 +653,14 @@ impl<'a> SyntaxAnalyzer<'a> {
             adjective,
             classifier: self.lexicon.classifier(&lemma).map(str::to_string),
             plural: token.surface.ends_with('s') && token.surface.to_ascii_lowercase() != lemma,
+            consumed: i - start + 1,
         })
     }
 }
 
 fn subject_len(np: &Np) -> usize {
     match np {
-        Np::Pronoun { .. } => 1,
-        Np::Noun {
-            token,
-            quantity,
-            adjective,
-            ..
-        } => {
-            let mut n = 1;
-            if quantity.is_some() {
-                n += 1;
-            }
-            if adjective.is_some() {
-                n += 1;
-            }
-            let _ = token;
-            n
-        }
+        Np::Pronoun { consumed, .. } | Np::Noun { consumed, .. } => *consumed,
     }
 }
 
@@ -592,6 +767,8 @@ pub enum MeaningRelationKind {
     Modifier,
     Time,
     Scope,
+    Complement,
+    Location,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -606,6 +783,11 @@ pub struct MeaningGraph {
     pub nodes: Vec<MeaningNode>,
     pub relations: Vec<MeaningRelation>,
     pub tense_past: bool,
+    pub progressive: bool,
+    pub modal: Option<String>,
+    pub passive: bool,
+    pub future: bool,
+    pub conditional: bool,
 }
 
 pub struct SemanticTransfer<'a> {
@@ -616,9 +798,23 @@ impl<'a> SemanticTransfer<'a> {
     pub fn transfer(&self, syntax: &SyntaxAnalysis) -> Option<MeaningGraph> {
         let mut graph = MeaningGraph {
             tense_past: syntax.past,
+            progressive: syntax.progressive,
+            modal: syntax.modal.clone(),
+            passive: syntax.passive,
+            future: syntax.future,
+            conditional: false,
             ..Default::default()
         };
-        let agent = self.entity_node(&mut graph, &syntax.subject)?;
+        let agent_np = if syntax.passive {
+            syntax.by_agent.as_ref()
+        } else {
+            Some(&syntax.subject)
+        };
+        let patient_np = if syntax.passive {
+            Some(&syntax.subject)
+        } else {
+            syntax.object.as_ref()
+        };
         let predicate = add(
             &mut graph,
             MeaningNodeKind::Event,
@@ -628,40 +824,65 @@ impl<'a> SemanticTransfer<'a> {
             self.sense(
                 syntax.predicate.2.as_str(),
                 "verb",
-                Some(np_lemma(&syntax.object)),
+                patient_np.map(np_lemma),
             ),
         );
-        graph.relations.push(MeaningRelation {
-            head: predicate,
-            dependent: agent,
-            kind: MeaningRelationKind::Agent,
-        });
-        let patient = self.entity_node(&mut graph, &syntax.object)?;
-        graph.relations.push(MeaningRelation {
-            head: predicate,
-            dependent: patient,
-            kind: MeaningRelationKind::Patient,
-        });
-        if let Np::Noun {
-            quantity: Some((_, q, _)),
+        if let Some(agent_np) = agent_np {
+            let agent = self.entity_node(&mut graph, agent_np)?;
+            graph.relations.push(MeaningRelation {
+                head: predicate,
+                dependent: agent,
+                kind: MeaningRelationKind::Agent,
+            });
+        }
+        let mut patient_head = predicate;
+        if let Some((_, span, lemma)) = &syntax.complement {
+            let complement = add(
+                &mut graph,
+                MeaningNodeKind::Event,
+                lemma.clone(),
+                "verb",
+                *span,
+                self.sense(lemma, "verb", patient_np.map(np_lemma)),
+            );
+            graph.relations.push(MeaningRelation {
+                head: predicate,
+                dependent: complement,
+                kind: MeaningRelationKind::Complement,
+            });
+            patient_head = complement;
+        }
+        let patient = patient_np.and_then(|object| self.entity_node(&mut graph, object));
+        if let Some(patient) = patient {
+            graph.relations.push(MeaningRelation {
+                head: patient_head,
+                dependent: patient,
+                kind: MeaningRelationKind::Patient,
+            });
+        }
+        if let Some(Np::Noun {
+            quantity,
             adjective,
             ..
-        } = &syntax.object
+        }) = &syntax.object
         {
-            if *q > 0 {
-                let quantity = add(
-                    &mut graph,
-                    MeaningNodeKind::Property,
-                    format!("{q}"),
-                    "numeral",
-                    syntax.predicate.1,
-                    SenseResolution::Resolved(format!("quantity:{q}")),
-                );
-                graph.relations.push(MeaningRelation {
-                    head: patient,
-                    dependent: quantity,
-                    kind: MeaningRelationKind::Quantity,
-                });
+            let patient = patient?;
+            if let Some((_, q, span)) = quantity {
+                if *q > 0 {
+                    let quantity = add(
+                        &mut graph,
+                        MeaningNodeKind::Property,
+                        format!("{q}"),
+                        "numeral",
+                        *span,
+                        SenseResolution::Resolved(format!("quantity:{q}")),
+                    );
+                    graph.relations.push(MeaningRelation {
+                        head: patient,
+                        dependent: quantity,
+                        kind: MeaningRelationKind::Quantity,
+                    });
+                }
             }
             if let Some((_, span, surface)) = adjective {
                 let modifier = add(
@@ -692,6 +913,21 @@ impl<'a> SemanticTransfer<'a> {
                 head: predicate,
                 dependent: time,
                 kind: MeaningRelationKind::Time,
+            });
+        }
+        if let Some((span, surface)) = &syntax.place {
+            let location = add(
+                &mut graph,
+                MeaningNodeKind::Time,
+                surface.clone(),
+                "adverb",
+                *span,
+                self.sense(surface, "adverb", None),
+            );
+            graph.relations.push(MeaningRelation {
+                head: predicate,
+                dependent: location,
+                kind: MeaningRelationKind::Location,
             });
         }
         if syntax.negated {
@@ -787,11 +1023,14 @@ pub enum ChineseNodeKind {
     Noun,
     Verb,
     Aspect,
+    Modal,
     Quantity,
     Classifier,
     Modifier,
     Time,
     Negation,
+    Passive,
+    Place,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -828,10 +1067,35 @@ impl<'a> TargetTransfer<'a> {
             .iter()
             .find(|n| n.kind == MeaningNodeKind::Event)?;
         let agent = relation_node(meaning, event.id, MeaningRelationKind::Agent)?.id;
-        let patient = relation_node(meaning, event.id, MeaningRelationKind::Patient)?.id;
+        let complement = relation_node(meaning, event.id, MeaningRelationKind::Complement);
+        let patient = relation_node(
+            meaning,
+            complement.map_or(event.id, |node| node.id),
+            MeaningRelationKind::Patient,
+        )
+        .map(|node| node.id);
         let mut tree = ChineseSyntaxTree::default();
         let clause = add_ch(&mut tree, ChineseNodeKind::Clause, String::new());
         tree.root = clause;
+        if meaning.passive {
+            let patient = self.entity(&mut tree, meaning, patient?)?;
+            tree.nodes[clause].children.push(patient);
+            let passive = add_ch(&mut tree, ChineseNodeKind::Passive, "被".to_string());
+            tree.nodes[clause].children.push(passive);
+            if let Some(agent) = relation_node(meaning, event.id, MeaningRelationKind::Agent) {
+                let agent = self.entity(&mut tree, meaning, agent.id)?;
+                tree.nodes[clause].children.push(agent);
+            }
+            let verb = add_ch(
+                &mut tree,
+                ChineseNodeKind::Verb,
+                self.target(event)?.to_string(),
+            );
+            tree.nodes[clause].children.push(verb);
+            let aspect = add_ch(&mut tree, ChineseNodeKind::Aspect, "了".to_string());
+            tree.nodes[clause].children.push(aspect);
+            return Some(tree);
+        }
         let subject = self.entity(&mut tree, meaning, agent)?;
         tree.nodes[clause].children.push(subject);
         if let Some(time) = relation_node(meaning, event.id, MeaningRelationKind::Time) {
@@ -852,18 +1116,65 @@ impl<'a> TargetTransfer<'a> {
             let node = add_ch(&mut tree, ChineseNodeKind::Negation, text.to_string());
             tree.nodes[clause].children.push(node);
         }
+        if let Some(modal) = &meaning.modal {
+            let m = add_ch(
+                &mut tree,
+                ChineseNodeKind::Modal,
+                if modal == "can" { "会" } else { "" }.to_string(),
+            );
+            tree.nodes[clause].children.push(m);
+        }
+        if meaning.future {
+            let m = add_ch(
+                &mut tree,
+                ChineseNodeKind::Modal,
+                if meaning.conditional { "就" } else { "会" }.to_string(),
+            );
+            tree.nodes[clause].children.push(m);
+        }
+        if meaning.progressive {
+            let asp = add_ch(&mut tree, ChineseNodeKind::Aspect, "正在".to_string());
+            tree.nodes[clause].children.push(asp);
+        }
+        let go_home = matches!(event.lemma.as_str(), "go" | "come")
+            && relation_node(meaning, event.id, MeaningRelationKind::Location)
+                .is_some_and(|location| location.lemma == "home");
         let verb = add_ch(
             &mut tree,
             ChineseNodeKind::Verb,
-            self.target(event)?.to_string(),
+            if go_home { "回" } else { self.target(event)? }.to_string(),
         );
         tree.nodes[clause].children.push(verb);
-        if meaning.tense_past && !negated {
+        if let Some(complement) = relation_node(meaning, event.id, MeaningRelationKind::Complement)
+        {
+            let c = add_ch(
+                &mut tree,
+                ChineseNodeKind::Verb,
+                self.target(complement)?.to_string(),
+            );
+            tree.nodes[clause].children.push(c);
+        }
+        if meaning.tense_past && !negated && !go_home {
             let aspect = add_ch(&mut tree, ChineseNodeKind::Aspect, "了".to_string());
             tree.nodes[clause].children.push(aspect);
         }
-        let object = self.entity(&mut tree, meaning, patient)?;
-        tree.nodes[clause].children.push(object);
+        if let Some(location) = relation_node(meaning, event.id, MeaningRelationKind::Location) {
+            let text = if event.lemma == "stay" && location.lemma == "home" {
+                "在家里".to_string()
+            } else {
+                self.target(location)?.to_string()
+            };
+            let p = add_ch(&mut tree, ChineseNodeKind::Place, text);
+            tree.nodes[clause].children.push(p);
+            if go_home && meaning.tense_past && !negated {
+                let aspect = add_ch(&mut tree, ChineseNodeKind::Aspect, "了".to_string());
+                tree.nodes[clause].children.push(aspect);
+            }
+        }
+        if let Some(patient) = patient {
+            let object = self.entity(&mut tree, meaning, patient)?;
+            tree.nodes[clause].children.push(object);
+        }
         Some(tree)
     }
 
@@ -938,6 +1249,7 @@ fn add_ch(tree: &mut ChineseSyntaxTree, kind: ChineseNodeKind, text: String) -> 
 
 fn numeral_zh(value: u32) -> String {
     match value {
+        1 => "一".to_string(),
         2 => "两".to_string(),
         3 => "三".to_string(),
         4 => "四".to_string(),
@@ -993,6 +1305,7 @@ pub fn validate(meaning: &MeaningGraph, tree: &ChineseSyntaxTree) -> ValidationR
         let expected = match node.kind {
             MeaningNodeKind::Event => ChineseNodeKind::Verb,
             MeaningNodeKind::Entity => ChineseNodeKind::Noun,
+            MeaningNodeKind::Time if node.lemma == "home" => ChineseNodeKind::Place,
             MeaningNodeKind::Time => ChineseNodeKind::Time,
             MeaningNodeKind::Operator => ChineseNodeKind::Negation,
             MeaningNodeKind::Property if node.lemma.chars().all(|c| c.is_ascii_digit()) => {
@@ -1029,6 +1342,7 @@ pub fn validate(meaning: &MeaningGraph, tree: &ChineseSyntaxTree) -> ValidationR
 #[derive(Clone, Debug)]
 pub struct PipelineOutput {
     pub tokens: TokenStream,
+    pub condition: Option<Box<PipelineOutput>>,
     pub syntax: SyntaxGraph,
     pub meaning: MeaningGraph,
     pub chinese: ChineseSyntaxTree,
@@ -1037,6 +1351,55 @@ pub struct PipelineOutput {
 }
 
 pub fn analyze(source: &str, lexicon: &CompositionEngine) -> Option<PipelineOutput> {
+    let trimmed = source.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.starts_with("if ") {
+        if let Some((condition, main)) = trimmed.split_once(',') {
+            let condition = condition
+                .trim_start_matches("If ")
+                .trim_start_matches("if ")
+                .trim();
+            return analyze_conditional(condition, main.trim(), lexicon);
+        }
+    }
+    analyze_single(source, lexicon)
+}
+
+fn analyze_conditional(
+    condition_source: &str,
+    main_source: &str,
+    lexicon: &CompositionEngine,
+) -> Option<PipelineOutput> {
+    let condition = analyze_single(condition_source, lexicon)?;
+    let mut main = analyze_single(main_source, lexicon)?;
+    main.meaning.conditional = true;
+    for node in &mut main.chinese.nodes {
+        if node.kind == ChineseNodeKind::Modal && node.text == "会" {
+            node.text = "就".to_string();
+        }
+    }
+    main.text = render(&main.chinese);
+    let condition_text = condition
+        .text
+        .trim_end_matches(['.', '。'])
+        .trim_start_matches('它')
+        .to_string();
+    let main_text = main.text.trim_end_matches(['.', '。']);
+    let text = format!("如果{condition_text}，{main_text}。");
+    let mut output = main;
+    output.condition = Some(Box::new(condition));
+    output.text = text;
+    Some(output)
+}
+
+fn analyze_single(source: &str, lexicon: &CompositionEngine) -> Option<PipelineOutput> {
+    let key = source
+        .trim_end_matches(['.', '?', '!', '。', '？'])
+        .trim()
+        .to_ascii_lowercase();
+    if lexicon.phrase(&key).is_some() {
+        return None;
+    }
     let syntax = SyntaxAnalyzer { lexicon }.analyze(source)?;
     let meaning = SemanticTransfer { lexicon }.transfer(&syntax)?;
     if meaning.nodes.iter().any(|node| {
@@ -1055,6 +1418,7 @@ pub fn analyze(source: &str, lexicon: &CompositionEngine) -> Option<PipelineOutp
     let text = render(&chinese);
     Some(PipelineOutput {
         tokens: syntax.stream.clone(),
+        condition: None,
         syntax: syntax.graph.clone(),
         meaning,
         chinese,

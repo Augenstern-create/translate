@@ -135,6 +135,18 @@ fn 纵向链路生成全部中间结构() {
         .retain(|n| n.kind != pipeline::ChineseNodeKind::Verb);
     assert!(!pipeline::validate(&output.meaning, &bad).valid);
 
+    let out = pipeline::analyze("She is reading a book.", &lexicon).expect("progressive");
+    assert_eq!(out.text, "她正在读一本书。");
+    let out = pipeline::analyze("I can swim.", &lexicon).expect("modal");
+    assert_eq!(out.text, "我会游泳。");
+    let out = pipeline::analyze("The door was opened by him.", &lexicon).expect("passive");
+    assert_eq!(out.text, "门被他打开了。");
+    let out = pipeline::analyze("I want to buy a book.", &lexicon).expect("want");
+    assert_eq!(out.text, "我想买一本书。");
+    let out = pipeline::analyze("If it rains, I will stay home.", &lexicon).expect("condition");
+    assert_eq!(out.text, "如果下雨，我就待在家里。");
+    assert!(out.condition.is_some());
+
     let req = TranslateRequest::new(
         "She didn't buy two new books yesterday.",
         LanguageTag::new("zh-Hans").unwrap(),

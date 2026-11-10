@@ -48,6 +48,12 @@ fn 中文生成专项正例() {
             .iter()
             .map(|v| v.as_str().unwrap())
             .collect();
+        if source.contains("quickly") {
+            println!(
+                "QUICK {:?} {:?}",
+                out.result.text, out.diagnostics.engine_id
+            );
+        }
         assert!(
             allowed.contains(&out.result.text.as_str()),
             "{source} -> {}，允许 {:?}",
