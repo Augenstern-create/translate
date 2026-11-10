@@ -1,0 +1,14 @@
+{
+  "schema": "p19-composition-validation/v1",
+  "cases": 41,
+  "positive": {
+    "total": 36,
+    "pass": 36
+  },
+  "negative": {
+    "total": 5,
+    "pass": 5
+  },
+  "failures": [],
+  "pass": true
+}

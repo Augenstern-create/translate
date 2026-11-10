@@ -1,5 +1,148 @@
 # 变更记录
 
+## P21-R — 中文生成体系深化与规则统一（2026-11-09，报告 `docs/77`）
+
+### 新增
+
+- **P19 → MeaningFrame 迁移**：36/36 P19 正例由统一语义/中文生成层产出，输出保持不变；
+  短语动词/固定表达/条件/比较/简单被动进入同一路径。
+- **MeaningFrame 深化**：数量、时间/地点、疑问、情态、极性、补语、来源 span；
+  ChineseRealizer 支持 NP/量词/领属/指示、时间多语序、否定、can/can't、进行/形容词。
+- **P21 中文专项**：19/19，增加 的/地/得、着/过；
+- **高级结构**：8/8（条件、比较、简单被动、by 被动、条件祈使、短语动词、固定表达）。
+- **未见组合泛化**：14/14 正例、1 反例回退；100 条结构矩阵 100/100；
+  新词 brother/computer、数量/时间、宾语并列、bare imperative、WSD 搭配。
+- **CandidateValidation**：谓语/论元/否定/时间/地点/疑问标记硬约束。
+- **A/B**：P20→P21 320 chrF 0.5172→0.5189、BLEU 0.5192→0.5206；NMT 291→290、
+  Rule 31→32、fatal 0、回归 0、改善 2。
+
+### 结果
+
+- 默认 **537 passed / 0 failed / 60 ignored**；全特性 **550 passed / 0 failed / 67 ignored**；
+- 文档结构 **1.0**；fmt / clippy 通过。
+
+### 未完成
+
+- 复杂从句、PP 附着、相对从句和完整 WSD 未覆盖；语义层仍 opt-in；
+- 19 条中文专项、8 条高级结构、14 条未见组合与 7 条 P20 对抗集人工评审 PENDING_HUMAN。
+
+## P20-C — 语义驱动组合翻译与中文生成核心（2026-11-09，报告 `docs/75`）
+
+### 新增
+
+- **MeaningFrame**：谓词/施事/受事/补语/时间/极性/时体/疑问/来源 span；
+  局部 `RejectionReason`（PP 附着、嵌套/未解决代词、未知词等）。
+- **ChineseRealizer**：语序、量词、并列祈使、否定 want-to、过去+时间多语序、
+  颜色定语 + be 形容词；`RealizationCandidate` + 确定性 rank。
+- **SemanticCompositionEngine**：`TranslatorBuilder::semantic_composition_file` /
+  `quality-runner --semantic-composition`；语义层优先，失败继续 P19/NMT。
+- **独立对抗集**：7 条（4 正例、3 反例）与 Python 校验器。
+- **A/B**：P19 baseline 正例 0/4；P20 正例 4/4；反例 3/3 回退。
+
+### 结果
+
+- 320 句 P19/P20 均 chrF **0.5172**、BLEU **0.5192**、NMT **291**、Rule **31**；
+- 10 篇文档结构 **1.0**、fatal 0；
+- 默认 **530 passed / 0 failed / 60 ignored**；全特性 **543 passed / 0 failed / 67 ignored**；
+- fmt / clippy 通过。
+
+### 未完成
+
+- 语义层只覆盖 4 类新增结构；ChineseRealizer 不完整；opt-in 未默认；
+- PP 附着/嵌套否定/未解决代词继续回退；7 条对抗集人工评审 PENDING_HUMAN。
+
+## P19-G — 日常英语组合式规则与上下文消歧（2026-11-09，报告 `docs/73`）
+
+### 新增
+
+- **CompositionEngine**：数据化词表/量词/固定表达 + 通用 token/结构/中文组合；
+  支持礼貌祈使、简单陈述、意愿、一般疑问、特殊疑问、否定、能力、进行时、过去动作、
+  be 形容词、be afraid of、有限条件。
+- **上下文选义**：book 名词/动词、light 名词/形容词、light blue/固定表达优先。
+- **安全回退**：未收录实词、复杂结构、部分匹配一律回退 NMT；仅 Sentence +
+  AutoLocalFirst/DictionaryOnly 启用组合。
+- **诊断/缓存**：Rule 路由、RuleStats、完整覆盖证据、组合规则版本进入缓存指纹。
+- **测试**：`p19_composition.rs`、`p19_composition_suite.rs`、41 条独立组合集
+  （36 正例 / 5 反例）、quality-runner `--composition` 与校验脚本。
+
+### 结果
+
+- 独立组合集：36/36 正例、5/5 反例回退；
+- 320 句：chrF **0.5074 → 0.5172**、BLEU **0.5060 → 0.5192**、
+  NMT **300 → 291**、Rule **22 → 31**、fatal 0、回归 0；
+- 默认 **526 passed / 0 failed / 60 ignored**；全特性 **539 passed / 0 failed / 67 ignored**；
+- fmt / clippy 通过。
+
+### 未完成
+
+- 只覆盖少量已支持日常句型；不是通用规则 MT；无完整依存句法/指代/时态；
+- 36 条规则译文人工评审 PENDING_HUMAN；复杂句继续 NMT。
+
+## P18-L — 日常英语基础知识库（2026-11-09，报告 `docs/71`）
+
+### 新增
+
+- **10,000 条日常知识集**：单词 4,000 / 短语 2,500 / 搭配 1,500 / 表达 1,500 /
+  多义词 500；按 `sha256(category\0unit) % 5` 分为建设集 7,959 / 冻结集 2,041。
+- **日常词典补充** 8,519 条：ECDICT 2–4 词日常短语、搭配、表达；
+  `pack-dictionary` 生成 `dictionary.ecdict.en-zh@0.2.0`（38,766 词条 / 55,560 义项）。
+- **覆盖工具**：`build_daily_knowledge.py`、`run_daily_coverage.py`；
+  quality-runner 增加 `--lookup-exact`，只认完整词头/短语 + 词形回退，不计前缀补全。
+- **验收测试**：`p18_daily_coverage.rs`、`p18_dictionary.rs`；
+  真实 ResourceStore 安装/激活/回滚。
+- **词形增强**：补充常见不规则动词/比较级规则，20 个词形 20/20 可查（4 条 lemma 回退）。
+
+### 结果
+
+- 总命中：**4,611/10,000（46.11%）→ 10,000/10,000（100.00%）**；
+- 冻结验收集：**936/2,041（45.86%）→ 2,041/2,041（100.00%）**；
+- 短语 49→2,500；搭配 58→1,500；表达 5→1,500；多义词 499→500；单词 4,000→4,000；
+- 320 句 chrF **0.5074** / BLEU **0.5060** / fatal 0 保持；
+- 默认 **516 passed / 0 failed / 60 ignored**；全特性 **529 passed / 0 failed / 67 ignored**；
+- fmt / clippy 通过。
+
+### 未完成
+
+- 测试集是源内覆盖基准，不是独立第三方语义基准；50 条人工释义评审 PENDING_HUMAN；
+- 覆盖率不等于上下文选义、句子翻译准确率；P19-G/后续质量阶段仍需推进。
+
+## P17-A — 全局架构重整与持续学习基础（2026-11-09，报告 `docs/69`）
+
+### 新增
+
+- **统一规划**：`planner::plan_request`（结构/形状）与 `planner::TranslationPlanner`
+  （引擎选择/远程回退）；`routing` 仅保留兼容导出。
+- **共享语言证据**：`LanguageEvidence`（TextSpan / SenseCandidate / PatternMatch /
+  TranslationConstraint / ContextRef）；诊断增加 `evidence` 与 `UnitExecutionTrace`。
+- **Mixed 可解释**：逐单元记录 Dictionary/Rule/LocalNmt/Remote 路由与兜底原因。
+- **远程兜底**：`TranslationRoute::Remote`、`RemoteFallbackPolicy`（默认 Disabled）、
+  `RouteStats.remote_calls/remote_fallbacks`，远程回退独立于本地学习授权。
+- **上下文选义入协调器**：上下文正文进入缓存身份，统一规则/术语/质量/取消链。
+- **学习链基础**：新 crate `translator-learning`（API feature `learning`，默认关闭）：
+  `PrivacyLevel`、后台学习记录、词/短语/模板候选、Raw→Verified→Released 审核、
+  `knowledge.json.v1` staging、ResourceStore 安装/激活/回滚。
+- **资源协议**：`ResourceKind::Knowledge` + `PayloadSchema::KnowledgeJsonV1`。
+- **质量统计**：quality-runner 输出 `fallback_reason`、逐单元轨迹、证据摘要与
+  reliable coverage/model ratio。
+
+### 修复
+
+- 词典 miss 回退 NMT 后，后续请求可命中回退缓存（Q-065）。
+- 可取消入口与 `Translator` 诊断入口统一经过结构规划；JNI 不再走单路径（Q-039/Q-067）。
+- 远程实际路由不再被缓存标记为本地隐私域；重复远程请求可命中缓存。
+
+### 结果
+
+- 320 句：chrF **0.5074**、BLEU **0.5060**、fatal 0、NMT **300**、Rule **22**；
+- 100 词 NMT **0**；40 模板 NMT **0**；文档结构 **10/10**；
+- 默认 **513 passed / 0 failed / 60 ignored**；全特性 **526 passed / 0 failed / 67 ignored**；
+- `cargo fmt --check` 与全特性 clippy `-D warnings` 通过。
+
+### 未完成
+
+- P18-L 词库/短语/搭配大规模扩充、P19-G 参数化与组合规则、P20-K 长期数据积累与
+  人工审核、P21-M 远程质量/预算策略；人工评审仍 **PENDING_HUMAN**。
+
 ## P16-R — 分层路由与质量验证（2026-11-08，报告 `docs/67`）
 
 ### 新增

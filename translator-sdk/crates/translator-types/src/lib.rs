@@ -249,6 +249,8 @@ pub enum TranslationRoute {
     /// 本地 NMT。
     #[default]
     LocalNmt,
+    /// 已获授权的远程 API。
+    Remote,
     /// 段落/文章聚合后，多个路由混合。
     Mixed,
 }
@@ -259,6 +261,7 @@ impl TranslationRoute {
             Self::Dictionary => "dictionary",
             Self::Rule => "rule",
             Self::LocalNmt => "local_nmt",
+            Self::Remote => "remote",
             Self::Mixed => "mixed",
         }
     }
@@ -270,6 +273,101 @@ impl fmt::Display for TranslationRoute {
     }
 }
 
+/// 模型兜底/规则未覆盖的原因（P17-A）。
+///
+/// 该分类只描述**这次请求为什么没有交给词典或规则直接完成**，不等于译文质量，
+/// 也不自动证明词库缺失。学习链只对前五类做高价值候选挖掘；复杂篇章与用户
+/// 显式选择模型不应被当成“缺词”。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum FallbackReason {
+    /// 完全缺少词条。
+    DictionaryMiss,
+    /// 缺少固定短语/搭配。
+    PhraseMiss,
+    /// 有多个义项但上下文不足以可靠消歧。
+    SenseAmbiguous,
+    /// 规则/模板未覆盖输入。
+    RuleNotCovered,
+    /// 规则匹配但未满足安全条件（当前版本尚未产生）。
+    RuleRejected,
+    /// 复杂语法需要模型。
+    ComplexSyntax,
+    /// 篇章上下文需要模型。
+    LongContext,
+    /// 用户显式选择模型。
+    ExplicitModelRequest,
+    /// 引擎故障或策略回退。
+    EngineFallback,
+}
+
+impl FallbackReason {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::DictionaryMiss => "dictionary_miss",
+            Self::PhraseMiss => "phrase_miss",
+            Self::SenseAmbiguous => "sense_ambiguous",
+            Self::RuleNotCovered => "rule_not_covered",
+            Self::RuleRejected => "rule_rejected",
+            Self::ComplexSyntax => "complex_syntax",
+            Self::LongContext => "long_context",
+            Self::ExplicitModelRequest => "explicit_model_request",
+            Self::EngineFallback => "engine_fallback",
+        }
+    }
+
+    /// 是否值得进入词库/规则候选挖掘。
+    pub const fn is_knowledge_gap(self) -> bool {
+        matches!(
+            self,
+            Self::DictionaryMiss
+                | Self::PhraseMiss
+                | Self::SenseAmbiguous
+                | Self::RuleNotCovered
+                | Self::RuleRejected
+        )
+    }
+}
+
+impl fmt::Display for FallbackReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// 本地模型失败/不可用时，是否允许自动改用远程模型。
+///
+/// **默认 [`RemoteFallbackPolicy::Disabled`]**：即使用户注册了远程插件，
+/// `AutoLocalFirst` 也不会把原文发送出去。远程回退是独立的显式授权，
+/// 与“启用了本地学习”没有关系。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum RemoteFallbackPolicy {
+    /// 永不自动回退远程（默认）。
+    #[default]
+    Disabled,
+    /// 仅当本机没有可用模型时回退远程。
+    OnLocalUnavailable,
+    /// 本机没有模型，或本地模型执行失败时回退远程。
+    OnLocalFailure,
+}
+
+impl RemoteFallbackPolicy {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::OnLocalUnavailable => "on-local-unavailable",
+            Self::OnLocalFailure => "on-local-failure",
+        }
+    }
+
+    pub const fn allows_unavailable(self) -> bool {
+        !matches!(self, Self::Disabled)
+    }
+
+    pub const fn allows_failure(self) -> bool {
+        matches!(self, Self::OnLocalFailure)
+    }
+}
+
 /// 路由与模型调用统计（P16-R / R5）。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct RouteStats {
@@ -277,8 +375,14 @@ pub struct RouteStats {
     pub executions: u64,
     pub dictionary_hits: u64,
     pub rule_matches: u64,
+    /// 本地 NMT 真实推理次数（不含缓存命中）。
     pub nmt_calls: u64,
+    /// 远程 API 真实调用次数（不含缓存命中）。
+    pub remote_calls: u64,
+    /// 词典未命中后回退到本地 NMT 的次数。
     pub nmt_fallbacks: u64,
+    /// 本地模型不可用/失败后回退到已授权远程 API 的次数。
+    pub remote_fallbacks: u64,
     pub cache_hits: u64,
     pub best_candidates: u64,
     pub failures: u64,
@@ -287,12 +391,14 @@ pub struct RouteStats {
 impl RouteStats {
     pub fn summary(&self) -> String {
         format!(
-            "executions={} dictionary={} rule={} nmt_calls={} nmt_fallbacks={} cache_hits={} best_candidates={} failures={}",
+            "executions={} dictionary={} rule={} nmt_calls={} remote_calls={} nmt_fallbacks={} remote_fallbacks={} cache_hits={} best_candidates={} failures={}",
             self.executions,
             self.dictionary_hits,
             self.rule_matches,
             self.nmt_calls,
+            self.remote_calls,
             self.nmt_fallbacks,
+            self.remote_fallbacks,
             self.cache_hits,
             self.best_candidates,
             self.failures
@@ -396,11 +502,10 @@ pub enum TranslationPolicy {
 }
 
 impl TranslationPolicy {
+    /// 仅看策略本身是否允许远程；`AutoLocalFirst` 仍可由
+    /// [`RemoteFallbackPolicy`] 做**显式**受控回退，但默认禁止。
     pub fn is_remote_allowed(&self) -> bool {
-        matches!(
-            self,
-            TranslationPolicy::RemoteOnly | TranslationPolicy::AutoLocalFirst
-        )
+        matches!(self, TranslationPolicy::RemoteOnly)
     }
 }
 

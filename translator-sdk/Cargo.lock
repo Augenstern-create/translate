@@ -1349,11 +1349,13 @@ dependencies = [
  "pack-dictionary",
  "pollster",
  "rusqlite",
+ "serde_json",
  "sha2",
  "tempfile",
  "translator-analysis",
  "translator-core",
  "translator-dictionary",
+ "translator-learning",
  "translator-nmt-bergamot",
  "translator-nmt-ort",
  "translator-plugin-api",
@@ -1413,6 +1415,18 @@ dependencies = [
  "tempfile",
  "translator-analysis",
  "translator-api",
+ "translator-resource",
+ "translator-types",
+]
+
+[[package]]
+name = "translator-learning"
+version = "0.1.0"
+dependencies = [
+ "rusqlite",
+ "serde_json",
+ "sha2",
+ "tempfile",
  "translator-resource",
  "translator-types",
 ]

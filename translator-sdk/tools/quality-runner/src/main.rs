@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde_json::{json, Map, Value};
-use translator_analysis::EnglishLemmatizer;
+use translator_analysis::{EnglishLemmatizer, MorphologyAnalyzer};
 use translator_api::{
     DictionaryEntry, LanguageTag, LookupRequest, TermPolicy, TranslateRequest, TranslationMode,
     TranslationWarning, Translator,
@@ -25,10 +25,13 @@ struct Args {
     output: Option<PathBuf>,
     lookup_input: Option<PathBuf>,
     lookup_output: Option<PathBuf>,
+    lookup_exact: bool,
     dictionaries: Vec<PathBuf>,
     rules: Option<PathBuf>,
     terms: Option<PathBuf>,
     templates: Option<PathBuf>,
+    composition: Option<PathBuf>,
+    semantic_composition: Option<PathBuf>,
     term_policy: TermPolicy,
     mode: TranslationMode,
     text_kind: translator_api::TextKind,
@@ -67,10 +70,13 @@ impl Default for Args {
             output: None,
             lookup_input: None,
             lookup_output: None,
+            lookup_exact: false,
             dictionaries: Vec::new(),
             rules: None,
             terms: None,
             templates: None,
+            composition: None,
+            semantic_composition: None,
             term_policy: TermPolicy::Warn,
             mode: TranslationMode::Precise,
             text_kind: translator_api::TextKind::Auto,
@@ -116,6 +122,8 @@ fn usage() -> &'static str {
   --rules <file>          挂载规则包
   --terms <file>          挂载输出侧术语表
   --templates <file>      挂载完整句子模板（P16-R）
+  --composition <file>   挂载组合式日常句型规则（P19-G）
+  --semantic-composition <file> 挂载语义组合/中文生成规则（P20-C）
   --term-policy <p>       off | warn | enforce（默认 warn）
   --mode <m>              precise | fast（默认 precise）
   --text-kind <k>         auto | word | sentence | paragraph | document（默认 auto）
@@ -128,6 +136,7 @@ fn usage() -> &'static str {
   --target <lang>         目标语言（默认 zh-Hans）
   --policy <p>            auto | local | dictionary（默认 auto）
   --lookup-limit <n>      查词返回条数（默认 10）
+  --lookup-exact          只认完整词头/短语 + 词形回退，不做前缀补全（覆盖统计用）
   --summary <file>        额外写一份汇总 JSON
 
 真实 NMT（需 --features ort）:
@@ -160,6 +169,8 @@ fn parse_args() -> Result<Args, String> {
             "--rules" => args.rules = Some(PathBuf::from(value()?)),
             "--terms" => args.terms = Some(PathBuf::from(value()?)),
             "--templates" => args.templates = Some(PathBuf::from(value()?)),
+            "--composition" => args.composition = Some(PathBuf::from(value()?)),
+            "--semantic-composition" => args.semantic_composition = Some(PathBuf::from(value()?)),
             "--term-policy" => {
                 args.term_policy = match value()?.as_str() {
                     "off" => TermPolicy::Off,
@@ -221,6 +232,7 @@ fn parse_args() -> Result<Args, String> {
                 }
             }
             "--lookup-limit" => args.lookup_limit = value()?.parse().map_err(|e| format!("{e}"))?,
+            "--lookup-exact" => args.lookup_exact = true,
             "--summary" => args.summary = Some(PathBuf::from(value()?)),
             #[cfg(feature = "ort")]
             "--ort-model-dir" => args.ort_model_dir = Some(PathBuf::from(value()?)),
@@ -272,6 +284,12 @@ fn build_translator(args: &Args) -> Result<Translator, String> {
     }
     if let Some(templates) = &args.templates {
         builder = builder.templates_file(templates);
+    }
+    if let Some(composition) = &args.composition {
+        builder = builder.composition_file(composition);
+    }
+    if let Some(semantic) = &args.semantic_composition {
+        builder = builder.semantic_composition_file(semantic);
     }
 
     #[cfg(feature = "ort")]
@@ -369,6 +387,10 @@ fn translate_record(translator: &Translator, args: &Args, id: &str, source_text:
             record.insert("strategy".to_string(), json!(out.diagnostics.strategy));
             record.insert("route".to_string(), json!(out.diagnostics.route.as_str()));
             record.insert(
+                "fallback_reason".to_string(),
+                json!(out.diagnostics.fallback_reason.map(|r| r.as_str())),
+            );
+            record.insert(
                 "model_invoked".to_string(),
                 json!(out.diagnostics.model_invoked),
             );
@@ -421,6 +443,17 @@ fn translate_record(translator: &Translator, args: &Args, id: &str, source_text:
                     "route_reason": out.diagnostics.route_reason,
                     "rules_version": out.diagnostics.rules_version,
                     "resource_fingerprint": out.diagnostics.resource_fingerprint,
+                    "evidence": out.diagnostics.evidence.as_ref().map(|e| e.summary()),
+                    "units": out.diagnostics.units.iter().map(|u| json!({
+                        "index": u.index,
+                        "span": [u.span.start, u.span.end],
+                        "kind": u.kind.as_str(),
+                        "route": u.route.as_str(),
+                        "engine_id": u.engine_id,
+                        "reason": u.reason,
+                        "model_invoked": u.model_invoked,
+                        "fallback_reason": u.fallback_reason.map(|r| r.as_str()),
+                    })).collect::<Vec<_>>(),
                     "rules_applied": out.diagnostics.rules.as_ref().map(|r| r.applied.clone()),
                     "protected_spans": out.diagnostics.protected_spans.iter().map(|s| json!({
                         "kind": protected_kind(s.kind),
@@ -575,37 +608,107 @@ fn main() {
             std::process::exit(1);
         });
         let mut records: Vec<Value> = Vec::new();
+        // 覆盖统计必须用 exact：`lookup()` 会做前缀补全，不能拿前缀结果
+        // 冒充完整短语命中（docs/70 §4.4）。
+        let exact_packages = if args.lookup_exact {
+            let mut pkgs = Vec::new();
+            for dir in &args.dictionaries {
+                match translator_api::dictionary::DictionaryPackage::open(dir, true) {
+                    Ok(pkg) => pkgs.push(pkg),
+                    Err(err) => {
+                        eprintln!("打开词典 {} 失败：{err}", dir.display());
+                        std::process::exit(1);
+                    }
+                }
+            }
+            Some(pkgs)
+        } else {
+            None
+        };
+        let lemmatizer = EnglishLemmatizer::new();
         for (lineno, line) in text.lines().enumerate() {
             let word = line.trim();
             if word.is_empty() || word.starts_with('#') {
                 continue;
             }
-            let req = LookupRequest::new(word)
-                .with_language(LanguageTag::new("en").expect("静态标签合法"))
-                .with_limit(args.lookup_limit);
             let started = std::time::Instant::now();
-            match pollster::block_on(translator.lookup(&req)) {
-                Ok(entries) => {
-                    success += 1;
-                    records.push(json!({
-                        "word": word,
-                        "line": lineno + 1,
-                        "found": !entries.is_empty(),
-                        "entries": entries.iter().map(entry_json).collect::<Vec<_>>(),
-                        "wall_ms": started.elapsed().as_millis(),
-                        "error": Value::Null,
-                    }));
+            if let Some(packages) = &exact_packages {
+                let mut entries = Vec::new();
+                let mut candidates = vec![word.to_string()];
+                candidates.extend(lemmatizer.lemmas(word).into_iter().take(5));
+                let mut exact = false;
+                let mut lemma_hit = false;
+                for candidate in &candidates {
+                    for package in packages {
+                        match package.lookup_exact_all(candidate) {
+                            Ok(found) => {
+                                for entry in found {
+                                    if entry.headword.eq_ignore_ascii_case(word) {
+                                        exact = true;
+                                    } else if !candidate.eq_ignore_ascii_case(word) {
+                                        lemma_hit = true;
+                                    }
+                                    if !entries.iter().any(|e: &DictionaryEntry| {
+                                        e.headword == entry.headword
+                                            && e.source_id == entry.source_id
+                                    }) {
+                                        entries.push(entry);
+                                    }
+                                }
+                            }
+                            Err(err) => {
+                                errors += 1;
+                                eprintln!("{word}: exact lookup 失败：{err}");
+                            }
+                        }
+                    }
+                    if !entries.is_empty() {
+                        break;
+                    }
                 }
-                Err(err) => {
+                let found = !entries.is_empty();
+                if found {
+                    success += 1;
+                } else {
                     errors += 1;
-                    records.push(json!({
-                        "word": word,
-                        "line": lineno + 1,
-                        "found": false,
-                        "entries": [],
-                        "wall_ms": started.elapsed().as_millis(),
-                        "error": { "code": err.code.as_str(), "message": err.message },
-                    }));
+                }
+                records.push(json!({
+                    "word": word,
+                    "line": lineno + 1,
+                    "found": found,
+                    "exact": exact,
+                    "lemma_hit": lemma_hit,
+                    "entries": entries.iter().map(entry_json).collect::<Vec<_>>(),
+                    "wall_ms": started.elapsed().as_millis(),
+                    "error": Value::Null,
+                }));
+            } else {
+                let req = LookupRequest::new(word)
+                    .with_language(LanguageTag::new("en").expect("静态标签合法"))
+                    .with_limit(args.lookup_limit);
+                match pollster::block_on(translator.lookup(&req)) {
+                    Ok(entries) => {
+                        success += 1;
+                        records.push(json!({
+                            "word": word,
+                            "line": lineno + 1,
+                            "found": !entries.is_empty(),
+                            "entries": entries.iter().map(entry_json).collect::<Vec<_>>(),
+                            "wall_ms": started.elapsed().as_millis(),
+                            "error": Value::Null,
+                        }));
+                    }
+                    Err(err) => {
+                        errors += 1;
+                        records.push(json!({
+                            "word": word,
+                            "line": lineno + 1,
+                            "found": false,
+                            "entries": [],
+                            "wall_ms": started.elapsed().as_millis(),
+                            "error": { "code": err.code.as_str(), "message": err.message },
+                        }));
+                    }
                 }
             }
             if let Some(limit) = args.limit {
@@ -621,6 +724,14 @@ fn main() {
         );
     }
 
+    let route_stats = translator.route_stats();
+    let reliable_units = route_stats
+        .dictionary_hits
+        .saturating_add(route_stats.rule_matches);
+    let model_units = route_stats
+        .nmt_calls
+        .saturating_add(route_stats.remote_calls);
+    let total_units = route_stats.executions.max(1);
     let summary = json!({
         "label": args.label,
         "mode": args.mode.as_str(),
@@ -630,14 +741,22 @@ fn main() {
         "total_wall_ms": total_wall_ms,
         "resource_fingerprint": translator.resource_fingerprint(),
         "route_stats": {
-            "executions": translator.route_stats().executions,
-            "dictionary_hits": translator.route_stats().dictionary_hits,
-            "rule_matches": translator.route_stats().rule_matches,
-            "nmt_calls": translator.route_stats().nmt_calls,
-            "nmt_fallbacks": translator.route_stats().nmt_fallbacks,
-            "cache_hits": translator.route_stats().cache_hits,
-            "best_candidates": translator.route_stats().best_candidates,
-            "failures": translator.route_stats().failures,
+            "executions": route_stats.executions,
+            "dictionary_hits": route_stats.dictionary_hits,
+            "rule_matches": route_stats.rule_matches,
+            "nmt_calls": route_stats.nmt_calls,
+            "remote_calls": route_stats.remote_calls,
+            "nmt_fallbacks": route_stats.nmt_fallbacks,
+            "remote_fallbacks": route_stats.remote_fallbacks,
+            "cache_hits": route_stats.cache_hits,
+            "best_candidates": route_stats.best_candidates,
+            "failures": route_stats.failures,
+        },
+        "coverage": {
+            "reliable_units": reliable_units,
+            "model_units": model_units,
+            "reliable_coverage": reliable_units as f64 / total_units as f64,
+            "model_ratio": model_units as f64 / total_units as f64,
         },
     });
     if let Some(path) = &args.summary {

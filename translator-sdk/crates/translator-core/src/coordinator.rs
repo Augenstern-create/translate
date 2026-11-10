@@ -9,15 +9,19 @@ use std::time::Instant;
 
 use translator_plugin_api::{BoxFuture, PluginRegistry};
 use translator_types::{
-    CancelToken, Capability, CapabilityInfo, DictionaryEntry, LookupRequest, RouteDecision,
-    TextKind, TranslateOptions, TranslateRequest, TranslationError, TranslationErrorCode,
-    TranslationMode, TranslationPolicy, TranslationResult, TranslationWarning,
+    CancelToken, Capability, CapabilityInfo, DictionaryEntry, FallbackReason, LookupRequest,
+    RemoteFallbackPolicy, RouteDecision, TextKind, TranslateOptions, TranslateRequest,
+    TranslationError, TranslationErrorCode, TranslationMode, TranslationPolicy, TranslationResult,
+    TranslationRoute, TranslationWarning,
 };
 
 use crate::cache::{CacheEntry, CacheKey, QueryCache};
-use crate::diagnostics::{RuleTrace, TermTrace, TranslateOutput, TranslationDiagnostics};
+use crate::diagnostics::{
+    RuleTrace, TermTrace, TranslateOutput, TranslationDiagnostics, UnitExecutionTrace,
+};
+use crate::evidence::{LanguageEvidence, SenseCandidate, TextSpan, UnitKind};
+use crate::planner::{self, TranslationPlanner};
 use crate::quality;
-use crate::routing;
 use crate::rules::{RulePreview, TextRules};
 use crate::terms::{TargetTermGuard, TermContext, TermOutcome, TermPolicy};
 use crate::text;
@@ -56,6 +60,10 @@ pub struct CoordinatorConfig {
     pub lemmatizer: Option<Arc<dyn translator_analysis::MorphologyAnalyzer>>,
     /// 完整句子模板（P16-R / R2）。只有整句精确匹配才直接返回。
     pub templates: Option<Arc<dyn crate::templates::SentenceTemplates>>,
+    /// 组合式日常句型规则（P19-G）。`None` 时不启用。
+    pub composer: Option<Arc<crate::composer::CompositionEngine>>,
+    /// 语义组合/中文生成层（P20-C）。`None` 时不启用。
+    pub semantic_composer: Option<Arc<crate::semantic::SemanticCompositionEngine>>,
     /// 默认翻译模式（docs/57 §4）。默认 [`TranslationMode::Precise`]。
     pub default_mode: TranslationMode,
     /// 关键完整性检查失败时是否拒绝返回译文。
@@ -63,6 +71,11 @@ pub struct CoordinatorConfig {
     /// 默认 `true`：关键数字丢失、受保护标记残留、空译文都返回 `IntegrityFailure`，
     /// 而不是把一份缺内容的译文交给宿主。设 `false` 时这些问题只进诊断。
     pub strict_integrity: bool,
+    /// 本地模型不可用/失败时是否允许自动回退到远程模型。
+    ///
+    /// 默认 [`RemoteFallbackPolicy::Disabled`]：远程回退是独立于“本地学习”的
+    /// 显式授权，不允许因为注册了远程插件就静默上传原文。
+    pub remote_fallback: RemoteFallbackPolicy,
 }
 
 impl std::fmt::Debug for CoordinatorConfig {
@@ -87,8 +100,23 @@ impl std::fmt::Debug for CoordinatorConfig {
             )
             .field("lemmatizer", &self.lemmatizer.as_ref().map(|x| x.name()))
             .field("templates", &self.templates.as_ref().map(|x| x.id()))
+            .field(
+                "composer",
+                &self
+                    .composer
+                    .as_ref()
+                    .map(|x| format!("{}@{}", x.id(), x.version())),
+            )
+            .field(
+                "semantic_composer",
+                &self
+                    .semantic_composer
+                    .as_ref()
+                    .map(|x| format!("{}@{}", x.id(), x.version())),
+            )
             .field("default_mode", &self.default_mode)
             .field("strict_integrity", &self.strict_integrity)
+            .field("remote_fallback", &self.remote_fallback)
             .finish()
     }
 }
@@ -113,8 +141,11 @@ impl Default for CoordinatorConfig {
             language_identifier: None,
             lemmatizer: None,
             templates: None,
+            composer: None,
+            semantic_composer: None,
             default_mode: TranslationMode::Precise,
             strict_integrity: true,
+            remote_fallback: RemoteFallbackPolicy::Disabled,
         }
     }
 }
@@ -125,7 +156,9 @@ struct RouteCounters {
     dictionary_hits: AtomicU64,
     rule_matches: AtomicU64,
     nmt_calls: AtomicU64,
+    remote_calls: AtomicU64,
     nmt_fallbacks: AtomicU64,
+    remote_fallbacks: AtomicU64,
     cache_hits: AtomicU64,
     best_candidates: AtomicU64,
     failures: AtomicU64,
@@ -182,7 +215,9 @@ impl Coordinator {
             dictionary_hits: self.stats.dictionary_hits.load(Ordering::Relaxed),
             rule_matches: self.stats.rule_matches.load(Ordering::Relaxed),
             nmt_calls: self.stats.nmt_calls.load(Ordering::Relaxed),
+            remote_calls: self.stats.remote_calls.load(Ordering::Relaxed),
             nmt_fallbacks: self.stats.nmt_fallbacks.load(Ordering::Relaxed),
+            remote_fallbacks: self.stats.remote_fallbacks.load(Ordering::Relaxed),
             cache_hits: self.stats.cache_hits.load(Ordering::Relaxed),
             best_candidates: self.stats.best_candidates.load(Ordering::Relaxed),
             failures: self.stats.failures.load(Ordering::Relaxed),
@@ -195,7 +230,9 @@ impl Coordinator {
             &self.stats.dictionary_hits,
             &self.stats.rule_matches,
             &self.stats.nmt_calls,
+            &self.stats.remote_calls,
             &self.stats.nmt_fallbacks,
+            &self.stats.remote_fallbacks,
             &self.stats.cache_hits,
             &self.stats.best_candidates,
             &self.stats.failures,
@@ -206,6 +243,18 @@ impl Coordinator {
 
     pub fn record_dictionary_hit(&self) {
         self.stats.dictionary_hits.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_model_call(&self, route: TranslationRoute) {
+        match route {
+            TranslationRoute::LocalNmt => {
+                self.stats.nmt_calls.fetch_add(1, Ordering::Relaxed);
+            }
+            TranslationRoute::Remote => {
+                self.stats.remote_calls.fetch_add(1, Ordering::Relaxed);
+            }
+            TranslationRoute::Dictionary | TranslationRoute::Rule | TranslationRoute::Mixed => {}
+        }
     }
 
     pub fn record_execution(&self) {
@@ -314,7 +363,8 @@ impl Coordinator {
         let source = self.resolve_source(&normalized, req)?;
         // 规则可能改变文本形态（全角→半角、术语替换），路由必须看到处理后的文本
         let work_text = self.apply_rules(&normalized, &source, &req.target)?.0;
-        let outcome = routing::select(&self.registry, req, &source, &work_text, false)?;
+        let outcome = TranslationPlanner::new(&self.registry, self.config.remote_fallback)
+            .resolve(req, &source, &work_text, false)?;
         Ok(outcome.decision)
     }
 
@@ -508,6 +558,85 @@ impl Coordinator {
         Ok(all)
     }
 
+    /// 收集一个单元可共享的语言证据（P17-A / A1）。
+    ///
+    /// 词形/词义候选只来自词典 provider；查询失败不会影响翻译主链，只会让
+    /// 证据为空。证据本身**不决定**引擎，Planner 仍按策略与结构选择。
+    pub async fn language_evidence(
+        &self,
+        text: &str,
+        source: &translator_types::LanguageTag,
+        target: &translator_types::LanguageTag,
+        kind: TextKind,
+        context_text: Option<&str>,
+        glossary_id: Option<&str>,
+    ) -> LanguageEvidence {
+        let mut evidence = LanguageEvidence::for_text(
+            TextSpan::new(0, text.len()),
+            UnitKind::from_text_kind(kind, false),
+            text,
+        );
+        if let Some(id) = glossary_id {
+            evidence
+                .constraints
+                .push(crate::evidence::TranslationConstraint::Glossary { id: id.to_string() });
+        }
+        if let Some(context) = context_text.filter(|c| !c.trim().is_empty()) {
+            evidence.context = Some(crate::evidence::ContextRef {
+                id: "provided-context".to_string(),
+                chars: context.chars().count(),
+            });
+        }
+
+        // 只有 Word/Phrase 才查词义候选；整句预查会浪费一次词典访问，
+        // 也会把“句子中某个词出现在词典里”误当成整句可词典翻译。
+        if kind != TextKind::Word {
+            return evidence;
+        }
+
+        evidence.dictionary_available = self
+            .registry
+            .engines_with(Capability::Dictionary)
+            .iter()
+            .any(|engine| engine.supports(source, target));
+        let lookup = LookupRequest {
+            term: text.to_string(),
+            language: Some(source.clone()),
+            limit: 8,
+        };
+        let mut found = Vec::new();
+        for provider in self.registry.providers() {
+            evidence.dictionary_available = true;
+            match provider.lookup(&lookup).await {
+                Ok(entries) => {
+                    for entry in entries {
+                        let pos = entry.parts_of_speech.first().cloned();
+                        for (idx, sense) in entry.senses.into_iter().take(3).enumerate() {
+                            let confidence = ((entry.confidence.clamp(0.0, 1.0) * 100.0) as u8)
+                                .saturating_sub(idx as u8 * 10);
+                            found.push(SenseCandidate {
+                                headword: entry.headword.clone(),
+                                definition: sense.definition,
+                                part_of_speech: pos.clone(),
+                                source_id: sense.source_id,
+                                confidence,
+                            });
+                        }
+                    }
+                }
+                Err(_) => {
+                    // 证据是可选增强；查询失败不能阻塞实际翻译。
+                }
+            }
+            if found.len() >= 8 {
+                break;
+            }
+        }
+        let _ = target;
+        evidence.add_senses(found);
+        evidence
+    }
+
     /// 注入的 LID（若配置）；返回 `None` 表示使用调用方原有启发式。
     pub fn identify_language(
         &self,
@@ -552,6 +681,404 @@ impl Coordinator {
         options: &TranslateOptions,
     ) -> Result<TranslateOutput, TranslationError> {
         self.run_inner(req, None, options).await
+    }
+
+    /// P20-C：语义组合/中文生成层。只处理局部高级结构；失败后继续 P19/NMT。
+    async fn try_semantic_composition(
+        &self,
+        req: &TranslateRequest,
+        options: &TranslateOptions,
+        source: &translator_types::LanguageTag,
+        work_text: &str,
+        rule_applied: &[String],
+        source_assumed: bool,
+    ) -> Result<Option<TranslateOutput>, TranslationError> {
+        let Some(engine) = self.config.semantic_composer.as_ref().cloned() else {
+            return Ok(None);
+        };
+        if !engine.is_candidate(work_text) {
+            return Ok(None);
+        }
+        let candidates = engine.lookup_candidates(work_text);
+        if candidates.is_empty() {
+            return Ok(None);
+        }
+        let mut entries = std::collections::HashMap::new();
+        for word in candidates {
+            let lookup = LookupRequest {
+                term: word.clone(),
+                language: Some(source.clone()),
+                limit: 8,
+            };
+            if let Ok(found) = self.lookup_term(&lookup, &word).await {
+                if !found.is_empty() {
+                    entries.insert(word, found);
+                }
+            }
+        }
+        let Some(semantic) = engine.compose(work_text, source, &req.target, &entries) else {
+            return Ok(None);
+        };
+        let outcome = crate::composer::CompositionOutcome {
+            text: semantic.text,
+            rule_id: semantic.rule_id,
+            pattern: semantic.pattern,
+            evidence: semantic.evidence,
+        };
+        let engine_id = format!("semantic:{}", engine.id());
+        let engine_identity = format!("{}@{}", engine.id(), engine.version());
+        self.finish_composition(
+            req,
+            options,
+            source.clone(),
+            work_text,
+            &outcome,
+            &engine_id,
+            &engine_identity,
+            rule_applied,
+            source_assumed,
+        )
+        .map(Some)
+    }
+
+    /// P19-G：尝试组合式日常简单句。失败不产生错误，只返回 `None` 交给 NMT。
+    async fn try_composition(
+        &self,
+        req: &TranslateRequest,
+        options: &TranslateOptions,
+        source: &translator_types::LanguageTag,
+        work_text: &str,
+        rule_applied: &[String],
+        source_assumed: bool,
+    ) -> Result<Option<TranslateOutput>, TranslationError> {
+        let Some(engine) = self.config.composer.as_ref().cloned() else {
+            return Ok(None);
+        };
+        let candidates = engine.lookup_candidates(work_text);
+        if candidates.is_empty() {
+            return Ok(None);
+        }
+        let mut entries = std::collections::HashMap::new();
+        for word in candidates {
+            let lookup = LookupRequest {
+                term: word.clone(),
+                language: Some(source.clone()),
+                limit: 8,
+            };
+            // 证据查询失败不能让主链失败；没有完整词典证据时组合会拒绝。
+            if let Ok(found) = self.lookup_term(&lookup, &word).await {
+                if !found.is_empty() {
+                    entries.insert(word, found);
+                }
+            }
+        }
+        let Some(outcome) = engine.compose(work_text, source, &req.target, &entries) else {
+            return Ok(None);
+        };
+        let engine_id = format!("compose:{}", engine.id());
+        let engine_identity = format!("{}@{}", engine.id(), engine.version());
+        self.finish_composition(
+            req,
+            options,
+            source.clone(),
+            work_text,
+            &outcome,
+            &engine_id,
+            &engine_identity,
+            rule_applied,
+            source_assumed,
+        )
+        .map(Some)
+    }
+
+    /// 组合规则结果的收尾：与模板走同一术语/质量/缓存路径。
+    #[allow(clippy::too_many_arguments)]
+    fn finish_composition(
+        &self,
+        req: &TranslateRequest,
+        options: &TranslateOptions,
+        source: translator_types::LanguageTag,
+        work_text: &str,
+        outcome: &crate::composer::CompositionOutcome,
+        engine_id: &str,
+        engine_identity: &str,
+        rule_applied: &[String],
+        source_assumed: bool,
+    ) -> Result<TranslateOutput, TranslationError> {
+        let engine_id = engine_id.to_string();
+        let spans = text::protected_spans(work_text);
+        let key = CacheKey::new_with_options(
+            work_text,
+            req,
+            source.as_str(),
+            &engine_id,
+            Some(engine_identity),
+            self.effective_rules_version,
+            &self.resource_fingerprint,
+            options,
+            "composition",
+            TranslationRoute::Rule,
+        );
+        if let Some(hit) = self.lookup_cache(&key, &spans, &None, &outcome.evidence) {
+            return Ok(hit);
+        }
+
+        let mut result = TranslationResult {
+            text: outcome.text.clone(),
+            source: source.clone(),
+            target: req.target.clone(),
+            engine_id: engine_id.clone(),
+            model_id: None,
+            elapsed_ms: 0,
+            warnings: Vec::new(),
+        };
+        let term_trace = self.apply_term_guard(work_text, &source, &req.target, &mut result);
+        result.text = quality::repair_output(&result.text);
+        let quality = quality::check(work_text, &result.text, &req.target, options.mode);
+        if self.config.strict_integrity && quality.has_fatal() {
+            return Err(TranslationError::new(
+                TranslationErrorCode::IntegrityFailure,
+                format!("组合规则译文未通过完整性检查：{}", quality.summary()),
+            ));
+        }
+        let rules_trace = self.config.rules.as_ref().map(|rules| RuleTrace {
+            id: rules.id().to_string(),
+            version: rules.version(),
+            applied: rule_applied.to_vec(),
+        });
+        let diagnostics = TranslationDiagnostics {
+            engine_id: engine_id.clone(),
+            capability: Capability::Nmt,
+            route_reason: format!("组合规则命中：{}（{}）", engine_identity, outcome.rule_id),
+            cache_hit: false,
+            source_assumed,
+            rules_version: self.effective_rules_version,
+            resource_fingerprint: self.resource_fingerprint.clone(),
+            mode: options.mode,
+            text_kind: TextKind::Sentence,
+            route: TranslationRoute::Rule,
+            model_invoked: false,
+            dictionary_hit: false,
+            rule_matched: true,
+            fallback_reason: None,
+            evidence: Some(outcome.evidence.clone()),
+            units: vec![UnitExecutionTrace {
+                index: 0,
+                span: TextSpan::new(0, work_text.len()),
+                kind: UnitKind::Sentence,
+                route: TranslationRoute::Rule,
+                engine_id: engine_id.clone(),
+                capability: Capability::Nmt,
+                reason: format!("组合规则：{}", outcome.pattern),
+                model_invoked: false,
+                cache_hit: false,
+                fallback_reason: None,
+            }],
+            strategy: "composition".to_string(),
+            context_id: options.context_id.clone(),
+            rules: rules_trace,
+            protected_spans: spans,
+            restore_missing: Vec::new(),
+            term: term_trace,
+            quality: Some(quality),
+        };
+        self.stats.rule_matches.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut cache) = self.cache.lock() {
+            let mut cached = CacheEntry {
+                result: result.clone(),
+                diagnostics: diagnostics.clone(),
+            };
+            cached
+                .result
+                .warnings
+                .retain(|w| !matches!(w, TranslationWarning::CacheHit));
+            cached.result.elapsed_ms = 0;
+            cache.insert(key, cached);
+        }
+        Ok(TranslateOutput {
+            result,
+            diagnostics,
+        })
+    }
+
+    /// P16-R R-03 / P17-A A1：带明确搭配线索的单词/短语选义。
+    ///
+    /// 该路径在 Coordinator 内完成，不再由 API 旁路执行：这样策略、规则、缓存、
+    /// 术语约束、质量门禁与诊断都走同一套逻辑。只有 Planner 先判定“能走词典”
+    /// 才会进入。
+    #[allow(clippy::too_many_arguments)]
+    async fn try_context_word(
+        &self,
+        req: &TranslateRequest,
+        options: &TranslateOptions,
+        source: &translator_types::LanguageTag,
+        work_text: &str,
+        rule_applied: &[String],
+        source_assumed: bool,
+    ) -> Result<Option<TranslateOutput>, TranslationError> {
+        if options.text_kind != TextKind::Word || options.context_text.is_none() {
+            return Ok(None);
+        }
+        if !matches!(
+            req.policy,
+            TranslationPolicy::AutoLocalFirst | TranslationPolicy::DictionaryOnly
+        ) {
+            return Ok(None);
+        }
+        let planned = TranslationPlanner::new(&self.registry, self.config.remote_fallback)
+            .resolve(req, source, work_text, true)?;
+        if planned.decision.capability != Capability::Dictionary {
+            return Ok(None);
+        }
+
+        let entries = match self
+            .lookup_term(
+                &LookupRequest {
+                    term: work_text.to_string(),
+                    language: Some(source.clone()),
+                    limit: 10,
+                },
+                work_text,
+            )
+            .await
+        {
+            Ok(entries) => entries,
+            // 证据/上下文增强失败不能阻塞正常词典/NMT 路径。
+            Err(_) => return Ok(None),
+        };
+        if entries.is_empty() {
+            return Ok(None);
+        }
+        let context = options.context_text.as_deref().unwrap_or("");
+        let selected =
+            crate::context_sense::select_by_context(work_text, context, &entries, &req.target)
+                .or_else(|| crate::context_sense::compose_senses(&entries, 3));
+        let Some(selected) = selected else {
+            return Ok(None);
+        };
+
+        let spans = text::protected_spans(work_text);
+        let mut evidence = LanguageEvidence::for_text(
+            TextSpan::new(0, work_text.len()),
+            UnitKind::Word,
+            work_text,
+        );
+        evidence.context = Some(crate::evidence::ContextRef {
+            id: options
+                .context_id
+                .clone()
+                .unwrap_or_else(|| "provided-context".to_string()),
+            chars: context.chars().count(),
+        });
+        evidence.dictionary_available = true;
+        evidence.add_senses(entries.iter().flat_map(|entry| {
+            let pos = entry.parts_of_speech.first().cloned();
+            entry.senses.iter().map(move |sense| SenseCandidate {
+                headword: entry.headword.clone(),
+                definition: sense.definition.clone(),
+                part_of_speech: pos.clone(),
+                source_id: sense.source_id.clone(),
+                confidence: (entry.confidence.clamp(0.0, 1.0) * 100.0) as u8,
+            })
+        }));
+        let rules_trace = self.config.rules.as_ref().map(|rules| RuleTrace {
+            id: rules.id().to_string(),
+            version: rules.version(),
+            applied: rule_applied.to_vec(),
+        });
+
+        // 上下文原文必须进入缓存身份，否则同一 context_id 下换上下文会命中错误译法。
+        let mut key_opts = options.clone();
+        let digest = context_digest(options.context_id.as_deref(), context);
+        key_opts.context_id = Some(digest);
+        let source_id = entries
+            .first()
+            .map(|e| e.source_id.clone())
+            .unwrap_or_else(|| "dictionary".to_string());
+        let key = CacheKey::new_with_options(
+            work_text,
+            req,
+            source.as_str(),
+            "dictionary.context",
+            Some(&source_id),
+            self.effective_rules_version,
+            &self.resource_fingerprint,
+            &key_opts,
+            "word-context",
+            TranslationRoute::Dictionary,
+        );
+        if let Some(hit) = self.lookup_cache(&key, &spans, &rules_trace, &evidence) {
+            return Ok(Some(hit));
+        }
+
+        let mut result = TranslationResult {
+            text: selected,
+            source: source.clone(),
+            target: req.target.clone(),
+            engine_id: "dictionary.context".to_string(),
+            model_id: Some(source_id),
+            elapsed_ms: 0,
+            warnings: Vec::new(),
+        };
+        let term_trace = self.apply_term_guard(work_text, source, &req.target, &mut result);
+        result.text = quality::repair_output(&result.text);
+        let quality = quality::check(work_text, &result.text, &req.target, options.mode);
+        if self.config.strict_integrity && quality.has_fatal() {
+            return Err(TranslationError::new(
+                TranslationErrorCode::IntegrityFailure,
+                format!("上下文选义词条未通过完整性检查：{}", quality.summary()),
+            ));
+        }
+        let diagnostics = TranslationDiagnostics {
+            engine_id: "dictionary.context".to_string(),
+            capability: Capability::Dictionary,
+            route_reason: "上下文线索选义（P16-R / R-03）".to_string(),
+            cache_hit: false,
+            source_assumed,
+            rules_version: self.effective_rules_version,
+            resource_fingerprint: self.resource_fingerprint.clone(),
+            mode: options.mode,
+            text_kind: TextKind::Word,
+            route: TranslationRoute::Dictionary,
+            model_invoked: false,
+            dictionary_hit: true,
+            rule_matched: false,
+            fallback_reason: None,
+            evidence: Some(evidence),
+            units: vec![UnitExecutionTrace {
+                index: 0,
+                span: TextSpan::new(0, work_text.len()),
+                kind: UnitKind::Word,
+                route: TranslationRoute::Dictionary,
+                engine_id: "dictionary.context".to_string(),
+                capability: Capability::Dictionary,
+                reason: "上下文线索选义".to_string(),
+                model_invoked: false,
+                cache_hit: false,
+                fallback_reason: None,
+            }],
+            strategy: "word-context".to_string(),
+            context_id: options.context_id.clone(),
+            rules: rules_trace,
+            protected_spans: spans,
+            restore_missing: Vec::new(),
+            term: term_trace,
+            quality: Some(quality),
+        };
+        self.stats.dictionary_hits.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.insert(
+                key,
+                CacheEntry {
+                    result: result.clone(),
+                    diagnostics: diagnostics.clone(),
+                },
+            );
+        }
+        Ok(Some(TranslateOutput {
+            result,
+            diagnostics,
+        }))
     }
 
     async fn run_inner(
@@ -608,15 +1135,78 @@ impl Coordinator {
         }
 
         check_cancelled(cancel)?;
-        // 4) 路由（用的是规则处理后的文本）。先选引擎，才知道该由谁做保护：
-        //    真实 NMT 后端自己按 `ProtectionPlan` 分段，协调器再打一次标记会破坏它。
-        let outcome = routing::select(
-            &self.registry,
+        // 3.7) 组合式简单句规则（P19-G）。仅在策略允许词典/规则直接完成时尝试；
+        //     未知成分或复杂结构立即返回 None，继续现有 Planner/NMT。
+        if options.text_kind == TextKind::Sentence
+            && matches!(
+                req.policy,
+                TranslationPolicy::AutoLocalFirst | TranslationPolicy::DictionaryOnly
+            )
+        {
+            if let Some(out) = self
+                .try_semantic_composition(
+                    req,
+                    options,
+                    &source,
+                    &work_text,
+                    &rule_applied,
+                    source_assumed,
+                )
+                .await?
+            {
+                return Ok(out);
+            }
+            if let Some(out) = self
+                .try_composition(
+                    req,
+                    options,
+                    &source,
+                    &work_text,
+                    &rule_applied,
+                    source_assumed,
+                )
+                .await?
+            {
+                return Ok(out);
+            }
+        }
+
+        // 3.8) 上下文选义：只在 Planner 确认可走词典时进入，仍走同一缓存/术语/质量链。
+        if let Some(out) = self
+            .try_context_word(
+                req,
+                options,
+                &source,
+                &work_text,
+                &rule_applied,
+                source_assumed,
+            )
+            .await?
+        {
+            return Ok(out);
+        }
+
+        // 4) 统一 Planner 选择引擎。词典/规则/本地模型/远程模型都在这里决定；
+        //    协调器不再自己写第二套路由分支。
+        let planner = TranslationPlanner::new(&self.registry, self.config.remote_fallback);
+        let mut outcome = planner.resolve(
             req,
             &source,
             &work_text,
             options.text_kind == TextKind::Word,
         )?;
+
+        // 4.5) 共享语言证据。Word/Phrase 才查词义候选；失败不影响主链。
+        let evidence = self
+            .language_evidence(
+                &work_text,
+                &source,
+                &req.target,
+                options.text_kind,
+                options.context_text.as_deref(),
+                req.glossary_id.as_deref(),
+            )
+            .await;
 
         // 5) 占位符保护。结构化后端拿原文；通用后端拿标记化文本。
         let spans = text::protected_spans(&work_text);
@@ -633,41 +1223,33 @@ impl Coordinator {
             applied: rule_applied,
         });
 
-        // 6) 缓存查询（模式必须进键：Precise 与 Fast 不得互相复用）
+        // 6) 缓存查询（模式/策略/执行路由必须进键）
+        let mut actual_capability = outcome.decision.capability;
+        let mut actual_route = route_for_capability(actual_capability);
+        let mut actual_engine_id = outcome.decision.engine_id.clone();
+        let mut actual_reason = outcome.decision.reason.clone();
+        let mut fallback_reason =
+            planner::classify_fallback(req, &work_text, options.text_kind, actual_capability);
+        if actual_route == TranslationRoute::Remote
+            && matches!(req.policy, TranslationPolicy::AutoLocalFirst)
+        {
+            fallback_reason = Some(FallbackReason::EngineFallback);
+        }
         let mut key = CacheKey::new_with_options(
             &protected,
             req,
             source.as_str(),
-            &outcome.decision.engine_id,
+            &actual_engine_id,
             outcome.engine.cache_identity().as_deref(),
             self.effective_rules_version,
             &self.resource_fingerprint,
             options,
             options.strategy.as_deref().unwrap_or("single"),
-            if outcome.decision.capability == Capability::Dictionary {
-                translator_types::TranslationRoute::Dictionary
-            } else {
-                translator_types::TranslationRoute::LocalNmt
-            },
+            actual_route,
         );
 
-        if let Ok(cache) = self.cache.lock() {
-            if let Some(hit) = cache.get(&key) {
-                let mut entry = hit.clone();
-                entry.result.warnings.push(TranslationWarning::CacheHit);
-                entry.result.elapsed_ms = 0;
-                entry.diagnostics.mark_cached();
-                // 跨度与规则命中随当前输入重算（与首次一致，因为键包含文本哈希）
-                entry.diagnostics.protected_spans = spans;
-                if entry.diagnostics.rules.is_none() {
-                    entry.diagnostics.rules = rules_trace;
-                }
-                self.stats.cache_hits.fetch_add(1, Ordering::Relaxed);
-                return Ok(TranslateOutput {
-                    result: entry.result,
-                    diagnostics: entry.diagnostics,
-                });
-            }
+        if let Some(hit) = self.lookup_cache(&key, &spans, &rules_trace, &evidence) {
+            return Ok(hit);
         }
 
         // 7) 交给引擎的请求：文本已保护、源语言已确定
@@ -679,70 +1261,103 @@ impl Coordinator {
 
         check_cancelled(cancel)?;
         let started = Instant::now();
-        let mut actual_engine_id = outcome.decision.engine_id.clone();
-        let mut actual_route = if outcome.decision.capability == Capability::Dictionary {
-            translator_types::TranslationRoute::Dictionary
-        } else {
-            translator_types::TranslationRoute::LocalNmt
-        };
-        let mut actual_reason = outcome.decision.reason.clone();
-        let mut dictionary_hit = actual_route == translator_types::TranslationRoute::Dictionary;
-        let mut nmt_invoked = actual_route == translator_types::TranslationRoute::LocalNmt;
-        if nmt_invoked {
-            self.stats.nmt_calls.fetch_add(1, Ordering::Relaxed);
-        }
-
-        let mut result = match outcome
-            .engine
-            .translate_cancellable(&resolved, cancel.unwrap_or_else(|| never_cancelled()))
-            .await
-        {
-            Ok(result) => result,
-            Err(err) if self.should_fallback(req, outcome.decision.capability, &err) => {
-                dictionary_hit = false;
-                match routing::fallback_to_nmt(&self.registry, &source, &req.target) {
-                    Some(fallback) => {
-                        self.stats.nmt_calls.fetch_add(1, Ordering::Relaxed);
-                        self.stats.nmt_fallbacks.fetch_add(1, Ordering::Relaxed);
-                        nmt_invoked = true;
-                        actual_engine_id = fallback.decision.engine_id.clone();
-                        actual_route = translator_types::TranslationRoute::LocalNmt;
-                        actual_reason = fallback.decision.reason.clone();
-                        // 回退后换执行身份，缓存键必须按实际引擎重算。
-                        let fallback_identity = fallback.engine.cache_identity();
-                        key = CacheKey::new_with_options(
-                            &protected,
-                            req,
-                            source.as_str(),
-                            &actual_engine_id,
-                            fallback_identity.as_deref(),
-                            self.effective_rules_version,
-                            &self.resource_fingerprint,
-                            options,
-                            options.strategy.as_deref().unwrap_or("single"),
-                            actual_route,
-                        );
-                        fallback
-                            .engine
-                            .translate_cancellable(
-                                &resolved,
-                                cancel.unwrap_or_else(|| never_cancelled()),
-                            )
-                            .await?
-                    }
-                    None => {
-                        return Err(routing::not_installed(
+        let mut attempts = 0usize;
+        let mut result = loop {
+            attempts += 1;
+            if attempts > 3 {
+                return Err(TranslationError::new(
+                    TranslationErrorCode::BackendFailed,
+                    "引擎回退次数超过上限",
+                ));
+            }
+            self.record_model_call(actual_route);
+            match outcome
+                .engine
+                .translate_cancellable(&resolved, cancel.unwrap_or_else(|| never_cancelled()))
+                .await
+            {
+                Ok(result) => break result,
+                Err(err) if self.should_fallback(req, actual_capability, &err) => {
+                    let Some(fallback) =
+                        planner.fallback_after_dictionary_miss(&source, &req.target)
+                    else {
+                        return Err(planner::not_installed(
                             Capability::Nmt,
                             &source,
                             &req.target,
-                        ))
+                        ));
+                    };
+                    if fallback.decision.capability == Capability::Nmt {
+                        self.stats.nmt_fallbacks.fetch_add(1, Ordering::Relaxed);
+                    } else {
+                        self.stats.remote_fallbacks.fetch_add(1, Ordering::Relaxed);
                     }
+                    actual_capability = fallback.decision.capability;
+                    actual_route = route_for_capability(actual_capability);
+                    actual_engine_id = fallback.decision.engine_id.clone();
+                    actual_reason = fallback.decision.reason.clone();
+                    fallback_reason = if actual_route == TranslationRoute::Remote {
+                        Some(FallbackReason::EngineFallback)
+                    } else {
+                        planner::classify_fallback(
+                            req,
+                            &work_text,
+                            options.text_kind,
+                            actual_capability,
+                        )
+                    };
+                    key = CacheKey::new_with_options(
+                        &protected,
+                        req,
+                        source.as_str(),
+                        &actual_engine_id,
+                        fallback.engine.cache_identity().as_deref(),
+                        self.effective_rules_version,
+                        &self.resource_fingerprint,
+                        options,
+                        options.strategy.as_deref().unwrap_or("single"),
+                        actual_route,
+                    );
+                    if let Some(hit) = self.lookup_cache(&key, &spans, &rules_trace, &evidence) {
+                        return Ok(hit);
+                    }
+                    outcome = fallback;
+                    continue;
                 }
+                Err(err) if actual_route == TranslationRoute::LocalNmt => {
+                    let Some(fallback) = planner.fallback_after_local_failure(&source, &req.target)
+                    else {
+                        return Err(err);
+                    };
+                    self.stats.remote_fallbacks.fetch_add(1, Ordering::Relaxed);
+                    actual_capability = fallback.decision.capability;
+                    actual_route = route_for_capability(actual_capability);
+                    actual_engine_id = fallback.decision.engine_id.clone();
+                    actual_reason = fallback.decision.reason.clone();
+                    fallback_reason = Some(FallbackReason::EngineFallback);
+                    key = CacheKey::new_with_options(
+                        &protected,
+                        req,
+                        source.as_str(),
+                        &actual_engine_id,
+                        fallback.engine.cache_identity().as_deref(),
+                        self.effective_rules_version,
+                        &self.resource_fingerprint,
+                        options,
+                        options.strategy.as_deref().unwrap_or("single"),
+                        actual_route,
+                    );
+                    if let Some(hit) = self.lookup_cache(&key, &spans, &rules_trace, &evidence) {
+                        return Ok(hit);
+                    }
+                    outcome = fallback;
+                    continue;
+                }
+                Err(err) => return Err(err),
             }
-            Err(err) => return Err(err),
         };
         check_cancelled(cancel)?;
-        if dictionary_hit {
+        if actual_route == TranslationRoute::Dictionary {
             self.stats.dictionary_hits.fetch_add(1, Ordering::Relaxed);
         }
 
@@ -793,9 +1408,27 @@ impl Coordinator {
         result.target = req.target.clone();
         result.elapsed_ms = started.elapsed().as_millis() as u64;
 
+        let dictionary_hit = actual_route == TranslationRoute::Dictionary;
+        let model_invoked = matches!(
+            actual_route,
+            TranslationRoute::LocalNmt | TranslationRoute::Remote
+        );
+        let unit_kind = UnitKind::from_text_kind(options.text_kind, false);
+        let unit_trace = UnitExecutionTrace {
+            index: 0,
+            span: TextSpan::new(0, work_text.len()),
+            kind: unit_kind,
+            route: actual_route,
+            engine_id: actual_engine_id.clone(),
+            capability: actual_capability,
+            reason: actual_reason.clone(),
+            model_invoked,
+            cache_hit: false,
+            fallback_reason,
+        };
         let diagnostics = TranslationDiagnostics {
             engine_id: actual_engine_id.clone(),
-            capability: outcome.decision.capability,
+            capability: actual_capability,
             route_reason: actual_reason.clone(),
             cache_hit: false,
             source_assumed,
@@ -804,9 +1437,12 @@ impl Coordinator {
             mode: options.mode,
             text_kind: options.text_kind,
             route: actual_route,
-            model_invoked: nmt_invoked,
+            model_invoked,
             dictionary_hit,
             rule_matched: false,
+            fallback_reason,
+            evidence: Some(evidence),
+            units: vec![unit_trace],
             strategy: options
                 .strategy
                 .clone()
@@ -909,6 +1545,17 @@ impl Coordinator {
             version: rules.version(),
             applied: rule_applied.to_vec(),
         });
+        let mut evidence = LanguageEvidence::for_text(
+            TextSpan::new(0, work_text.len()),
+            UnitKind::Sentence,
+            work_text,
+        );
+        evidence.add_pattern(crate::evidence::PatternMatch {
+            kind: crate::evidence::PatternKind::Template,
+            id: format!("{}@{}", templates.id(), templates.version()),
+            span: TextSpan::new(0, work_text.len()),
+            complete: true,
+        });
         let diagnostics = TranslationDiagnostics {
             engine_id: engine_id.clone(),
             capability: Capability::Nmt,
@@ -927,6 +1574,24 @@ impl Coordinator {
             model_invoked: false,
             dictionary_hit: false,
             rule_matched: true,
+            fallback_reason: None,
+            evidence: Some(evidence),
+            units: vec![UnitExecutionTrace {
+                index: 0,
+                span: TextSpan::new(0, work_text.len()),
+                kind: UnitKind::Sentence,
+                route: TranslationRoute::Rule,
+                engine_id: engine_id.clone(),
+                capability: Capability::Nmt,
+                reason: format!(
+                    "完整句子模板命中：{}@{}",
+                    templates.id(),
+                    templates.version()
+                ),
+                model_invoked: false,
+                cache_hit: false,
+                fallback_reason: None,
+            }],
             strategy: options
                 .strategy
                 .clone()
@@ -1098,6 +1763,53 @@ impl Coordinator {
                 TranslationErrorCode::CapabilityUnavailable
                     | TranslationErrorCode::ResourceNotInstalled
             )
+    }
+}
+
+impl Coordinator {
+    /// 缓存读回与易变字段重置。回退路径也必须走这里，否则“词典 miss -> NMT”
+    /// 每次都会重新推理（P16 Q-065），远程回退还会重复计费。
+    fn lookup_cache(
+        &self,
+        key: &CacheKey,
+        spans: &[crate::text::ProtectedSpan],
+        rules: &Option<RuleTrace>,
+        evidence: &LanguageEvidence,
+    ) -> Option<TranslateOutput> {
+        let mut entry = {
+            let cache = self.cache.lock().ok()?;
+            cache.get(key)?.clone()
+        };
+        entry.result.warnings.push(TranslationWarning::CacheHit);
+        entry.result.elapsed_ms = 0;
+        entry.diagnostics.mark_cached();
+        entry.diagnostics.protected_spans = spans.to_vec();
+        entry.diagnostics.evidence = Some(evidence.clone());
+        if entry.diagnostics.rules.is_none() {
+            entry.diagnostics.rules = rules.clone();
+        }
+        self.stats.cache_hits.fetch_add(1, Ordering::Relaxed);
+        Some(TranslateOutput {
+            result: entry.result,
+            diagnostics: entry.diagnostics,
+        })
+    }
+}
+
+fn context_digest(context_id: Option<&str>, context_text: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(context_id.unwrap_or("").as_bytes());
+    hasher.update(b"\0");
+    hasher.update(context_text.as_bytes());
+    format!("word-ctx:{:x}", hasher.finalize())
+}
+
+fn route_for_capability(capability: Capability) -> TranslationRoute {
+    match capability {
+        Capability::Dictionary => TranslationRoute::Dictionary,
+        Capability::Nmt => TranslationRoute::LocalNmt,
+        Capability::Remote => TranslationRoute::Remote,
     }
 }
 

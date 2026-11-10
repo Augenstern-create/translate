@@ -26,10 +26,13 @@
     {
       "name": "dictionary.ecdict.en-zh package",
       "path": "resources/en-zh-ecdict",
-      "manifest_sha256": "b71d6285a5626cc9a91af1e0c2b51cda60f762e7487544470f446796882a8437",
-      "entries": 30200,
+      "manifest_sha256": "8f5949e9f6ff3c4a9c9413bde589a923d24b308de5d11b37fb753292650b84ff",
+      "entries": 38766,
       "license": "MIT",
-      "usage": "local-research"
+      "usage": "local-research",
+      "version": "0.2.0",
+      "senses": 55560,
+      "note": "P18-L daily phrase/collocation/expression supplement; payload dictionary.sqlite.v3"
     }
   ],
   "p12_datasets": [
@@ -69,5 +72,86 @@
       "sha256": "7364bfaf72c5242de73814398841074631c038febff02d9f4f2ef42aad21075a",
       "usage": "local-evaluation"
     }
-  ]
+  ],
+  "p18_daily": {
+    "dataset": "fixtures/quality/daily-knowledge-v1.jsonl",
+    "dataset_sha256": "d2c964c20efb7b4dacd0e0927488e8d668b1adeabcc4b98313bfa8be35ece03b",
+    "frozen": "fixtures/quality/daily-knowledge-v1.frozen.jsonl",
+    "frozen_sha256": "ecbdb7c0c6a683294fbf95a30d74d0ac433094d47708dac0222b497dc849447e",
+    "lock": "fixtures/quality/daily-knowledge-v1.lock.json",
+    "summary": "tests/quality/reports/p18-daily-summary.json",
+    "baseline_report": "tests/quality/reports/p18-daily-baseline.md",
+    "after_report": "tests/quality/reports/p18-daily-after.md",
+    "usage": "source-internal coverage benchmark; human review PENDING",
+    "dictionary_supplement": "fixtures/dictionary/en-zh.daily-supplement.jsonl",
+    "dictionary_supplement_sha256": "79569ae67c581a9fe16e2a0ca20250fd20ecdb670a422a6c31b8d691d719cbf4",
+    "dictionary_baseline_manifest_sha256": "b71d6285a5626cc9a91af1e0c2b51cda60f762e7487544470f446796882a8437",
+    "dictionary_baseline_entry_count": 30200
+  },
+  "p19_composition": {
+    "rules": "fixtures/rules/en-zh.composition.json",
+    "rules_sha256": "2a1c12a78a87fae287e6c48147f981ef5aaf457ede0e931a3a133e875035105d",
+    "cases": "fixtures/quality/composition-v1.jsonl",
+    "cases_sha256": "60168d69d39282a6b16b6b6baf7e5b85e8f03a651141221b58bf635508e3bf0f",
+    "results": "tests/quality/outputs/p19-composition.jsonl",
+    "validation": "tests/quality/reports/p19-composition-validation.json",
+    "summary": "tests/quality/reports/p19-composition.summary.json",
+    "usage": "independent composition positives/negatives; human review PENDING"
+  },
+  "p20_semantic": {
+    "cases": "fixtures/quality/semantic-adversarial-v1.jsonl",
+    "cases_sha256": "41d02f137a9246aaef477088f6c7b2f12ba7c5d632cb4d0da6941807087a66a3",
+    "baseline_results": "tests/quality/outputs/p19-semantic-baseline.jsonl",
+    "p20_results": "tests/quality/outputs/p20-semantic.jsonl",
+    "validation": "tests/quality/reports/p20-semantic-validation.json",
+    "rules_reused": "fixtures/rules/en-zh.composition.json",
+    "rules_sha256": "2a1c12a78a87fae287e6c48147f981ef5aaf457ede0e931a3a133e875035105d",
+    "usage": "opt-in semantic composition; human review PENDING"
+  },
+  "p21_realization": {
+    "rules": "fixtures/rules/en-zh.composition.json",
+    "rules_sha256": "2a1c12a78a87fae287e6c48147f981ef5aaf457ede0e931a3a133e875035105d",
+    "cases": "fixtures/quality/p21-realization-v1.jsonl",
+    "cases_sha256": "ea0ed9bbfff3fd75e4ca742f71728b6ff7cba43979b239b0a5568d6642fef740",
+    "results": "tests/quality/outputs/p21-realization.jsonl",
+    "golden": "tests/quality/outputs/p21-golden.jsonl",
+    "migration": "tests/quality/outputs/p21-p19-migration.jsonl",
+    "summary": "tests/quality/reports/p21-golden.summary.json",
+    "usage": "P19 migration + Chinese realization; human review PENDING"
+  },
+  "p21_unseen": {
+    "cases": "fixtures/quality/p21-unseen-v1.jsonl",
+    "cases_sha256": "4b8199c9686702d573feb2a4574f41ac706cd301dfe23d3cd07b8e89e49b4b26",
+    "results": "tests/quality/outputs/p21-unseen.jsonl",
+    "summary": "tests/quality/reports/p21-unseen.summary.json",
+    "usage": "unseen compositional generalization; human review PENDING"
+  },
+  "p21_review": {
+    "packet": "tests/quality/reports/p21-review-packet.csv",
+    "packet_sha256": "50c731ddd3507b02c17353540c5f084b55edc4ed7acc03510553a92322607311",
+    "rows": 98,
+    "status": "PENDING_HUMAN",
+    "note": "P19/P20/P21/unseen dedup; scores intentionally blank"
+  },
+  "p21_frozen": {
+    "cases": "fixtures/quality/p21-frozen-v1.jsonl",
+    "cases_sha256": "9e452b865724e7c6a1ef5432af37e45679b1cb9defc23daa8dc3cbde7ce1b5c8",
+    "results": "tests/quality/outputs/p21-frozen.jsonl",
+    "summary": "tests/quality/reports/p21-frozen.summary.json",
+    "usage": "post-hoc 20-case set; not fully untouched; PENDING_HUMAN"
+  },
+  "p21_matrix": {
+    "cases": "fixtures/quality/p21-matrix-v1.jsonl",
+    "cases_sha256": "7aab7939f5752de6f0c4cead2386a21fc51cb93e3224a5a872c176922aa5d550",
+    "results": "tests/quality/outputs/p21-matrix.jsonl",
+    "summary": "tests/quality/reports/p21-matrix.summary.json",
+    "usage": "100-case development/regression matrix; not independent frozen set"
+  },
+  "p21_advanced": {
+    "cases": "fixtures/quality/p21-advanced-v1.jsonl",
+    "cases_sha256": "a9c6d09c073d0e0c61cf5b04bd7d718847145c11bc7972903bd460e4850fc2eb",
+    "results": "tests/quality/outputs/p21-advanced.jsonl",
+    "summary": "tests/quality/reports/p21-advanced.summary.json",
+    "usage": "remaining P19 paths + condition/comparison/passive; PENDING_HUMAN"
+  }
 }

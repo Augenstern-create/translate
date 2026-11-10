@@ -8,8 +8,12 @@
 //! 实际翻译仍然交给现有 `TranslationEngine`（词典 / NMT / Remote）。四级策略不是
 //! 四套引擎，而是四种**组织方式**。
 
-use translator_types::{ParagraphStrategy, TextKind, TranslateOptions};
+use translator_types::{
+    Capability, ParagraphStrategy, RemoteFallbackPolicy, RouteDecision, TextKind, TranslateOptions,
+    TranslateRequest, TranslationError, TranslationErrorCode, TranslationPolicy,
+};
 
+use crate::evidence::{LanguageEvidence, TextSpan, UnitKind};
 use crate::text::{protected_spans, ProtectedKind};
 
 /// 结构分析结果。
@@ -52,27 +56,67 @@ pub struct TranslationUnit {
     pub suffix: String,
     /// 该单元应按什么类型翻译。
     pub kind: TextKind,
+    /// 规范化原文中的位置。结构块拼装时用于诊断，不参与译文拼接。
+    pub span: TextSpan,
+    /// 规划期可获得的共享语言证据（P17-A / A1）。
+    pub evidence: LanguageEvidence,
 }
 
 impl TranslationUnit {
     pub fn literal(separator: String, text: String, suffix: String) -> Self {
+        let span = TextSpan::default();
         Self {
             separator,
             text: None,
             literal: Some(text),
             suffix,
             kind: TextKind::Document,
+            span,
+            evidence: LanguageEvidence {
+                span,
+                kind: Some(UnitKind::Literal),
+                ..LanguageEvidence::default()
+            },
         }
     }
 
     pub fn translatable(separator: String, text: String, suffix: String, kind: TextKind) -> Self {
+        let span = TextSpan::default();
         Self {
             separator,
             text: Some(text),
             literal: None,
             suffix,
             kind,
+            span,
+            evidence: LanguageEvidence {
+                span,
+                kind: Some(UnitKind::from_text_kind(kind, false)),
+                ..LanguageEvidence::default()
+            },
         }
+    }
+
+    /// 设置原文位置，并按文本重建可静态确定的约束。
+    pub fn with_span(mut self, span: TextSpan) -> Self {
+        self.set_span(span);
+        self
+    }
+
+    pub fn set_span(&mut self, span: TextSpan) {
+        self.span = span;
+        if let Some(text) = &self.text {
+            let kind = UnitKind::from_text_kind(self.kind, false);
+            self.evidence = LanguageEvidence::for_text(span, kind, text);
+        } else {
+            self.evidence.span = span;
+        }
+    }
+
+    /// 附加规划期证据（词义候选等）。
+    pub fn with_evidence(mut self, evidence: LanguageEvidence) -> Self {
+        self.evidence = evidence;
+        self
     }
 }
 
@@ -90,6 +134,91 @@ impl TranslationPlan {
     pub fn unit_count(&self) -> usize {
         self.units.len()
     }
+}
+
+/// 一个请求的执行形状。
+///
+/// `Translator` 不再自己判断“要不要跑 Best/Context”；这些顶层路线全部由
+/// [`plan_request`] 返回，API 只负责按形状调度。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlanShape {
+    /// 单个单元，直接交给协调器。
+    Single,
+    /// 按 `TranslationPlan.units` 逐单元执行。
+    Multi,
+    /// 整段 + 逐句两个候选，质量预算选择。
+    ParagraphBest,
+    /// 前一句作为上下文提示（实验路径）。
+    ParagraphContext,
+}
+
+/// 规划完成后的请求。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RequestPlan {
+    pub analysis: TextAnalysis,
+    pub plan: TranslationPlan,
+    pub shape: PlanShape,
+}
+
+/// 结构分析 + 顶层执行形状的唯一入口。
+pub fn plan_request(text: &str, options: &TranslateOptions) -> RequestPlan {
+    let analysis = analyze(text, options.text_kind);
+    let plan = plan(text, options);
+
+    // Word + context 的选义仍由 API 的异步词典路径完成；这里只决定形状。
+    if analysis.kind == TextKind::Paragraph {
+        if options.paragraph_strategy == ParagraphStrategy::Context {
+            return RequestPlan {
+                analysis,
+                plan,
+                shape: PlanShape::ParagraphContext,
+            };
+        }
+        if options.paragraph_strategy == ParagraphStrategy::Best
+            || (options.paragraph_strategy == ParagraphStrategy::Auto
+                && needs_best(text, &analysis))
+        {
+            return RequestPlan {
+                analysis,
+                plan,
+                shape: PlanShape::ParagraphBest,
+            };
+        }
+    }
+
+    let shape =
+        if plan.units.len() == 1 && plan.units[0].text.is_some() && plan.kind != TextKind::Document
+        {
+            PlanShape::Single
+        } else {
+            PlanShape::Multi
+        };
+    RequestPlan {
+        analysis,
+        plan,
+        shape,
+    }
+}
+
+/// P14-Q2 质量预算：只有高风险/较长段落才跑整段 + 逐句两个候选。
+pub fn needs_best(text: &str, analysis: &TextAnalysis) -> bool {
+    if analysis.sentences >= 3 || analysis.chars > 500 {
+        return true;
+    }
+    let lower = text.to_lowercase();
+    if text.chars().any(|c| c.is_ascii_digit()) {
+        return true;
+    }
+    [
+        " if ",
+        " unless ",
+        " when ",
+        " not ",
+        " never ",
+        " because ",
+    ]
+    .iter()
+    .any(|cue| format!(" {lower} ").contains(cue))
 }
 
 /// 一个句子片段：`separator` 是它前面的空白，`text` 不含首尾空白。
@@ -111,7 +240,8 @@ pub fn plan(text: &str, options: &TranslateOptions) -> TranslationPlan {
                 text.to_string(),
                 String::new(),
                 TextKind::Word,
-            )],
+            )
+            .with_span(TextSpan::new(0, text.len()))],
         },
         TextKind::Sentence => plan_sentence(text),
         TextKind::Paragraph => plan_paragraph(text, options.paragraph_strategy),
@@ -131,7 +261,8 @@ fn plan_sentence(text: &str) -> TranslationPlan {
                 text.to_string(),
                 String::new(),
                 TextKind::Sentence,
-            )],
+            )
+            .with_span(TextSpan::new(0, text.len()))],
         };
     }
     let final_punct = text
@@ -142,21 +273,28 @@ fn plan_sentence(text: &str) -> TranslationPlan {
         .map(|c| c.to_string())
         .unwrap_or_default();
     let mut units = Vec::new();
+    let mut cursor = 0usize;
     for (idx, clause) in clauses.iter().enumerate() {
-        units.push(TranslationUnit::translatable(
-            if idx == 0 {
-                String::new()
-            } else {
-                "，".to_string()
-            },
-            clause.clone(),
-            if idx + 1 == clauses.len() {
-                final_punct.clone()
-            } else {
-                String::new()
-            },
-            TextKind::Sentence,
-        ));
+        let span = find_span(text, clause, cursor, text.len())
+            .unwrap_or_else(|| TextSpan::new(cursor.min(text.len()), text.len()));
+        cursor = span.end;
+        units.push(
+            TranslationUnit::translatable(
+                if idx == 0 {
+                    String::new()
+                } else {
+                    "，".to_string()
+                },
+                clause.clone(),
+                if idx + 1 == clauses.len() {
+                    final_punct.clone()
+                } else {
+                    String::new()
+                },
+                TextKind::Sentence,
+            )
+            .with_span(span),
+        );
     }
     TranslationPlan {
         kind: TextKind::Sentence,
@@ -347,25 +485,36 @@ fn plan_paragraph(text: &str, requested: ParagraphStrategy) -> TranslationPlan {
 
     let mut units = Vec::new();
     match strategy {
-        "paragraph-whole" => units.push(TranslationUnit::translatable(
-            String::new(),
-            text.to_string(),
-            String::new(),
-            TextKind::Paragraph,
-        )),
+        "paragraph-whole" => units.push(
+            TranslationUnit::translatable(
+                String::new(),
+                text.to_string(),
+                String::new(),
+                TextKind::Paragraph,
+            )
+            .with_span(TextSpan::new(0, text.len())),
+        ),
         "paragraph-sentence" => {
+            let mut cursor = 0usize;
             for sentence in sentences {
-                units.push(TranslationUnit::translatable(
-                    sentence.separator,
-                    sentence.text,
-                    String::new(),
-                    TextKind::Sentence,
-                ));
+                let span = find_span(text, &sentence.text, cursor, text.len())
+                    .unwrap_or_else(|| TextSpan::new(cursor.min(text.len()), text.len()));
+                cursor = span.end;
+                units.push(
+                    TranslationUnit::translatable(
+                        sentence.separator,
+                        sentence.text,
+                        String::new(),
+                        TextKind::Sentence,
+                    )
+                    .with_span(span),
+                );
             }
         }
         _ => {
             // 句群：每 2 句一组，组内保留原文空白；末组可为 1 句。
             let mut idx = 0usize;
+            let mut cursor = 0usize;
             while idx < sentences.len() {
                 let end = (idx + 2).min(sentences.len());
                 let separator = sentences[idx].separator.clone();
@@ -376,12 +525,18 @@ fn plan_paragraph(text: &str, requested: ParagraphStrategy) -> TranslationPlan {
                     }
                     group.push_str(&sentence.text);
                 }
-                units.push(TranslationUnit::translatable(
-                    separator,
-                    group,
-                    String::new(),
-                    TextKind::Sentence,
-                ));
+                let span = find_span(text, &group, cursor, text.len())
+                    .unwrap_or_else(|| TextSpan::new(cursor.min(text.len()), text.len()));
+                cursor = span.end;
+                units.push(
+                    TranslationUnit::translatable(
+                        separator,
+                        group,
+                        String::new(),
+                        TextKind::Sentence,
+                    )
+                    .with_span(span),
+                );
                 idx = end;
             }
         }
@@ -395,7 +550,26 @@ fn plan_paragraph(text: &str, requested: ParagraphStrategy) -> TranslationPlan {
 }
 
 fn plan_document(text: &str) -> TranslationPlan {
-    let blocks = parse_markdown_blocks(text);
+    let mut blocks = parse_markdown_blocks(text);
+    // 结构块拼装时会保留分隔符，顺序与原文一致；按顺序定位可给每个块
+    // 一个可靠 span，供逐单元诊断/学习使用（不用于拼接译文）。
+    let mut cursor = 0usize;
+    for unit in &mut blocks {
+        let needle = unit
+            .text
+            .as_deref()
+            .or(unit.literal.as_deref())
+            .unwrap_or("");
+        if needle.is_empty() {
+            continue;
+        }
+        if let Some(offset) = text[cursor..].find(needle) {
+            let start = cursor + offset;
+            let span = TextSpan::new(start, start + needle.len());
+            unit.set_span(span);
+            cursor = span.end;
+        }
+    }
     TranslationPlan {
         kind: TextKind::Document,
         strategy: "document",
@@ -522,6 +696,11 @@ fn parse_markdown_blocks(text: &str) -> Vec<TranslationUnit> {
         } else {
             let has_newline = paragraph.ends_with('\n');
             let body = paragraph.trim_end_matches('\n').to_string();
+            let kind = if split_sentences(&body).len() <= 1 {
+                TextKind::Sentence
+            } else {
+                TextKind::Paragraph
+            };
             units.push(TranslationUnit::translatable(
                 String::new(),
                 body,
@@ -530,7 +709,7 @@ fn parse_markdown_blocks(text: &str) -> Vec<TranslationUnit> {
                 } else {
                     String::new()
                 },
-                TextKind::Paragraph,
+                kind,
             ));
             i = j;
         }
@@ -770,6 +949,320 @@ pub fn number_protected_count(text: &str) -> usize {
         .iter()
         .filter(|s| s.kind == ProtectedKind::Number)
         .count()
+}
+
+/// 在 `text[from..to]` 中定位 `needle` 的字节区间。
+fn find_span(text: &str, needle: &str, from: usize, to: usize) -> Option<TextSpan> {
+    if from > to || to > text.len() || !text.is_char_boundary(from) {
+        return None;
+    }
+    let hay = &text[from..to];
+    let offset = hay.find(needle)?;
+    let start = from + offset;
+    Some(TextSpan::new(start, start + needle.len()))
+}
+
+// ============================================================
+// 统一执行规划（P17-A / A2–A3）
+// ============================================================
+
+use std::sync::Arc;
+
+use translator_plugin_api::{PluginRegistry, TranslationEngine};
+
+/// 路由结果：选中的引擎 + 可解释的决策记录。
+pub struct RouteOutcome {
+    pub engine: Arc<dyn TranslationEngine>,
+    pub decision: RouteDecision,
+}
+
+fn pick(
+    registry: &PluginRegistry,
+    capability: Capability,
+    source: &translator_types::LanguageTag,
+    target: &translator_types::LanguageTag,
+) -> Option<Arc<dyn TranslationEngine>> {
+    registry
+        .engines_with(capability)
+        .into_iter()
+        .find(|e| e.supports(source, target))
+}
+
+pub fn not_installed(
+    capability: Capability,
+    source: &translator_types::LanguageTag,
+    target: &translator_types::LanguageTag,
+) -> TranslationError {
+    TranslationError::new(
+        TranslationErrorCode::ResourceNotInstalled,
+        format!("没有可用的 {} 引擎支持 {} → {}", capability, source, target),
+    )
+    .with_suggestions([format!(
+        "package.{}.{}-{}",
+        capability.as_str(),
+        source,
+        target
+    )])
+}
+
+fn route_for_engine(engine: &Arc<dyn TranslationEngine>) -> Capability {
+    let desc = engine.descriptor();
+    if desc.supports(Capability::Remote) {
+        Capability::Remote
+    } else if desc.supports(Capability::Dictionary) {
+        Capability::Dictionary
+    } else {
+        Capability::Nmt
+    }
+}
+
+/// 唯一的顶层执行规划器。
+///
+/// 所有引擎选择都从这里出：Coordinator 不再自己写一套策略分支，
+/// `routing` 模块只保留兼容导出。远程回退必须由
+/// [`RemoteFallbackPolicy`] 显式授权。
+pub struct TranslationPlanner<'a> {
+    registry: &'a PluginRegistry,
+    remote_fallback: RemoteFallbackPolicy,
+}
+
+impl<'a> TranslationPlanner<'a> {
+    pub fn new(registry: &'a PluginRegistry, remote_fallback: RemoteFallbackPolicy) -> Self {
+        Self {
+            registry,
+            remote_fallback,
+        }
+    }
+
+    /// 依据策略、能力与语言对选择首选引擎。
+    ///
+    /// `text` 是**规则处理后的**文本；`prefer_dictionary` 只在 TextKind=Word 时为真。
+    pub fn resolve(
+        &self,
+        req: &TranslateRequest,
+        source: &translator_types::LanguageTag,
+        text: &str,
+        prefer_dictionary: bool,
+    ) -> Result<RouteOutcome, TranslationError> {
+        let target = &req.target;
+
+        let outcome = match &req.policy {
+            TranslationPolicy::ExplicitEngine(id) => {
+                let engine = self.registry.find_engine(id).ok_or_else(|| {
+                    TranslationError::new(
+                        TranslationErrorCode::CapabilityUnavailable,
+                        format!("指定的引擎不存在：{id}"),
+                    )
+                })?;
+                let capability = route_for_engine(&engine);
+                RouteOutcome {
+                    decision: RouteDecision {
+                        engine_id: id.clone(),
+                        capability,
+                        reason: "策略指定了具体引擎".to_string(),
+                    },
+                    engine,
+                }
+            }
+            TranslationPolicy::DictionaryOnly => {
+                let engine = pick(self.registry, Capability::Dictionary, source, target)
+                    .ok_or_else(|| not_installed(Capability::Dictionary, source, target))?;
+                RouteOutcome {
+                    decision: RouteDecision {
+                        engine_id: engine.descriptor().id.to_string(),
+                        capability: Capability::Dictionary,
+                        reason: "策略为 DictionaryOnly".to_string(),
+                    },
+                    engine,
+                }
+            }
+            TranslationPolicy::LocalOnly => {
+                let engine = pick(self.registry, Capability::Nmt, source, target)
+                    .ok_or_else(|| not_installed(Capability::Nmt, source, target))?;
+                RouteOutcome {
+                    decision: RouteDecision {
+                        engine_id: engine.descriptor().id.to_string(),
+                        capability: Capability::Nmt,
+                        reason: "策略为 LocalOnly".to_string(),
+                    },
+                    engine,
+                }
+            }
+            TranslationPolicy::RemoteOnly => {
+                let engine = pick(self.registry, Capability::Remote, source, target)
+                    .ok_or_else(|| not_installed(Capability::Remote, source, target))?;
+                RouteOutcome {
+                    decision: RouteDecision {
+                        engine_id: engine.descriptor().id.to_string(),
+                        capability: Capability::Remote,
+                        reason: "策略为 RemoteOnly（需宿主已授权联网）".to_string(),
+                    },
+                    engine,
+                }
+            }
+            TranslationPolicy::AutoLocalFirst => {
+                let looks_word = crate::text::looks_like_single_word(text);
+                if prefer_dictionary || looks_word {
+                    if let Some(engine) =
+                        pick(self.registry, Capability::Dictionary, source, target)
+                    {
+                        return Ok(RouteOutcome {
+                            decision: RouteDecision {
+                                engine_id: engine.descriptor().id.to_string(),
+                                capability: Capability::Dictionary,
+                                reason: if prefer_dictionary {
+                                    "文本类型为 Word，优先精确词典匹配".to_string()
+                                } else {
+                                    "输入呈单词形态，优先精确词典匹配".to_string()
+                                },
+                            },
+                            engine,
+                        });
+                    }
+                }
+
+                if let Some(engine) = pick(self.registry, Capability::Nmt, source, target) {
+                    return Ok(RouteOutcome {
+                        decision: RouteDecision {
+                            engine_id: engine.descriptor().id.to_string(),
+                            capability: Capability::Nmt,
+                            reason: if looks_word {
+                                "单词形态但无词典可覆盖该语言对，退化到本地 NMT".to_string()
+                            } else {
+                                "输入为短语/句子，使用本地 NMT".to_string()
+                            },
+                        },
+                        engine,
+                    });
+                }
+
+                // 本机没有模型：只有显式授权时才允许远程。
+                if self.remote_fallback.allows_unavailable() {
+                    if let Some(engine) = pick(self.registry, Capability::Remote, source, target) {
+                        return Ok(RouteOutcome {
+                            decision: RouteDecision {
+                                engine_id: engine.descriptor().id.to_string(),
+                                capability: Capability::Remote,
+                                reason: "本地模型不可用，按显式授权回退远程".to_string(),
+                            },
+                            engine,
+                        });
+                    }
+                }
+
+                return Err(not_installed(Capability::Nmt, source, target));
+            }
+        };
+
+        Ok(outcome)
+    }
+
+    /// 词典未命中后的下一跳：本地 NMT；本地不可用且有显式授权时远程。
+    pub fn fallback_after_dictionary_miss(
+        &self,
+        source: &translator_types::LanguageTag,
+        target: &translator_types::LanguageTag,
+    ) -> Option<RouteOutcome> {
+        if let Some(engine) = pick(self.registry, Capability::Nmt, source, target) {
+            return Some(RouteOutcome {
+                decision: RouteDecision {
+                    engine_id: engine.descriptor().id.to_string(),
+                    capability: Capability::Nmt,
+                    reason: "词典未命中，回退到本地 NMT".to_string(),
+                },
+                engine,
+            });
+        }
+        if self.remote_fallback.allows_unavailable() {
+            return pick(self.registry, Capability::Remote, source, target).map(|engine| {
+                RouteOutcome {
+                    decision: RouteDecision {
+                        engine_id: engine.descriptor().id.to_string(),
+                        capability: Capability::Remote,
+                        reason: "词典未命中且本地模型不可用，按显式授权回退远程".to_string(),
+                    },
+                    engine,
+                }
+            });
+        }
+        None
+    }
+
+    /// 本地模型执行失败后的下一跳。只有 `OnLocalFailure` 会返回远程。
+    pub fn fallback_after_local_failure(
+        &self,
+        source: &translator_types::LanguageTag,
+        target: &translator_types::LanguageTag,
+    ) -> Option<RouteOutcome> {
+        if !self.remote_fallback.allows_failure() {
+            return None;
+        }
+        pick(self.registry, Capability::Remote, source, target).map(|engine| RouteOutcome {
+            decision: RouteDecision {
+                engine_id: engine.descriptor().id.to_string(),
+                capability: Capability::Remote,
+                reason: "本地模型执行失败，按显式授权回退远程".to_string(),
+            },
+            engine,
+        })
+    }
+}
+
+/// 把“为什么进入模型”分类成学习链可用的稳定原因。
+///
+/// 该函数只看策略、文本形态与执行路由，不假装做语义判断。复杂句的阈值是
+/// 保守启发式，真正的“是否缺词/缺规则”仍需候选审核。
+pub fn classify_fallback(
+    req: &TranslateRequest,
+    text: &str,
+    kind: TextKind,
+    route: Capability,
+) -> Option<translator_types::FallbackReason> {
+    use translator_types::FallbackReason;
+
+    if route == Capability::Dictionary {
+        return None;
+    }
+    if matches!(
+        req.policy,
+        TranslationPolicy::ExplicitEngine(_)
+            | TranslationPolicy::RemoteOnly
+            | TranslationPolicy::LocalOnly
+    ) {
+        return Some(FallbackReason::ExplicitModelRequest);
+    }
+    if crate::text::looks_like_single_word(text) {
+        return Some(FallbackReason::DictionaryMiss);
+    }
+    let words = text.split_whitespace().count();
+    let terminal = text.trim_end().ends_with(['.', '!', '?', '。', '！', '？']);
+    if !terminal && (2..=5).contains(&words) {
+        return Some(FallbackReason::PhraseMiss);
+    }
+    if kind == TextKind::Word {
+        return Some(FallbackReason::DictionaryMiss);
+    }
+    if matches!(kind, TextKind::Paragraph | TextKind::Document) {
+        return Some(FallbackReason::LongContext);
+    }
+    let complex_cues = [
+        ",",
+        ";",
+        " and ",
+        " but ",
+        " because ",
+        " although ",
+        " while ",
+        " if ",
+        " unless ",
+    ]
+    .iter()
+    .any(|cue| text.to_ascii_lowercase().contains(cue));
+    if words >= 18 || complex_cues {
+        Some(FallbackReason::ComplexSyntax)
+    } else {
+        Some(FallbackReason::RuleNotCovered)
+    }
 }
 
 #[cfg(test)]

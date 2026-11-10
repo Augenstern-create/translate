@@ -21,9 +21,11 @@
 
 pub mod budget;
 pub mod cache;
+pub mod composer;
 pub mod context_sense;
 pub mod coordinator;
 pub mod diagnostics;
+pub mod evidence;
 pub mod plan;
 pub mod plan_cache;
 pub mod planner;
@@ -31,21 +33,36 @@ pub mod protection;
 pub mod quality;
 pub mod routing;
 pub mod rules;
+pub mod semantic;
 pub mod templates;
 pub mod terms;
 pub mod text;
 
 pub use budget::{BudgetError, BudgetReservation, MemoryBudget, MemoryReport};
 pub use cache::{CacheEntry, CacheKey, QueryCache};
+pub use composer::{CompositionAnalysis, CompositionEngine, CompositionOutcome, CompositionToken};
 pub use context_sense::{compose_senses, select_by_context};
 pub use coordinator::{Coordinator, CoordinatorConfig};
-pub use diagnostics::{RuleTrace, TermTrace, TranslateOutput, TranslationDiagnostics};
+pub use diagnostics::{
+    RuleTrace, TermTrace, TranslateOutput, TranslationDiagnostics, UnitExecutionTrace,
+};
+pub use evidence::{
+    ContextRef, LanguageEvidence, PatternKind, PatternMatch, SenseCandidate, TextSpan,
+    TranslationConstraint, UnitKind,
+};
 pub use planner::{
-    analyze, plan as plan_text, split_sentences, TextAnalysis, TranslationPlan, TranslationUnit,
+    analyze, classify_fallback, plan as plan_text, plan_request, split_sentences, PlanShape,
+    RequestPlan, TextAnalysis, TranslationPlan, TranslationPlanner, TranslationUnit,
 };
 pub use quality::{QualityIssue, QualityIssueKind, QualityReport, QualitySeverity};
 pub use routing::RouteOutcome;
 pub use rules::{NoRules, RuleOutcome, RulePreview, TextRules};
+pub use semantic::{
+    CandidateSelector, CandidateValidation, ChineseRealizer, Determiner, EntityRef, Lexeme,
+    MeaningFrame, MeaningProgram, Modifier, Polarity, ProgramRelation, QuestionType,
+    RealizationCandidate, Rejection, RejectionReason, SemanticAnalysis, SemanticCompositionEngine,
+    SemanticOutcome, TenseAspect,
+};
 pub use templates::{SentenceTemplates, TemplateTable};
 pub use terms::{
     NoTermGuard, TargetTermGuard, TermContext, TermOutcome, TermPolicy, TermViolation,

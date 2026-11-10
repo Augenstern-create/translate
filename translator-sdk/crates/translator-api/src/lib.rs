@@ -26,6 +26,9 @@ pub use translator_plugin_api::mocks;
 #[cfg(feature = "dictionary")]
 pub use translator_dictionary as dictionary;
 
+#[cfg(feature = "learning")]
+pub mod learning;
+
 #[cfg(feature = "rules")]
 pub use translator_rules as rules;
 
@@ -35,7 +38,16 @@ pub use translator_nmt_bergamot as nmt_bergamot;
 pub use translator_nmt_ort as nmt_ort;
 
 // 规则契约：即使不开 `rules` feature，宿主也可以自己实现 `TextRules` 注入。
+pub use translator_core::composer::{
+    CompositionAnalysis, CompositionEngine, CompositionOutcome, CompositionToken,
+};
+pub use translator_core::evidence::TextSpan;
 pub use translator_core::rules::{NoRules, RuleOutcome, RulePreview, TextRules};
+pub use translator_core::semantic;
+pub use translator_core::semantic::{
+    CandidateValidation, ChineseRealizer, EntityRef, MeaningFrame, MeaningProgram, RejectionReason,
+    SemanticAnalysis, SemanticCompositionEngine, SemanticOutcome,
+};
 pub use translator_core::templates::{SentenceTemplates, TemplateTable};
 // 术语契约（P2.4）：同上，宿主可自己实现 `TargetTermGuard`。
 pub use translator_core::terms::{
@@ -66,6 +78,11 @@ pub struct Translator {
     nmt_engines: Vec<Arc<translator_nmt_bergamot::BergamotNmtEngine>>,
     #[cfg(feature = "nmt-ort")]
     ort_engines: Vec<Arc<translator_nmt_ort::OrtNmtEngine>>,
+    /// 可选学习记录器（P17-A / P20-K）。默认 `None`，主翻译链完全不知道它。
+    #[cfg(feature = "learning")]
+    learning: Option<Arc<learning::LearningRuntime>>,
+    #[cfg(feature = "learning")]
+    learning_consent: learning::LearningConsent,
 }
 
 impl Translator {
@@ -123,10 +140,37 @@ impl Translator {
         options: &TranslateOptions,
     ) -> Result<TranslateOutput, TranslationError> {
         let result = self.run_options(req, options).await;
-        if result.is_err() {
-            self.coordinator.record_failure();
+        match &result {
+            Ok(_out) => {
+                #[cfg(feature = "learning")]
+                if let Some(learning) = &self.learning {
+                    // try_send only；学习链故障/队列满不得影响译文返回。
+                    learning.submit(req, _out, self.learning_consent);
+                }
+            }
+            Err(_) => self.coordinator.record_failure(),
         }
         result
+    }
+
+    /// 学习运行时统计（仅在启用 `learning` feature 且配置了 store 时存在）。
+    #[cfg(feature = "learning")]
+    pub fn learning_stats(&self) -> Option<learning::LearningRuntimeStats> {
+        self.learning.as_ref().map(|l| l.stats())
+    }
+
+    /// 本地学习存储句柄（用于查看/清除候选，不参与翻译）。
+    #[cfg(feature = "learning")]
+    pub fn learning_store(&self) -> Option<Arc<learning::LearningStore>> {
+        self.learning.as_ref().map(|l| l.store().clone())
+    }
+
+    /// 等待后台学习队列处理完（测试/受控关闭）。
+    #[cfg(feature = "learning")]
+    pub fn flush_learning(&self) {
+        if let Some(learning) = &self.learning {
+            learning.flush();
+        }
     }
 
     /// 指定模式翻译（单请求覆盖 Builder 默认值）。
@@ -162,7 +206,14 @@ impl Translator {
         req: &TranslateRequest,
         cancel: &CancelToken,
     ) -> Result<TranslationResult, TranslationError> {
-        self.coordinator.translate_cancellable(req, cancel).await
+        let options = self.default_options.clone();
+        let result = self
+            .run_options_cancellable(req, &options, Some(cancel))
+            .await;
+        if result.is_err() {
+            self.coordinator.record_failure();
+        }
+        result.map(|out| out.result)
     }
 
     /// 带诊断的可取消翻译入口。
@@ -171,9 +222,33 @@ impl Translator {
         req: &TranslateRequest,
         cancel: &CancelToken,
     ) -> Result<TranslateOutput, TranslationError> {
-        self.coordinator
-            .translate_with_diagnostics_cancellable(req, cancel)
-            .await
+        let options = self.default_options.clone();
+        let result = self
+            .run_options_cancellable(req, &options, Some(cancel))
+            .await;
+        if result.is_err() {
+            self.coordinator.record_failure();
+        }
+        result
+    }
+
+    /// 可取消 + 完整选项 + 诊断（P17-A）。
+    ///
+    /// 与 [`Self::translate_with_diagnostics_cancellable`] 相同，但允许宿主指定
+    /// 文本类型/段落策略；规划链、缓存键和取消检查与普通入口一致。
+    pub async fn translate_with_diagnostics_cancellable_options(
+        &self,
+        req: &TranslateRequest,
+        cancel: &CancelToken,
+        options: &TranslateOptions,
+    ) -> Result<TranslateOutput, TranslationError> {
+        let result = self
+            .run_options_cancellable(req, options, Some(cancel))
+            .await;
+        if result.is_err() {
+            self.coordinator.record_failure();
+        }
+        result
     }
 
     /// 带结构化诊断的翻译入口（P2.4）。
@@ -377,6 +452,8 @@ impl Translator {
     /// 释放资源。P0 无可释放资源，保留稳定签名供后续实现。
     pub async fn shutdown(&self) -> Result<(), TranslationError> {
         self.coordinator.clear_cache();
+        #[cfg(feature = "learning")]
+        self.flush_learning();
         Ok(())
     }
 }
@@ -388,129 +465,73 @@ impl Translator {
         req: &TranslateRequest,
         options: &TranslateOptions,
     ) -> Result<TranslateOutput, TranslationError> {
+        self.run_options_cancellable(req, options, None).await
+    }
+
+    /// 与 [`Self::run_options`] 相同，但把取消令牌贯穿到每个执行单元。
+    ///
+    /// P17-A 起 `translate_cancellable` 不再绕过结构规划：段落/文档同样按单元
+    /// 执行，并在单元边界检查取消。
+    async fn run_options_cancellable(
+        &self,
+        req: &TranslateRequest,
+        options: &TranslateOptions,
+        cancel: Option<&CancelToken>,
+    ) -> Result<TranslateOutput, TranslationError> {
+        check_api_cancelled(cancel)?;
         if req.text.trim().is_empty() {
             return Err(TranslationError::new(
                 TranslationErrorCode::InvalidRequest,
                 "请求文本为空",
             ));
         }
-        let analysis = translator_core::planner::analyze(&req.text, options.text_kind);
-        if analysis.kind == TextKind::Word && options.context_text.is_some() {
-            if let Some(out) = self.try_context_word(req, options).await? {
-                return Ok(out);
+        // 唯一的顶层结构/形状规划入口（P17-A / A2）。
+        let planned = translator_core::planner::plan_request(&req.text, options);
+        match planned.shape {
+            translator_core::PlanShape::ParagraphContext => {
+                return self.run_context_paragraph(req, options, cancel).await;
             }
+            translator_core::PlanShape::ParagraphBest => {
+                return self.run_best_paragraph(req, options, cancel).await;
+            }
+            translator_core::PlanShape::Single => {
+                let plan = &planned.plan;
+                let mut seg_options = options.clone();
+                seg_options.text_kind = plan.kind;
+                seg_options.strategy = Some(plan.strategy.to_string());
+                return self.run_unit(req, &seg_options, cancel).await;
+            }
+            translator_core::PlanShape::Multi => {}
         }
-        if analysis.kind == TextKind::Paragraph
-            && options.paragraph_strategy == ParagraphStrategy::Context
-        {
-            return self.run_context_paragraph(req, options).await;
-        }
-        if analysis.kind == TextKind::Paragraph
-            && (options.paragraph_strategy == ParagraphStrategy::Best
-                || (options.paragraph_strategy == ParagraphStrategy::Auto
-                    && needs_best(&req.text, &analysis)))
-        {
-            return self.run_best_paragraph(req, options).await;
-        }
-        let plan = translator_core::planner::plan(&req.text, options);
-        if plan.units.is_empty() {
+        if planned.plan.units.is_empty() {
             return Err(TranslationError::new(
                 TranslationErrorCode::InvalidRequest,
                 "文本结构分析没有得到可翻译单元",
             ));
         }
 
-        let single = plan.units.len() == 1
-            && plan.units[0].text.is_some()
-            && plan.kind != TextKind::Document;
-        if single {
-            let mut seg_options = options.clone();
-            seg_options.text_kind = plan.kind;
-            seg_options.strategy = Some(plan.strategy.to_string());
-            return self
-                .coordinator
-                .translate_with_diagnostics_options(req, &seg_options)
-                .await;
-        }
-
-        self.run_plan(req, options, &plan).await
+        self.run_plan(req, options, &planned.plan, cancel).await
     }
 
-    /// P16-R / R-03：带上下文原文的单词/短语选义。
-    ///
-    /// 只使用明确的搭配线索；没有线索时保留多义项，不猜。若词典未命中返回
-    /// `Ok(None)`，后续仍走普通路由（Word 的 NMT 回退）。
-    async fn try_context_word(
+    async fn run_unit(
         &self,
         req: &TranslateRequest,
         options: &TranslateOptions,
-    ) -> Result<Option<TranslateOutput>, TranslationError> {
-        let context = options.context_text.as_deref().unwrap_or("");
-        let source = req
-            .source
-            .clone()
-            .unwrap_or_else(|| LanguageTag::new("en").expect("静态语言标签合法"));
-        let lookup = LookupRequest::new(req.text.clone())
-            .with_language(source.clone())
-            .with_limit(10);
-        let entries = self.lookup(&lookup).await?;
-        if entries.is_empty() {
-            return Ok(None);
+        cancel: Option<&CancelToken>,
+    ) -> Result<TranslateOutput, TranslationError> {
+        check_api_cancelled(cancel)?;
+        match cancel {
+            Some(cancel) => {
+                self.coordinator
+                    .translate_with_diagnostics_cancellable_options(req, cancel, options)
+                    .await
+            }
+            None => {
+                self.coordinator
+                    .translate_with_diagnostics_options(req, options)
+                    .await
+            }
         }
-        let selected = translator_core::context_sense::select_by_context(
-            &req.text,
-            context,
-            &entries,
-            &req.target,
-        )
-        .or_else(|| translator_core::context_sense::compose_senses(&entries, 3));
-        let Some(selected) = selected else {
-            return Ok(None);
-        };
-        let (text, term_trace) =
-            self.coordinator
-                .enforce_terms_on_text(&req.text, &req.target, &selected);
-        let quality = translator_core::quality::check(&req.text, &text, &req.target, options.mode);
-        self.coordinator.record_execution();
-        self.coordinator.record_dictionary_hit();
-        let source_id = entries
-            .first()
-            .map(|e| e.source_id.clone())
-            .unwrap_or_else(|| "dictionary".to_string());
-        let diagnostics = TranslationDiagnostics {
-            engine_id: "dictionary.context".to_string(),
-            capability: Capability::Dictionary,
-            route_reason: "上下文线索选义（P16-R / R-03）".to_string(),
-            cache_hit: false,
-            source_assumed: req.source.is_none(),
-            rules_version: 0,
-            resource_fingerprint: self.coordinator.resource_fingerprint().to_string(),
-            mode: options.mode,
-            text_kind: TextKind::Word,
-            route: TranslationRoute::Dictionary,
-            model_invoked: false,
-            dictionary_hit: true,
-            rule_matched: false,
-            strategy: "word-context".to_string(),
-            context_id: options.context_id.clone(),
-            rules: None,
-            protected_spans: Vec::new(),
-            restore_missing: Vec::new(),
-            term: term_trace,
-            quality: Some(quality),
-        };
-        Ok(Some(TranslateOutput {
-            result: TranslationResult {
-                text,
-                source,
-                target: req.target.clone(),
-                engine_id: "dictionary.context".to_string(),
-                model_id: Some(source_id),
-                elapsed_ms: 0,
-                warnings: Vec::new(),
-            },
-            diagnostics,
-        }))
     }
 
     /// P14-Q4 实验 B：前一句作为上下文提示，只取当前句译文。
@@ -522,12 +543,13 @@ impl Translator {
         &self,
         req: &TranslateRequest,
         options: &TranslateOptions,
+        cancel: Option<&CancelToken>,
     ) -> Result<TranslateOutput, TranslationError> {
         let sentences = translator_core::planner::split_sentences(&req.text);
         if sentences.len() <= 1 {
             let mut single = options.clone();
             single.paragraph_strategy = ParagraphStrategy::Sentence;
-            return Box::pin(self.run_options(req, &single)).await;
+            return Box::pin(self.run_options_cancellable(req, &single, cancel)).await;
         }
 
         let mut text = String::new();
@@ -543,6 +565,8 @@ impl Translator {
         let mut any_model = false;
         let mut any_dictionary = false;
         let mut any_rule = false;
+        let mut unit_traces: Vec<translator_core::UnitExecutionTrace> = Vec::new();
+        let mut trace_cursor = 0usize;
 
         for (idx, sentence) in sentences.iter().enumerate() {
             text.push_str(&sentence.separator);
@@ -557,10 +581,7 @@ impl Translator {
             };
             let mut sub_req = req.clone();
             sub_req.text = input.clone();
-            let out = self
-                .coordinator
-                .translate_with_diagnostics_options(&sub_req, &seg_opts)
-                .await?;
+            let out = self.run_unit(&sub_req, &seg_opts, cancel).await?;
             let mut translated = if idx == 0 {
                 out.result.text.clone()
             } else {
@@ -573,10 +594,7 @@ impl Translator {
                     alone_req.text = sentence.text.clone();
                     let mut alone_opts = seg_opts.clone();
                     alone_opts.strategy = Some("paragraph-context-fallback".to_string());
-                    let alone = self
-                        .coordinator
-                        .translate_with_diagnostics_options(&alone_req, &alone_opts)
-                        .await?;
+                    let alone = self.run_unit(&alone_req, &alone_opts, cancel).await?;
                     alone.result.text
                 }
             };
@@ -595,6 +613,24 @@ impl Translator {
                 quality.merge(q.clone());
             }
             routes.push(out.diagnostics.route);
+            let span_start = req.text[trace_cursor..]
+                .find(&sentence.text)
+                .map(|offset| trace_cursor + offset)
+                .unwrap_or(trace_cursor);
+            let span = translator_core::TextSpan::new(span_start, span_start + sentence.text.len());
+            trace_cursor = span.end;
+            unit_traces.push(translator_core::UnitExecutionTrace {
+                index: idx,
+                span,
+                kind: translator_core::UnitKind::Sentence,
+                route: out.diagnostics.route,
+                engine_id: out.result.engine_id.clone(),
+                capability: out.diagnostics.capability,
+                reason: out.diagnostics.route_reason.clone(),
+                model_invoked: out.diagnostics.model_invoked,
+                cache_hit: out.diagnostics.cache_hit,
+                fallback_reason: out.diagnostics.fallback_reason,
+            });
             any_model |= out.diagnostics.model_invoked;
             any_dictionary |= out.diagnostics.dictionary_hit;
             any_rule |= out.diagnostics.rule_matched;
@@ -624,6 +660,9 @@ impl Translator {
         diagnostics.model_invoked = any_model;
         diagnostics.dictionary_hit = any_dictionary;
         diagnostics.rule_matched = any_rule;
+        diagnostics.fallback_reason = None;
+        diagnostics.evidence = None;
+        diagnostics.units = unit_traces;
         diagnostics.quality = Some(quality);
         diagnostics.cache_hit = false;
         let source = req
@@ -654,6 +693,7 @@ impl Translator {
         &self,
         req: &TranslateRequest,
         options: &TranslateOptions,
+        cancel: Option<&CancelToken>,
     ) -> Result<TranslateOutput, TranslationError> {
         let mut whole_opts = options.clone();
         whole_opts.paragraph_strategy = ParagraphStrategy::Whole;
@@ -663,8 +703,9 @@ impl Translator {
         sentence_opts.strategy = None;
 
         self.coordinator.record_best_candidates(2);
-        let whole = Box::pin(self.run_options(req, &whole_opts)).await;
-        let sentence = Box::pin(self.run_options(req, &sentence_opts)).await;
+        let whole = Box::pin(self.run_options_cancellable(req, &whole_opts, cancel)).await;
+        check_api_cancelled(cancel)?;
+        let sentence = Box::pin(self.run_options_cancellable(req, &sentence_opts, cancel)).await;
         match (whole, sentence) {
             (Ok(mut w), Ok(mut s)) => {
                 let w_score = paragraph_score(&w, req);
@@ -690,6 +731,7 @@ impl Translator {
         req: &TranslateRequest,
         options: &TranslateOptions,
         plan: &translator_core::planner::TranslationPlan,
+        cancel: Option<&CancelToken>,
     ) -> Result<TranslateOutput, TranslationError> {
         let mut text = String::new();
         let mut warnings: Vec<TranslationWarning> = Vec::new();
@@ -708,8 +750,10 @@ impl Translator {
         let mut any_model = false;
         let mut any_dictionary = false;
         let mut any_rule = false;
+        let mut unit_traces: Vec<translator_core::UnitExecutionTrace> = Vec::new();
 
-        for unit in &plan.units {
+        for (unit_index, unit) in plan.units.iter().enumerate() {
+            check_api_cancelled(cancel)?;
             text.push_str(&unit.separator);
             if let Some(literal) = &unit.literal {
                 text.push_str(literal);
@@ -732,11 +776,9 @@ impl Translator {
             }
 
             let outcome = if unit.kind == TextKind::Paragraph {
-                Box::pin(self.run_options(&sub_req, &seg_options)).await
+                Box::pin(self.run_options_cancellable(&sub_req, &seg_options, cancel)).await
             } else {
-                self.coordinator
-                    .translate_with_diagnostics_options(&sub_req, &seg_options)
-                    .await
+                self.run_unit(&sub_req, &seg_options, cancel).await
             };
 
             match outcome {
@@ -749,6 +791,18 @@ impl Translator {
                         quality.merge(q.clone());
                     }
                     routes.push(out.diagnostics.route);
+                    unit_traces.push(translator_core::UnitExecutionTrace {
+                        index: unit_index,
+                        span: unit.span,
+                        kind: translator_core::UnitKind::from_text_kind(unit.kind, false),
+                        route: out.diagnostics.route,
+                        engine_id: out.result.engine_id.clone(),
+                        capability: out.diagnostics.capability,
+                        reason: out.diagnostics.route_reason.clone(),
+                        model_invoked: out.diagnostics.model_invoked,
+                        cache_hit: out.diagnostics.cache_hit,
+                        fallback_reason: out.diagnostics.fallback_reason,
+                    });
                     any_model |= out.diagnostics.model_invoked;
                     any_dictionary |= out.diagnostics.dictionary_hit;
                     any_rule |= out.diagnostics.rule_matched;
@@ -809,6 +863,9 @@ impl Translator {
             diagnostics.model_invoked = any_model;
             diagnostics.dictionary_hit = any_dictionary;
             diagnostics.rule_matched = any_rule;
+            diagnostics.fallback_reason = None;
+            diagnostics.evidence = None;
+            diagnostics.units = unit_traces;
             diagnostics.cache_hit = all_cache_hit;
             diagnostics.text_kind = plan.kind;
             diagnostics.strategy = plan.strategy.to_string();
@@ -850,6 +907,9 @@ impl Translator {
                 model_invoked: false,
                 dictionary_hit: false,
                 rule_matched: false,
+                fallback_reason: None,
+                evidence: None,
+                units: Vec::new(),
                 strategy: plan.strategy.to_string(),
                 context_id: options.context_id.clone(),
                 quality: Some(quality),
@@ -884,30 +944,6 @@ impl std::fmt::Debug for Translator {
             .field("memory", &self.budget.report())
             .finish()
     }
-}
-
-/// P14-Q2 质量预算：只有“高风险/较长”的段落才跑整段+逐句两个候选。
-///
-/// 2 句以内的普通段落保持单次推理；3 句以上、超长、含数字/条件/否定时
-/// 才增加候选。这样不会为了几个点的 chrF 让所有短段落都付 3× 延迟。
-fn needs_best(text: &str, analysis: &translator_core::planner::TextAnalysis) -> bool {
-    if analysis.sentences >= 3 || analysis.chars > 500 {
-        return true;
-    }
-    let lower = text.to_lowercase();
-    if text.chars().any(|c| c.is_ascii_digit()) {
-        return true;
-    }
-    [
-        " if ",
-        " unless ",
-        " when ",
-        " not ",
-        " never ",
-        " because ",
-    ]
-    .iter()
-    .any(|cue| format!(" {lower} ").contains(cue))
 }
 
 fn paragraph_score(out: &TranslateOutput, req: &TranslateRequest) -> f64 {
@@ -949,6 +985,12 @@ pub struct TranslatorBuilder {
     /// 完整句子模板（P16-R）。
     templates: Option<Arc<dyn SentenceTemplates>>,
     templates_digest: Option<String>,
+    /// 组合式日常句型规则（P19-G）。
+    composition: Option<Arc<CompositionEngine>>,
+    composition_digest: Option<String>,
+    /// P20-C 语义组合/中文生成层。
+    semantic_composition: Option<Arc<SemanticCompositionEngine>>,
+    semantic_composition_digest: Option<String>,
     /// 规则文件内容摘要（仅 `rules_file` 路径有）；P8 EP-02。
     rules_digest: Option<String>,
     /// 宿主直接注入 Arc 时提供的规则内容摘要（可选）。
@@ -977,6 +1019,11 @@ pub struct TranslatorBuilder {
     nmt_engines: Vec<Arc<translator_nmt_bergamot::BergamotNmtEngine>>,
     #[cfg(feature = "nmt-ort")]
     ort_engines: Vec<Arc<translator_nmt_ort::OrtNmtEngine>>,
+    /// 可选学习存储（P17-A / P20-K）。`build()` 时才启动后台记录线程。
+    #[cfg(feature = "learning")]
+    learning_store: Option<Arc<learning::LearningStore>>,
+    #[cfg(feature = "learning")]
+    learning_consent: learning::LearningConsent,
 }
 
 impl Default for TranslatorBuilder {
@@ -996,6 +1043,10 @@ impl TranslatorBuilder {
             rules: None,
             templates: None,
             templates_digest: None,
+            composition: None,
+            composition_digest: None,
+            semantic_composition: None,
+            semantic_composition_digest: None,
             rules_digest: None,
             rules_fingerprint: None,
             term_guard: None,
@@ -1014,6 +1065,10 @@ impl TranslatorBuilder {
             nmt_engines: Vec::new(),
             #[cfg(feature = "nmt-ort")]
             ort_engines: Vec::new(),
+            #[cfg(feature = "learning")]
+            learning_store: None,
+            #[cfg(feature = "learning")]
+            learning_consent: learning::LearningConsent::default(),
         }
     }
 
@@ -1121,6 +1176,52 @@ impl TranslatorBuilder {
     /// 直接注入模板实现（可选）。
     pub fn templates(mut self, templates: Arc<dyn SentenceTemplates>) -> Self {
         self.templates = Some(templates);
+        self
+    }
+
+    /// 从 JSON 加载组合式日常句型规则（P19-G）。
+    ///
+    /// 加载失败计入构建错误，不会静默退化为“没有组合规则”。
+    pub fn composition_file(mut self, path: impl AsRef<std::path::Path>) -> Self {
+        let path_buf = path.as_ref().to_path_buf();
+        match CompositionEngine::from_file(&path_buf) {
+            Ok(engine) => {
+                self.composition = Some(Arc::new(engine));
+                self.composition_digest = sha256_file(&path_buf);
+            }
+            Err(e) => self.errors.push(TranslationError::new(
+                TranslationErrorCode::InvalidRequest,
+                format!("组合规则加载失败：{e}"),
+            )),
+        }
+        self
+    }
+
+    /// 直接注入组合规则实现。
+    pub fn composition(mut self, composition: Arc<CompositionEngine>) -> Self {
+        self.composition = Some(composition);
+        self
+    }
+
+    /// 从 JSON 加载 P20-C 语义组合/中文生成规则（复用 P19 词表）。
+    pub fn semantic_composition_file(mut self, path: impl AsRef<std::path::Path>) -> Self {
+        let path_buf = path.as_ref().to_path_buf();
+        match SemanticCompositionEngine::from_file(&path_buf) {
+            Ok(engine) => {
+                self.semantic_composition = Some(Arc::new(engine));
+                self.semantic_composition_digest = sha256_file(&path_buf);
+            }
+            Err(e) => self.errors.push(TranslationError::new(
+                TranslationErrorCode::InvalidRequest,
+                format!("语义组合规则加载失败：{e}"),
+            )),
+        }
+        self
+    }
+
+    /// 直接注入 P20-C 语义组合实现。
+    pub fn semantic_composition(mut self, composition: Arc<SemanticCompositionEngine>) -> Self {
+        self.semantic_composition = Some(composition);
         self
     }
 
@@ -1308,6 +1409,29 @@ impl TranslatorBuilder {
         self
     }
 
+    /// 启用持续学习（P17-A / P20-K 基础）。**必须显式提供授权**。
+    ///
+    /// - `PrivacyLevel::Off` 等价于关闭，不会创建线程或写库；
+    /// - 学习写入在后台线程完成，主翻译链只在成功返回前做一次非阻塞入队；
+    /// - 学习授权与远程翻译授权互不推导；`allow_remote_upload` 在本版本
+    ///   不触发任何网络请求。
+    #[cfg(feature = "learning")]
+    pub fn learning(
+        mut self,
+        store: Arc<learning::LearningStore>,
+        consent: learning::LearningConsent,
+    ) -> Self {
+        if consent.level == translator_learning::PrivacyLevel::Off {
+            // 明确关闭：不保留 store，也不启动线程。
+            self.learning_store = None;
+            self.learning_consent = consent;
+        } else {
+            self.learning_store = Some(store);
+            self.learning_consent = consent;
+        }
+        self
+    }
+
     pub fn cache_capacity(mut self, capacity: usize) -> Self {
         self.config.cache_capacity = capacity;
         self
@@ -1319,6 +1443,16 @@ impl TranslatorBuilder {
     /// 默认关闭（与 P0/P1 行为一致）。开启后不再"降级返回"，见 ADR-009。
     pub fn strict_placeholder_restore(mut self, strict: bool) -> Self {
         self.config.strict_placeholder_restore = strict;
+        self
+    }
+
+    /// 本地模型不可用/失败时是否允许自动回退远程（P17-A / A3）。
+    ///
+    /// 默认 [`translator_api::RemoteFallbackPolicy::Disabled`]。这是**独立授权**：
+    /// 开启本地学习、启用词典或注册远程插件都不会打开它。`RemoteOnly` 策略
+    /// 仍由远程插件自己的联网授权校验。
+    pub fn remote_fallback(mut self, policy: RemoteFallbackPolicy) -> Self {
+        self.config.remote_fallback = policy;
         self
     }
 
@@ -1424,6 +1558,22 @@ impl TranslatorBuilder {
             }
             fingerprint.push(item);
         }
+        if let Some(composition) = &self.composition {
+            let mut item = format!("{}@{}", composition.id(), composition.version());
+            if let Some(digest) = &self.composition_digest {
+                item.push('#');
+                item.push_str(digest);
+            }
+            fingerprint.push(item);
+        }
+        if let Some(semantic) = &self.semantic_composition {
+            let mut item = format!("{}@{}", semantic.id(), semantic.version());
+            if let Some(digest) = &self.semantic_composition_digest {
+                item.push('#');
+                item.push_str(digest);
+            }
+            fingerprint.push(item);
+        }
         if let Some(guard) = &self.term_guard {
             // 术语表变化必须让旧译文失效：同一句话在不同术语表下结果不同
             let mut item = format!("{}@{}", guard.id(), guard.version());
@@ -1435,6 +1585,8 @@ impl TranslatorBuilder {
         }
         self.config.rules = self.rules.take();
         self.config.templates = self.templates.take();
+        self.config.composer = self.composition.take();
+        self.config.semantic_composer = self.semantic_composition.take();
         self.config.term_guard = self.term_guard.take();
         self.config.term_policy = self.term_policy;
         self.config.language_identifier = self.language_identifier.take();
@@ -1451,6 +1603,19 @@ impl TranslatorBuilder {
         };
         let mut coordinator = Coordinator::new(Arc::new(self.registry), self.config);
         coordinator.bind_resource_fingerprint(fingerprint.join(";"));
+        #[cfg(feature = "learning")]
+        let learning = match self.learning_store.take() {
+            Some(store) => match learning::LearningRuntime::new(store, self.learning_consent) {
+                Ok(runtime) => Some(Arc::new(runtime)),
+                Err(e) => {
+                    return Err(TranslationError::new(
+                        TranslationErrorCode::RuntimeInitFailed,
+                        format!("学习存储初始化失败：{e}"),
+                    ));
+                }
+            },
+            None => None,
+        };
         Ok(Translator {
             coordinator,
             default_options,
@@ -1462,7 +1627,18 @@ impl TranslatorBuilder {
             nmt_engines: self.nmt_engines,
             #[cfg(feature = "nmt-ort")]
             ort_engines: self.ort_engines,
+            #[cfg(feature = "learning")]
+            learning,
+            #[cfg(feature = "learning")]
+            learning_consent: self.learning_consent,
         })
+    }
+}
+
+fn check_api_cancelled(cancel: Option<&CancelToken>) -> Result<(), TranslationError> {
+    match cancel {
+        Some(token) if token.is_cancelled() => Err(TranslationError::cancelled()),
+        _ => Ok(()),
     }
 }
 
@@ -1489,7 +1665,8 @@ pub mod prelude {
         Translator,
     };
     pub use translator_types::{
-        Capability, LanguageTag, LookupRequest, TranslateRequest, TranslationError,
-        TranslationErrorCode, TranslationMode, TranslationPolicy, TranslationResult,
+        Capability, FallbackReason, LanguageTag, LookupRequest, ParagraphStrategy,
+        RemoteFallbackPolicy, TextKind, TranslateRequest, TranslationError, TranslationErrorCode,
+        TranslationMode, TranslationPolicy, TranslationResult, TranslationRoute,
     };
 }

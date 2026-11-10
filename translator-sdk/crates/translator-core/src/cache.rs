@@ -145,9 +145,12 @@ impl CacheKey {
             strategy: strategy.to_string(),
             context_fingerprint: options.context_id.clone().unwrap_or_default(),
             decode_config: "default".to_string(),
-            // P8.3 / EP-04：远程策略与本地策略不得共享缓存。
-            // 显式 engine:<id> 的隐私域由宿主负责；这里只隔离明确的 RemoteOnly。
-            privacy_domain: if matches!(req.policy, TranslationPolicy::RemoteOnly) {
+            // P8.3 / EP-04 / P17-A：远程策略与实际远程路由都不得与本地共享缓存。
+            // 显式 engine:<id> 的隐私域由宿主负责；这里隔离 RemoteOnly 与
+            // “本地不可用后按授权回退远程”的实际路由。
+            privacy_domain: if matches!(req.policy, TranslationPolicy::RemoteOnly)
+                || route == TranslationRoute::Remote
+            {
                 "remote".to_string()
             } else {
                 "local".to_string()
@@ -407,6 +410,9 @@ mod tests {
                 model_invoked: true,
                 dictionary_hit: false,
                 rule_matched: false,
+                fallback_reason: None,
+                evidence: None,
+                units: Vec::new(),
                 strategy: "single".to_string(),
                 context_id: None,
                 quality: None,

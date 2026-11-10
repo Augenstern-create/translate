@@ -53,6 +53,62 @@ impl EnglishLemmatizer {
             ("brought", "bring"),
             ("caught", "catch"),
             ("taught", "teach"),
+            ("flew", "fly"),
+            ("flown", "fly"),
+            ("sang", "sing"),
+            ("sung", "sing"),
+            ("swam", "swim"),
+            ("swum", "swim"),
+            ("began", "begin"),
+            ("begun", "begin"),
+            ("drank", "drink"),
+            ("drunk", "drink"),
+            ("ate", "eat"),
+            ("eaten", "eat"),
+            ("ran", "run"),
+            ("came", "come"),
+            ("knew", "know"),
+            ("known", "know"),
+            ("wrote", "write"),
+            ("written", "write"),
+            ("spoke", "speak"),
+            ("spoken", "speak"),
+            ("broke", "break"),
+            ("broken", "break"),
+            ("chose", "choose"),
+            ("chosen", "choose"),
+            ("forgot", "forget"),
+            ("forgotten", "forget"),
+            ("got", "get"),
+            ("gotten", "get"),
+            ("lost", "lose"),
+            ("paid", "pay"),
+            ("sold", "sell"),
+            ("sent", "send"),
+            ("spent", "spend"),
+            ("built", "build"),
+            ("heard", "hear"),
+            ("held", "hold"),
+            ("kept", "keep"),
+            ("left", "leave"),
+            ("met", "meet"),
+            ("slept", "sleep"),
+            ("stood", "stand"),
+            ("told", "tell"),
+            ("understood", "understand"),
+            ("won", "win"),
+            ("wore", "wear"),
+            ("worn", "wear"),
+            ("threw", "throw"),
+            ("thrown", "throw"),
+            ("grew", "grow"),
+            ("grown", "grow"),
+            ("drew", "draw"),
+            ("drawn", "draw"),
+            ("fell", "fall"),
+            ("fallen", "fall"),
+            ("felt", "feel"),
+            ("led", "lead"),
         ] {
             irregular.insert(form, lemma);
         }
@@ -86,6 +142,29 @@ impl EnglishLemmatizer {
             && lower.len() > 2
         {
             push(lower[..lower.len() - 1].to_string());
+        }
+
+        // 比较级/最高级：happier -> happy, biggest -> big, faster -> fast。
+        if lower.ends_with("ier") && lower.len() > 4 {
+            push(format!("{}y", &lower[..lower.len() - 3]));
+        }
+        if lower.ends_with("iest") && lower.len() > 5 {
+            push(format!("{}y", &lower[..lower.len() - 4]));
+        }
+        for suffix in ["er", "est"] {
+            if lower.ends_with(suffix) && lower.len() > suffix.len() + 2 {
+                let stem = &lower[..lower.len() - suffix.len()];
+                push(stem.to_string());
+                push(format!("{stem}e"));
+                let chars: Vec<char> = stem.chars().collect();
+                if chars.len() >= 2 {
+                    let last = chars[chars.len() - 1];
+                    let prev = chars[chars.len() - 2];
+                    if last == prev && !matches!(last, 'a' | 'e' | 'i' | 'o' | 'u') {
+                        push(chars[..chars.len() - 1].iter().collect());
+                    }
+                }
+            }
         }
 
         for suffix in ["ing", "ed"] {
@@ -154,6 +233,12 @@ mod tests {
             ("boxes", "box"),
             ("making", "make"),
             ("stopped", "stop"),
+            ("happier", "happy"),
+            ("biggest", "big"),
+            ("faster", "fast"),
+            ("flew", "fly"),
+            ("sang", "sing"),
+            ("swum", "swim"),
         ] {
             assert!(
                 l.lemmas(word).iter().any(|x| x == expected),

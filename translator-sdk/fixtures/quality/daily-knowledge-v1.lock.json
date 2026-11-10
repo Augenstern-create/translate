@@ -1,0 +1,51 @@
+{
+  "schema": "daily-knowledge-lock/v1",
+  "generated_at": "2026-11-09",
+  "unit_total": 10000,
+  "category_counts": {
+    "collocation": 1500,
+    "expression": 1500,
+    "phrase": 2500,
+    "polysemy": 500,
+    "word": 4000
+  },
+  "split_counts": {
+    "construction": 7959,
+    "frozen": 2041
+  },
+  "sources": [
+    {
+      "name": "ECDICT",
+      "path": ".build/quality-data/ecdict.csv",
+      "sha256": "d1ecbdf9ee2b920afb6f430ca6b6bb9f559588cf0dff86e04bd255f9390843cc",
+      "license": "MIT (repository); upstream gloss provenance not independently audited",
+      "usage": "local-research/dictionary-candidates"
+    },
+    {
+      "name": "Google 10000 English (USA)",
+      "path": "fixtures/quality/google-10000-english-usa.txt",
+      "sha256": "981c776dc7e8996accb256e5fea9d241331b9602efe0c977285734890e1ae729",
+      "license": "no separate declaration; local-research coverage target",
+      "usage": "word-selection-only"
+    }
+  ],
+  "selection_rules": [
+    "words: Google list single words with valid ECDICT Chinese senses",
+    "phrases: ECDICT 2-4 word entries starting with common verb/preposition, no domain/network senses",
+    "collocations: ECDICT 2-4 word entries starting with common adjective/noun",
+    "expressions: ECDICT 2-4 word entries starting with daily expression starters",
+    "split: sha256(category\\0unit) % 5 == 0 -> frozen (~20%)",
+    "dictionary supplement: all filtered daily phrases/collocations/expressions, not membership-targeted"
+  ],
+  "limitations": [
+    "source-internal coverage benchmark; not an independent third-party semantic benchmark",
+    "phrase translations inherit ECDICT upstream quality; manual review pending",
+    "test set coverage != contextual sense selection accuracy"
+  ],
+  "files": {
+    "daily": "fixtures/quality/daily-knowledge-v1.jsonl",
+    "construction": "fixtures/quality/daily-knowledge-v1.construction.jsonl",
+    "frozen": "fixtures/quality/daily-knowledge-v1.frozen.jsonl",
+    "dictionary_supplement": "fixtures/dictionary/en-zh.daily-supplement.jsonl"
+  }
+}

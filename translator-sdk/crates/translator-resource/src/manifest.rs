@@ -45,6 +45,8 @@ pub enum PayloadSchema {
     DictionarySqliteV3,
     /// 规则包 JSON（`translator-rules` 的 schema_version=1）。
     RulesJsonV1,
+    /// 学习链发布的知识候选包（P17-A / P20-K）；仍需人工审核后由工具合并。
+    KnowledgeJsonV1,
     Unknown(String),
 }
 
@@ -55,6 +57,7 @@ impl PayloadSchema {
             "dictionary.sqlite.v2" => Self::DictionarySqliteV2,
             "dictionary.sqlite.v3" => Self::DictionarySqliteV3,
             "rules.json.v1" => Self::RulesJsonV1,
+            "knowledge.json.v1" => Self::KnowledgeJsonV1,
             other => Self::Unknown(other.to_string()),
         }
     }
@@ -65,6 +68,7 @@ impl PayloadSchema {
             Self::DictionarySqliteV2 => "dictionary.sqlite.v2",
             Self::DictionarySqliteV3 => "dictionary.sqlite.v3",
             Self::RulesJsonV1 => "rules.json.v1",
+            Self::KnowledgeJsonV1 => "knowledge.json.v1",
             Self::Unknown(raw) => raw,
         }
     }
@@ -77,6 +81,7 @@ impl PayloadSchema {
                 | Self::DictionarySqliteV2
                 | Self::DictionarySqliteV3
                 | Self::RulesJsonV1
+                | Self::KnowledgeJsonV1
         )
     }
 }
@@ -87,6 +92,8 @@ pub enum ResourceKind {
     Rules,
     Model,
     Analyzer,
+    /// 学习链候选知识（不是可翻译词库；发布后仍需人工合并/验证）。
+    Knowledge,
     Unknown(String),
 }
 
@@ -97,6 +104,7 @@ impl ResourceKind {
             "rules" => Self::Rules,
             "model" => Self::Model,
             "analyzer" => Self::Analyzer,
+            "knowledge" => Self::Knowledge,
             other => Self::Unknown(other.to_string()),
         }
     }
@@ -107,6 +115,7 @@ impl ResourceKind {
             Self::Rules => "rules",
             Self::Model => "model",
             Self::Analyzer => "analyzer",
+            Self::Knowledge => "knowledge",
             Self::Unknown(raw) => raw,
         }
     }
@@ -318,6 +327,7 @@ impl ResourceManifest {
             let has = self.files.iter().any(|f| {
                 (is_dictionary && f.path == "entries.sqlite")
                     || (expected == "rules.json.v1" && f.path.ends_with(".json"))
+                    || (expected == "knowledge.json.v1" && f.path == "knowledge.json")
             });
             if !has {
                 return Err(ResourceError::InvalidManifest(format!(

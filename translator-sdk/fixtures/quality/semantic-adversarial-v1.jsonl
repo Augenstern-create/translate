@@ -1,0 +1,7 @@
+{"id":"sem-001","source":"Please open the door and close the window.","allowed":["请打开门，并关窗。"],"expect_rule":true,"focus":"imperative-coordination"}
+{"id":"sem-002","source":"I don't want to go.","allowed":["我不想去。"],"expect_rule":true,"focus":"negation-scope"}
+{"id":"sem-003","source":"The light blue bag is heavy.","allowed":["浅蓝色的包很重。"],"expect_rule":true,"focus":"fixed-color-phrase"}
+{"id":"sem-004","source":"She bought a new phone yesterday.","allowed":["她昨天买了一部新手机。","昨天她买了一部新手机。"],"expect_rule":true,"focus":"time-order"}
+{"id":"sem-005","source":"I saw the man with a telescope.","allowed":null,"expect_rule":false,"focus":"pp-attachment"}
+{"id":"sem-006","source":"He didn't say she stole it.","allowed":null,"expect_rule":false,"focus":"nested-negation"}
+{"id":"sem-007","source":"If the server fails, restart it.","allowed":null,"expect_rule":false,"focus":"unresolved-pronoun"}

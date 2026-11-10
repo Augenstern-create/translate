@@ -1,0 +1,19 @@
+{"id":"p21-001","source":"She bought two books yesterday.","allowed":["她昨天买了两本书。","昨天她买了两本书。"],"focus":"noun-phrase/quantity/time"}
+{"id":"p21-002","source":"They bought three tickets last week.","allowed":["他们上周买了三张票。","上周他们买了三张票。"],"focus":"quantity/time"}
+{"id":"p21-003","source":"I have two books.","allowed":["我有两本书。"],"focus":"noun-phrase/quantity"}
+{"id":"p21-004","source":"This blue bag is heavy.","allowed":["这个蓝色的包很重。"],"focus":"determiner/adjective"}
+{"id":"p21-005","source":"My phone is new.","allowed":["我的手机很新。"],"focus":"possessive"}
+{"id":"p21-006","source":"He didn't go.","allowed":["他没去。"],"focus":"negation/past"}
+{"id":"p21-007","source":"I don't want to go.","allowed":["我不想去。"],"focus":"negation/scope"}
+{"id":"p21-008","source":"She is reading a book.","allowed":["她正在读一本书。"],"focus":"aspect/progressive"}
+{"id":"p21-009","source":"I can swim.","allowed":["我会游泳。"],"focus":"modal/can"}
+{"id":"p21-010","source":"Where is my phone?","allowed":["我的手机在哪里？"],"focus":"question/word-order"}
+{"id":"p21-011","source":"I can't swim.","allowed":["我不会游泳。"],"focus":"modal/negation"}
+{"id":"p21-012","source":"She isn't reading.","allowed":["她没在读。","她没在读书。"],"focus":"progressive/negation"}
+{"id":"p21-013","source":"I am not tired.","allowed":["我不累。"],"focus":"adjective/negation"}
+{"id":"p21-014","source":"She runs quickly.","allowed":["她快速地跑。"],"focus":"manner-地"}
+{"id":"p21-015","source":"He runs fast.","allowed":["他跑得快。"],"focus":"degree-得"}
+{"id":"p21-016","source":"The door is open.","allowed":["门开着。"],"focus":"state-着"}
+{"id":"p21-017","source":"I have read two books.","allowed":["我读过两本书。"],"focus":"experiential-过"}
+{"id":"p21-018","source":"My two new phones are heavy.","allowed":["我的两部新手机很重。"],"focus":"possessive-quantity"}
+{"id":"p21-019","source":"She bought two books two days ago.","allowed":["她两天前买了两本书。"],"focus":"ago-time"}

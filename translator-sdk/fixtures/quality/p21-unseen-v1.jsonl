@@ -1,0 +1,15 @@
+{"id":"unseen-001","source":"My brother bought a blue bag yesterday.","allowed":["我的哥哥昨天买了一个蓝色的包。"],"focus":"possessive/new-noun/quantity/time"}
+{"id":"unseen-002","source":"They bought a new computer today.","allowed":["他们今天买了一台新电脑。"],"focus":"new-verb/new-noun/time"}
+{"id":"unseen-003","source":"She bought two new books last month.","allowed":["她上个月买了两本新书。"],"focus":"quantity/adj/time"}
+{"id":"unseen-004","source":"He bought three tickets last week.","allowed":["他上周买了三张票。"],"focus":"quantity/time"}
+{"id":"unseen-005","source":"I like tea and coffee.","allowed":["我喜欢茶和咖啡。"],"focus":"object-coordination"}
+{"id":"unseen-006","source":"Book a room.","allowed":["请预订一个房间。"],"focus":"bare-imperative/WSD"}
+{"id":"unseen-007","source":"She wants to book a room.","allowed":["她想预订一个房间。"],"focus":"want-to/WSD"}
+{"id":"unseen-008","source":"I need a new phone.","allowed":["我需要一部新手机。"],"focus":"noun-phrase"}
+{"id":"unseen-009","source":"We bought a new computer.","allowed":["我们买了一台新电脑。"],"focus":"new-vocab"}
+{"id":"unseen-010","source":"These three blue bags are heavy.","allowed":["这三个蓝色的包很重。"],"focus":"demonstrative/quantity/adj"}
+{"id":"unseen-101","source":"I don't like tea and coffee.","allowed":null,"expect_rule":false,"focus":"negation-scope-coordination"}
+{"id":"unseen-011","source":"She runs a company.","allowed":["她经营一家公司。"],"focus":"WSD/collocation"}
+{"id":"unseen-012","source":"I take a photo.","allowed":["我拍一张照片。"],"focus":"WSD/collocation"}
+{"id":"unseen-013","source":"She wants to book a flight.","allowed":["她想预订一个航班。"],"focus":"want-to/WSD-collocation"}
+{"id":"unseen-014","source":"Take a photo.","allowed":["请拍一张照片。"],"focus":"bare-imperative/collocation"}

@@ -120,3 +120,71 @@ python3 tools/quality/summarize-quality.py \
 | `fixtures/quality/template-cases-v1.jsonl` | 模板验收集 |
 
 > 模板只做整句精确匹配；未命中回退 NMT。人工评审仍 PENDING_HUMAN。
+
+## P18-L 证据
+
+| 文件 | 内容 |
+|---|---|
+| `fixtures/quality/daily-knowledge-v1.jsonl` | 10,000 条日常知识集（word/phrase/collocation/expression/polysemy） |
+| `fixtures/quality/daily-knowledge-v1.{construction,frozen}.jsonl` | 7,959 / 2,041 建设集与冻结集 |
+| `fixtures/quality/daily-knowledge-v1.lock.json` | 源文件 sha256、选择规则、限制 |
+| `fixtures/dictionary/en-zh.daily-supplement.jsonl` | 8,519 条日常短语/搭配/表达补充 |
+| `outputs/p18-daily-baseline-lookup.jsonl` | 旧包 0.1.0 exact lookup 基线 |
+| `outputs/p18-daily-after-lookup.jsonl` | 新包 0.2.0 exact lookup |
+| `outputs/p18-word-forms-lookup.jsonl` | 20 个常见词形 |
+| `reports/p18-daily-baseline.{json,md}` | 46.11% 总 / 45.86% 冻结 |
+| `reports/p18-daily-after.{json,md}` | 100% 总 / 100% 冻结 |
+| `reports/p18-daily-summary.json` | 建设前后、资源哈希、词形与限制 |
+| `reports/p18-dictionary-review.csv` | 50 条人工释义抽样（PENDING_HUMAN） |
+
+> 10k 集是**源内覆盖基准**，不是独立第三方语义基准；人工评审与外部验收集仍未完成。
+
+## P19-G 证据
+
+| 文件 | 内容 |
+|---|---|
+| `fixtures/rules/en-zh.composition.json` | 177 词/27 固定表达/8 短语动词/量词 |
+| `fixtures/quality/composition-v1.jsonl` | 41 条独立组合集（36 正例、5 反例） |
+| `outputs/p19-composition.jsonl` | 组合规则执行结果 |
+| `outputs/p19-golden.jsonl` | 320 句，composition 开启 |
+| `outputs/p19-document.jsonl` | 10 篇文档，composition 开启 |
+| `reports/p19-composition-validation.{json,md}` | 36/36 正例、5/5 回退 |
+| `reports/compare-p19-golden.*` | chrF 0.5074→0.5172，NMT 300→291 |
+| `reports/compare-p19-document.*` | 文档结构 1.0 |
+| `reports/p19-composition.summary.json` | rule/NMT 统计 |
+
+> 组合规则只覆盖已验证日常简单句；人工评审仍 PENDING_HUMAN。
+
+## P20-C 证据
+
+| 文件 | 内容 |
+|---|---|
+| `fixtures/quality/semantic-adversarial-v1.jsonl` | 7 条语义对抗集（4 正例、3 反例） |
+| `outputs/p19-semantic-baseline.jsonl` | P19 baseline：7/7 NMT |
+| `outputs/p20-semantic.jsonl` | P20-C：4 Rule / 3 NMT |
+| `outputs/p20-golden.jsonl` | 320 句，P19+P20 同时开启 |
+| `outputs/p20-document.jsonl` | 10 篇文档，P19+P20 |
+| `reports/p20-semantic-validation.{json,md}` | 4/4 正例、3/3 回退 |
+| `reports/compare-p20-golden.*` | P19/P20 320 同分、零退化 |
+| `reports/compare-p20-document.*` | 文档结构 1.0 |
+
+> P20-C 语义层 opt-in；旧 36 正例仍由 P19 CompositionEngine 处理；人工评审 PENDING_HUMAN。
+
+## P21-R 证据
+
+| 文件 | 内容 |
+|---|---|
+| `fixtures/quality/p21-realization-v1.jsonl` | 13 条中文生成专项（NP/量词/时间/否定/情态/体貌/疑问） |
+| `outputs/p21-realization.jsonl` | 19/19 规则，0 NMT |
+| `fixtures/quality/p21-unseen-v1.jsonl` | 10 条未见组合 + 1 条否定/并列反例 |
+| `outputs/p21-unseen.jsonl` | 14 Rule / 1 NMT |
+| `fixtures/quality/p21-frozen-v1.jsonl` + `outputs/p21-frozen.jsonl` | 20 条后置集，20 Rule |
+| `fixtures/quality/p21-matrix-v1.jsonl` + `outputs/p21-matrix.jsonl` | 100 条结构矩阵，100 Rule |
+| `reports/p21-review-packet.csv` | 98 行统一人工评审包（PENDING_HUMAN） |
+| `outputs/p21-p19-migration.jsonl` | P19 迁移路由：33 semantic / 4 P19 / 4 NMT（41 条） |
+| `outputs/p21-golden.jsonl` | 320 句 P21 A/B |
+| `outputs/p21-document.jsonl` | 10 篇文档 P21 |
+| `reports/compare-p21-golden.*` | chrF 0.5172→0.5184、NMT 291、零回归 |
+| `reports/compare-p21-document.*` | 文档结构 1.0 |
+
+> 36/36 P19 正例已迁移；条件/比较/简单被动已进入语义路径；人工评审 PENDING_HUMAN。

@@ -1,0 +1,941 @@
+{
+  "schema_version": 1,
+  "id": "composition.en-zh.daily",
+  "version": 1,
+  "source": "en",
+  "target": "zh-Hans",
+  "collocations": {
+    "book room": "预订",
+    "book flight": "预订",
+    "take photo": "拍",
+    "run company": "经营",
+    "play football": "踢"
+  },
+  "words": {
+    "i": {
+      "pos": "pronoun",
+      "zh": "我"
+    },
+    "you": {
+      "pos": "pronoun",
+      "zh": "你"
+    },
+    "he": {
+      "pos": "pronoun",
+      "zh": "他"
+    },
+    "she": {
+      "pos": "pronoun",
+      "zh": "她"
+    },
+    "it": {
+      "pos": "pronoun",
+      "zh": "它"
+    },
+    "we": {
+      "pos": "pronoun",
+      "zh": "我们"
+    },
+    "they": {
+      "pos": "pronoun",
+      "zh": "他们"
+    },
+    "my": {
+      "pos": "pronoun",
+      "zh": "我的"
+    },
+    "your": {
+      "pos": "pronoun",
+      "zh": "你的"
+    },
+    "him": {
+      "pos": "pronoun",
+      "zh": "他"
+    },
+    "his": {
+      "pos": "pronoun",
+      "zh": "他的"
+    },
+    "her": {
+      "pos": "pronoun",
+      "zh": "她的"
+    },
+    "our": {
+      "pos": "pronoun",
+      "zh": "我们的"
+    },
+    "their": {
+      "pos": "pronoun",
+      "zh": "他们的"
+    },
+    "this": {
+      "pos": "pronoun",
+      "zh": "这个"
+    },
+    "that": {
+      "pos": "pronoun",
+      "zh": "那个"
+    },
+    "these": {
+      "pos": "determiner",
+      "zh": "这些"
+    },
+    "those": {
+      "pos": "determiner",
+      "zh": "那些"
+    },
+    "a": {
+      "pos": "article",
+      "zh": "一"
+    },
+    "an": {
+      "pos": "article",
+      "zh": "一"
+    },
+    "the": {
+      "pos": "article",
+      "zh": ""
+    },
+    "some": {
+      "pos": "determiner",
+      "zh": "一些"
+    },
+    "please": {
+      "pos": "interjection",
+      "zh": "请"
+    },
+    "not": {
+      "pos": "adverb",
+      "zh": "不"
+    },
+    "if": {
+      "pos": "conjunction",
+      "zh": "如果"
+    },
+    "where": {
+      "pos": "adverb",
+      "zh": "哪里"
+    },
+    "what": {
+      "pos": "pronoun",
+      "zh": "什么"
+    },
+    "when": {
+      "pos": "adverb",
+      "zh": "什么时候"
+    },
+    "why": {
+      "pos": "adverb",
+      "zh": "为什么"
+    },
+    "how": {
+      "pos": "adverb",
+      "zh": "怎么"
+    },
+    "who": {
+      "pos": "pronoun",
+      "zh": "谁"
+    },
+    "of": {
+      "pos": "preposition",
+      "zh": "的"
+    },
+    "to": {
+      "pos": "preposition",
+      "zh": "到"
+    },
+    "at": {
+      "pos": "preposition",
+      "zh": "在"
+    },
+    "in": {
+      "pos": "preposition",
+      "zh": "在"
+    },
+    "on": {
+      "pos": "preposition",
+      "zh": "在"
+    },
+    "for": {
+      "pos": "preposition",
+      "zh": "为"
+    },
+    "with": {
+      "pos": "preposition",
+      "zh": "和"
+    },
+    "and": {
+      "pos": "conjunction",
+      "zh": "和"
+    },
+    "or": {
+      "pos": "conjunction",
+      "zh": "或者"
+    },
+    "do": {
+      "pos": "auxiliary",
+      "zh": ""
+    },
+    "does": {
+      "pos": "auxiliary",
+      "zh": ""
+    },
+    "did": {
+      "pos": "auxiliary",
+      "zh": ""
+    },
+    "am": {
+      "pos": "auxiliary",
+      "zh": ""
+    },
+    "is": {
+      "pos": "auxiliary",
+      "zh": ""
+    },
+    "are": {
+      "pos": "auxiliary",
+      "zh": ""
+    },
+    "was": {
+      "pos": "auxiliary",
+      "zh": ""
+    },
+    "were": {
+      "pos": "auxiliary",
+      "zh": ""
+    },
+    "will": {
+      "pos": "auxiliary",
+      "zh": "会"
+    },
+    "can": {
+      "pos": "auxiliary",
+      "zh": "会"
+    },
+    "may": {
+      "pos": "auxiliary",
+      "zh": "可以"
+    },
+    "must": {
+      "pos": "auxiliary",
+      "zh": "必须"
+    },
+    "should": {
+      "pos": "auxiliary",
+      "zh": "应该"
+    },
+    "have": {
+      "pos": "verb",
+      "zh": "有"
+    },
+    "has": {
+      "pos": "verb",
+      "zh": "有"
+    },
+    "like": {
+      "pos": "verb",
+      "zh": "喜欢"
+    },
+    "love": {
+      "pos": "verb",
+      "zh": "爱"
+    },
+    "want": {
+      "pos": "verb",
+      "zh": "想"
+    },
+    "need": {
+      "pos": "verb",
+      "zh": "需要"
+    },
+    "buy": {
+      "pos": "verb",
+      "zh": "买"
+    },
+    "take": {
+      "pos": "verb",
+      "zh": "拿"
+    },
+    "get": {
+      "pos": "verb",
+      "zh": "得到"
+    },
+    "make": {
+      "pos": "verb",
+      "zh": "做"
+    },
+    "go": {
+      "pos": "verb",
+      "zh": "去"
+    },
+    "come": {
+      "pos": "verb",
+      "zh": "来"
+    },
+    "see": {
+      "pos": "verb",
+      "zh": "看见"
+    },
+    "read": {
+      "pos": "verb",
+      "zh": "读"
+    },
+    "write": {
+      "pos": "verb",
+      "zh": "写"
+    },
+    "open": {
+      "pos": "verb",
+      "zh": "打开",
+      "alternates": {
+        "adjective": "开着的"
+      }
+    },
+    "close": {
+      "pos": "verb",
+      "zh": "关"
+    },
+    "fail": {
+      "pos": "verb",
+      "zh": "故障"
+    },
+    "restart": {
+      "pos": "verb",
+      "zh": "重新启动"
+    },
+    "stop": {
+      "pos": "verb",
+      "zh": "停止"
+    },
+    "start": {
+      "pos": "verb",
+      "zh": "开始"
+    },
+    "help": {
+      "pos": "verb",
+      "zh": "帮助"
+    },
+    "find": {
+      "pos": "verb",
+      "zh": "找到"
+    },
+    "use": {
+      "pos": "verb",
+      "zh": "使用"
+    },
+    "work": {
+      "pos": "verb",
+      "zh": "工作",
+      "alternates": {
+        "noun": "工作"
+      }
+    },
+    "play": {
+      "pos": "verb",
+      "zh": "玩"
+    },
+    "swim": {
+      "pos": "verb",
+      "zh": "游泳"
+    },
+    "eat": {
+      "pos": "verb",
+      "zh": "吃"
+    },
+    "drink": {
+      "pos": "verb",
+      "zh": "喝"
+    },
+    "speak": {
+      "pos": "verb",
+      "zh": "说"
+    },
+    "stay": {
+      "pos": "verb",
+      "zh": "待"
+    },
+    "rain": {
+      "pos": "verb",
+      "zh": "下雨"
+    },
+    "book": {
+      "pos": "noun",
+      "zh": "书",
+      "classifier": "本",
+      "alternates": {
+        "verb": "预订"
+      }
+    },
+    "know": {
+      "pos": "verb",
+      "zh": "知道"
+    },
+    "think": {
+      "pos": "verb",
+      "zh": "认为"
+    },
+    "wait": {
+      "pos": "verb",
+      "zh": "等"
+    },
+    "watch": {
+      "pos": "verb",
+      "zh": "看"
+    },
+    "listen": {
+      "pos": "verb",
+      "zh": "听"
+    },
+    "call": {
+      "pos": "verb",
+      "zh": "打电话"
+    },
+    "send": {
+      "pos": "verb",
+      "zh": "发送"
+    },
+    "bring": {
+      "pos": "verb",
+      "zh": "带来"
+    },
+    "give": {
+      "pos": "verb",
+      "zh": "给"
+    },
+    "put": {
+      "pos": "verb",
+      "zh": "放"
+    },
+    "sit": {
+      "pos": "verb",
+      "zh": "坐"
+    },
+    "stand": {
+      "pos": "verb",
+      "zh": "站"
+    },
+    "quickly": {
+      "pos": "adverb",
+      "zh": "快速"
+    },
+    "fast": {
+      "pos": "adjective",
+      "zh": "快"
+    },
+    "run": {
+      "pos": "verb",
+      "zh": "跑"
+    },
+    "walk": {
+      "pos": "verb",
+      "zh": "走"
+    },
+    "sleep": {
+      "pos": "verb",
+      "zh": "睡觉"
+    },
+    "live": {
+      "pos": "verb",
+      "zh": "住"
+    },
+    "study": {
+      "pos": "verb",
+      "zh": "学习"
+    },
+    "learn": {
+      "pos": "verb",
+      "zh": "学习"
+    },
+    "teach": {
+      "pos": "verb",
+      "zh": "教"
+    },
+    "coffee": {
+      "pos": "noun",
+      "zh": "咖啡",
+      "classifier": "杯"
+    },
+    "tea": {
+      "pos": "noun",
+      "zh": "茶",
+      "classifier": "杯"
+    },
+    "water": {
+      "pos": "noun",
+      "zh": "水"
+    },
+    "milk": {
+      "pos": "noun",
+      "zh": "牛奶"
+    },
+    "ticket": {
+      "pos": "noun",
+      "zh": "票",
+      "classifier": "张"
+    },
+    "room": {
+      "pos": "noun",
+      "zh": "房间",
+      "classifier": "个"
+    },
+    "door": {
+      "pos": "noun",
+      "zh": "门",
+      "classifier": "扇"
+    },
+    "window": {
+      "pos": "noun",
+      "zh": "窗",
+      "classifier": "扇"
+    },
+    "box": {
+      "pos": "noun",
+      "zh": "盒子",
+      "classifier": "个"
+    },
+    "bag": {
+      "pos": "noun",
+      "zh": "包",
+      "classifier": "个"
+    },
+    "phone": {
+      "pos": "noun",
+      "zh": "手机",
+      "classifier": "部"
+    },
+    "key": {
+      "pos": "noun",
+      "zh": "钥匙",
+      "classifier": "把"
+    },
+    "car": {
+      "pos": "noun",
+      "zh": "车",
+      "classifier": "辆"
+    },
+    "bus": {
+      "pos": "noun",
+      "zh": "公交车",
+      "classifier": "辆"
+    },
+    "train": {
+      "pos": "noun",
+      "zh": "火车",
+      "classifier": "列"
+    },
+    "table": {
+      "pos": "noun",
+      "zh": "桌子",
+      "classifier": "张"
+    },
+    "chair": {
+      "pos": "noun",
+      "zh": "椅子",
+      "classifier": "把"
+    },
+    "child": {
+      "pos": "noun",
+      "zh": "孩子",
+      "classifier": "个"
+    },
+    "dog": {
+      "pos": "noun",
+      "zh": "狗",
+      "classifier": "只"
+    },
+    "cat": {
+      "pos": "noun",
+      "zh": "猫",
+      "classifier": "只"
+    },
+    "apple": {
+      "pos": "noun",
+      "zh": "苹果",
+      "classifier": "个"
+    },
+    "food": {
+      "pos": "noun",
+      "zh": "食物"
+    },
+    "rice": {
+      "pos": "noun",
+      "zh": "米饭"
+    },
+    "fruit": {
+      "pos": "noun",
+      "zh": "水果"
+    },
+    "bookstore": {
+      "pos": "noun",
+      "zh": "书店",
+      "classifier": "家"
+    },
+    "service": {
+      "pos": "noun",
+      "zh": "服务",
+      "classifier": "项"
+    },
+    "application": {
+      "pos": "noun",
+      "zh": "应用",
+      "classifier": "个"
+    },
+    "server": {
+      "pos": "noun",
+      "zh": "服务器",
+      "classifier": "台"
+    },
+    "light": {
+      "pos": "noun",
+      "zh": "灯",
+      "classifier": "盏",
+      "alternates": {
+        "adjective": "轻的"
+      }
+    },
+    "football": {
+      "pos": "noun",
+      "zh": "足球",
+      "classifier": "个"
+    },
+    "english": {
+      "pos": "noun",
+      "zh": "英语"
+    },
+    "chinese": {
+      "pos": "noun",
+      "zh": "中文"
+    },
+    "money": {
+      "pos": "noun",
+      "zh": "钱"
+    },
+    "memory": {
+      "pos": "noun",
+      "zh": "内存"
+    },
+    "time": {
+      "pos": "noun",
+      "zh": "时间"
+    },
+    "day": {
+      "pos": "noun",
+      "zh": "天",
+      "classifier": "天"
+    },
+    "morning": {
+      "pos": "noun",
+      "zh": "早上"
+    },
+    "name": {
+      "pos": "noun",
+      "zh": "名字",
+      "classifier": "个"
+    },
+    "problem": {
+      "pos": "noun",
+      "zh": "问题",
+      "classifier": "个"
+    },
+    "question": {
+      "pos": "noun",
+      "zh": "问题",
+      "classifier": "个"
+    },
+    "answer": {
+      "pos": "noun",
+      "zh": "答案",
+      "classifier": "个"
+    },
+    "school": {
+      "pos": "noun",
+      "zh": "学校",
+      "classifier": "所"
+    },
+    "office": {
+      "pos": "noun",
+      "zh": "办公室",
+      "classifier": "间"
+    },
+    "house": {
+      "pos": "noun",
+      "zh": "房子",
+      "classifier": "座"
+    },
+    "home": {
+      "pos": "adverb",
+      "zh": "家"
+    },
+    "friend": {
+      "pos": "noun",
+      "zh": "朋友",
+      "classifier": "个"
+    },
+    "brother": {
+      "pos": "noun",
+      "zh": "哥哥",
+      "classifier": "个"
+    },
+    "computer": {
+      "pos": "noun",
+      "zh": "电脑",
+      "classifier": "台"
+    },
+    "photo": {
+      "pos": "noun",
+      "zh": "照片",
+      "classifier": "张"
+    },
+    "company": {
+      "pos": "noun",
+      "zh": "公司",
+      "classifier": "家"
+    },
+    "flight": {
+      "pos": "noun",
+      "zh": "航班",
+      "classifier": "个"
+    },
+    "people": {
+      "pos": "noun",
+      "zh": "人"
+    },
+    "man": {
+      "pos": "noun",
+      "zh": "男人",
+      "classifier": "个"
+    },
+    "woman": {
+      "pos": "noun",
+      "zh": "女人",
+      "classifier": "个"
+    },
+    "boy": {
+      "pos": "noun",
+      "zh": "男孩",
+      "classifier": "个"
+    },
+    "girl": {
+      "pos": "noun",
+      "zh": "女孩",
+      "classifier": "个"
+    },
+    "tired": {
+      "pos": "adjective",
+      "zh": "累"
+    },
+    "hungry": {
+      "pos": "adjective",
+      "zh": "饿"
+    },
+    "happy": {
+      "pos": "adjective",
+      "zh": "开心"
+    },
+    "sad": {
+      "pos": "adjective",
+      "zh": "难过"
+    },
+    "ready": {
+      "pos": "adjective",
+      "zh": "准备好"
+    },
+    "clean": {
+      "pos": "adjective",
+      "zh": "干净"
+    },
+    "dirty": {
+      "pos": "adjective",
+      "zh": "脏"
+    },
+    "big": {
+      "pos": "adjective",
+      "zh": "大"
+    },
+    "small": {
+      "pos": "adjective",
+      "zh": "小"
+    },
+    "good": {
+      "pos": "adjective",
+      "zh": "好"
+    },
+    "bad": {
+      "pos": "adjective",
+      "zh": "坏"
+    },
+    "beautiful": {
+      "pos": "adjective",
+      "zh": "漂亮"
+    },
+    "afraid": {
+      "pos": "adjective",
+      "zh": "害怕"
+    },
+    "cold": {
+      "pos": "adjective",
+      "zh": "冷"
+    },
+    "hot": {
+      "pos": "adjective",
+      "zh": "热"
+    },
+    "new": {
+      "pos": "adjective",
+      "zh": "新"
+    },
+    "old": {
+      "pos": "adjective",
+      "zh": "旧"
+    },
+    "free": {
+      "pos": "adjective",
+      "zh": "空闲"
+    },
+    "busy": {
+      "pos": "adjective",
+      "zh": "忙"
+    },
+    "easy": {
+      "pos": "adjective",
+      "zh": "容易"
+    },
+    "hard": {
+      "pos": "adjective",
+      "zh": "难"
+    },
+    "heavy": {
+      "pos": "adjective",
+      "zh": "重"
+    },
+    "blue": {
+      "pos": "adjective",
+      "zh": "蓝色"
+    },
+    "here": {
+      "pos": "adverb",
+      "zh": "这里"
+    },
+    "there": {
+      "pos": "adverb",
+      "zh": "那里"
+    },
+    "now": {
+      "pos": "adverb",
+      "zh": "现在"
+    },
+    "today": {
+      "pos": "adverb",
+      "zh": "今天"
+    },
+    "tomorrow": {
+      "pos": "adverb",
+      "zh": "明天"
+    }
+  },
+  "phrases": {
+    "turn on the light": "打开灯",
+    "turn off the light": "关灯",
+    "light blue": "浅蓝色",
+    "the bag is light blue": "包是浅蓝色的",
+    "a light bag": "很轻的包",
+    "the server is ready": "服务器已就绪",
+    "good morning": "早上好",
+    "good afternoon": "下午好",
+    "good evening": "晚上好",
+    "good night": "晚安",
+    "thank you": "谢谢",
+    "thanks": "谢谢",
+    "excuse me": "对不起",
+    "i am sorry": "对不起",
+    "how are you": "你好吗",
+    "where are you from": "你来自哪里",
+    "nice to meet you": "很高兴认识你",
+    "see you later": "回头见",
+    "see you tomorrow": "明天见",
+    "no problem": "没问题",
+    "you are welcome": "不客气",
+    "of course": "当然",
+    "i love you": "我爱你",
+    "i miss you": "我想你",
+    "what is your name": "你叫什么名字",
+    "they are playing football": "他们正在踢足球",
+    "i am fine": "我没事",
+    "i am okay": "我没事"
+  },
+  "phrasal_verbs": {
+    "turn on": {
+      "verb": "打开"
+    },
+    "turn off": {
+      "verb": "关"
+    },
+    "look after": {
+      "verb": "照顾"
+    },
+    "get up": {
+      "verb": "起床"
+    },
+    "take off": {
+      "verb": "脱下"
+    },
+    "put on": {
+      "verb": "穿上"
+    },
+    "come back": {
+      "verb": "回来"
+    },
+    "go out": {
+      "verb": "出去"
+    },
+    "find out": {
+      "verb": "查明"
+    }
+  },
+  "past_forms": [
+    "went",
+    "booked",
+    "bought",
+    "taught",
+    "thought",
+    "saw",
+    "made",
+    "took",
+    "gave",
+    "found",
+    "came",
+    "ran",
+    "wrote",
+    "spoke",
+    "broke",
+    "chose",
+    "forgot",
+    "got",
+    "lost",
+    "paid",
+    "sold",
+    "sent",
+    "spent",
+    "built",
+    "heard",
+    "held",
+    "kept",
+    "left",
+    "met",
+    "slept",
+    "stood",
+    "told",
+    "understood",
+    "won",
+    "wore",
+    "threw",
+    "grew",
+    "drew",
+    "fell",
+    "felt",
+    "led",
+    "flew",
+    "sang",
+    "swam"
+  ]
+}

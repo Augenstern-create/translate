@@ -1,0 +1,27 @@
+{
+  "cache_hits": 0,
+  "coverage": {
+    "model_ratio": 0.9037267080745341,
+    "model_units": 291,
+    "reliable_coverage": 0.09627329192546584,
+    "reliable_units": 31
+  },
+  "errors": 0,
+  "label": "p19-golden",
+  "mode": "precise",
+  "resource_fingerprint": "dictionary.ecdict.en-zh@0.2.0#95dabf3cd899a348;rules.en-zh.quality@2#ba904a404902d0b140f55a25f39a79cf23106e85df8115d8862761dfcea47e24;templates.en-zh.core@1#0d37a8c3e8a80630b081ecdcd06329ae9e35a5a682f802f31bb8eca324a7c1c5;composition.en-zh.daily@1#b368d558d6121112b2c7bdd7171b6c1217a3f26658c6921bae07f3a5caf6700a;terms.en-zh.technical@1#5d4fde05647fdd64a09e68a45cc01103aa837e293743ebd22c9ceac1df634402",
+  "route_stats": {
+    "best_candidates": 0,
+    "cache_hits": 0,
+    "dictionary_hits": 0,
+    "executions": 322,
+    "failures": 0,
+    "nmt_calls": 291,
+    "nmt_fallbacks": 0,
+    "remote_calls": 0,
+    "remote_fallbacks": 0,
+    "rule_matches": 31
+  },
+  "success": 320,
+  "total_wall_ms": 59534
+}

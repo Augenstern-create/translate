@@ -1,0 +1,8 @@
+{"id":"adv-001","source":"Please turn on the light.","allowed":["请打开灯。"],"focus":"phrasal-verb"}
+{"id":"adv-002","source":"They are playing football.","allowed":["他们正在踢足球。"],"focus":"fixed-expression"}
+{"id":"adv-003","source":"If it rains, I'll stay home.","allowed":["如果下雨，我就待在家里。"],"focus":"condition"}
+{"id":"adv-004","source":"The server is ready.","allowed":["服务器已就绪。"],"focus":"fixed-expression"}
+{"id":"adv-005","source":"This bag is heavier than that bag.","allowed":["这个包比那个包重。"],"focus":"comparison"}
+{"id":"adv-006","source":"The door was opened.","allowed":["门被打开了。"],"focus":"passive"}
+{"id":"adv-007","source":"The door was opened by him.","allowed":["门被他打开了。"],"focus":"passive-agent"}
+{"id":"adv-008","source":"If the server fails, restart the server.","allowed":["如果服务器故障，请重新启动服务器。"],"focus":"conditional-imperative"}

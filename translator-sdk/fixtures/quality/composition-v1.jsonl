@@ -1,0 +1,41 @@
+{"id":"comp-001","source":"Please open the door.","reference":"请打开门。","pattern":"please","expect_rule":true}
+{"id":"comp-002","source":"Please close the window.","reference":"请关窗。","pattern":"please","expect_rule":true}
+{"id":"comp-003","source":"Please open the box.","reference":"请打开盒子。","pattern":"please","expect_rule":true}
+{"id":"comp-004","source":"Please restart the service.","reference":"请重新启动服务。","pattern":"please","expect_rule":true}
+{"id":"comp-005","source":"Please turn on the light.","reference":"请打开灯。","pattern":"please-phrasal","expect_rule":true}
+{"id":"comp-006","source":"I like coffee.","reference":"我喜欢咖啡。","pattern":"simple-svo","expect_rule":true}
+{"id":"comp-007","source":"She reads books.","reference":"她读书。","pattern":"simple-svo","expect_rule":true}
+{"id":"comp-008","source":"He likes tea.","reference":"他喜欢茶。","pattern":"simple-svo","expect_rule":true}
+{"id":"comp-009","source":"The server uses memory.","reference":"服务器使用内存。","pattern":"simple-svo","expect_rule":true}
+{"id":"comp-010","source":"I want to buy a ticket.","reference":"我想买一张票。","pattern":"want-to","expect_rule":true}
+{"id":"comp-011","source":"She wants to eat an apple.","reference":"她想吃一个苹果。","pattern":"want-to","expect_rule":true}
+{"id":"comp-012","source":"I want to drink coffee.","reference":"我想喝咖啡。","pattern":"want-to","expect_rule":true}
+{"id":"comp-013","source":"Do you like tea?","reference":"你喜欢茶吗？","pattern":"do-question","expect_rule":true}
+{"id":"comp-014","source":"Does she like coffee?","reference":"她喜欢咖啡吗？","pattern":"do-question","expect_rule":true}
+{"id":"comp-015","source":"Do they eat rice?","reference":"他们吃米饭吗？","pattern":"do-question","expect_rule":true}
+{"id":"comp-016","source":"Where is my phone?","reference":"我的手机在哪里？","pattern":"where-is","expect_rule":true}
+{"id":"comp-017","source":"Where is the key?","reference":"钥匙在哪里？","pattern":"where-is","expect_rule":true}
+{"id":"comp-018","source":"Where are my keys?","reference":"我的钥匙在哪里？","pattern":"where-is","expect_rule":true}
+{"id":"comp-019","source":"I don't know.","reference":"我不知道。","pattern":"negation","expect_rule":true}
+{"id":"comp-020","source":"She doesn't like coffee.","reference":"她不喜欢咖啡。","pattern":"negation","expect_rule":true}
+{"id":"comp-021","source":"I don't drink tea.","reference":"我不喝茶。","pattern":"negation","expect_rule":true}
+{"id":"comp-022","source":"I can swim.","reference":"我会游泳。","pattern":"can-modal","expect_rule":true}
+{"id":"comp-023","source":"She can speak English.","reference":"她会说英语。","pattern":"can-modal","expect_rule":true}
+{"id":"comp-024","source":"He can help.","reference":"他会帮助。","pattern":"can-modal","expect_rule":true}
+{"id":"comp-025","source":"She is reading a book.","reference":"她正在读一本书。","pattern":"progressive","expect_rule":true}
+{"id":"comp-026","source":"They are playing football.","reference":"他们正在踢足球。","pattern":"fixed-phrase","expect_rule":true}
+{"id":"comp-027","source":"He is eating an apple.","reference":"他正在吃一个苹果。","pattern":"progressive","expect_rule":true}
+{"id":"comp-028","source":"I am tired.","reference":"我很累。","pattern":"be-adjective","expect_rule":true}
+{"id":"comp-029","source":"She is happy.","reference":"她很开心。","pattern":"be-adjective","expect_rule":true}
+{"id":"comp-030","source":"He went home.","reference":"他回家了。","pattern":"past-svo","expect_rule":true}
+{"id":"comp-031","source":"She booked a room.","reference":"她预订了一个房间。","pattern":"past-svo","expect_rule":true}
+{"id":"comp-032","source":"I bought a ticket.","reference":"我买了一张票。","pattern":"past-svo","expect_rule":true}
+{"id":"comp-033","source":"I'm afraid of dogs.","reference":"我害怕狗。","pattern":"afraid-of","expect_rule":true}
+{"id":"comp-034","source":"I am afraid of cats.","reference":"我害怕猫。","pattern":"afraid-of","expect_rule":true}
+{"id":"comp-035","source":"If it rains, I'll stay home.","reference":"如果下雨，我就待在家里。","pattern":"if-condition","expect_rule":true}
+{"id":"comp-036","source":"The server is ready.","reference":"服务器已就绪。","pattern":"fixed-phrase","expect_rule":true}
+{"id":"comp-101","source":"Please open the door that was locked yesterday.","reference":null,"pattern":"unsupported-relative-clause","expect_rule":false}
+{"id":"comp-102","source":"I like coffee because it is tasty.","reference":null,"pattern":"unsupported-cause","expect_rule":false}
+{"id":"comp-103","source":"She is reading a book that she bought.","reference":null,"pattern":"unsupported-relative-clause","expect_rule":false}
+{"id":"comp-104","source":"Please open the door and close the window.","reference":null,"pattern":"unsupported-coordination","expect_rule":false}
+{"id":"comp-105","source":"I want to buy a ticket to Paris.","reference":null,"pattern":"unsupported-extra-pp","expect_rule":false}

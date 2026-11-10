@@ -29,6 +29,7 @@ impl HostSupport {
                 PayloadSchema::DictionarySqliteV2,
                 PayloadSchema::DictionarySqliteV3,
                 PayloadSchema::RulesJsonV1,
+                PayloadSchema::KnowledgeJsonV1,
             ],
             platforms: vec![current_platform()],
         }
@@ -135,6 +136,13 @@ pub fn check(
             issues.push(CompatibilityIssue::KindNotReadable(
                 manifest.kind.as_str().to_string(),
             ));
+        }
+        (ResourceKind::Knowledge, PayloadSchema::KnowledgeJsonV1) => {}
+        (ResourceKind::Knowledge, _) => {
+            issues.push(CompatibilityIssue::KindNotReadable(format!(
+                "knowledge with {}",
+                manifest.payload_schema.as_str()
+            )));
         }
         (ResourceKind::Unknown(raw), _) => {
             issues.push(CompatibilityIssue::KindNotReadable(raw.clone()));

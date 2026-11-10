@@ -19,8 +19,9 @@
 //! （URL、邮箱、`{变量}`）。诊断对象只应回给发起请求的调用方，
 //! 不要原样写进集中式日志——设计文档 §4.1 明确禁止把用户原文写进日志。
 
-use translator_types::{Capability, TextKind, TranslationMode, TranslationRoute};
+use translator_types::{Capability, FallbackReason, TextKind, TranslationMode, TranslationRoute};
 
+use crate::evidence::{LanguageEvidence, TextSpan, UnitKind};
 use crate::quality::QualityReport;
 use crate::terms::{TermPolicy, TermViolation};
 use crate::text::ProtectedSpan;
@@ -45,6 +46,27 @@ pub struct TermTrace {
     pub violations: Vec<TermViolation>,
 }
 
+/// 一个执行单元的决策轨迹（P17-A / AR-10）。
+///
+/// 聚合译文只有一个 `engine_id`，但段落/文章里不同单元可能分别走词典、规则、
+/// 本地模型或远程模型。这个结构让“到底哪一段用了什么”可解释，同时不把
+/// 用户原文写进诊断。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UnitExecutionTrace {
+    /// 在计划中的序号（0 起）。
+    pub index: usize,
+    pub span: TextSpan,
+    pub kind: UnitKind,
+    pub route: TranslationRoute,
+    pub engine_id: String,
+    pub capability: Capability,
+    /// 路由理由（不含原文）。
+    pub reason: String,
+    pub model_invoked: bool,
+    pub cache_hit: bool,
+    pub fallback_reason: Option<FallbackReason>,
+}
+
 /// 一次翻译的完整诊断。
 #[derive(Clone, Debug)]
 pub struct TranslationDiagnostics {
@@ -65,11 +87,18 @@ pub struct TranslationDiagnostics {
     /// 实际执行路由（Dictionary / Rule / LocalNmt / Mixed）。
     pub route: TranslationRoute,
     /// 是否真的调用了模型推理（缓存命中/模板/词典为 false）。
+    /// 本地 NMT 与已授权远程 API 都算模型。
     pub model_invoked: bool,
     /// 是否由词典命中。
     pub dictionary_hit: bool,
     /// 是否由规则/模板完整匹配。
     pub rule_matched: bool,
+    /// 为什么没有由词典/规则直接完成；`None` 表示不是兜底路径。
+    pub fallback_reason: Option<FallbackReason>,
+    /// 本次（单单元）共享语言证据；聚合计划可为空，逐单元证据见 `units`。
+    pub evidence: Option<LanguageEvidence>,
+    /// 各执行单元的决策轨迹。单单元至少一条。
+    pub units: Vec<UnitExecutionTrace>,
     /// 分段/组织策略名（进入缓存身份）。
     pub strategy: String,
     /// 上下文身份（可选）。
@@ -118,6 +147,12 @@ impl TranslationDiagnostics {
         }
         if !self.restore_missing.is_empty() {
             parts.push(format!("还原失败 {} 处", self.restore_missing.len()));
+        }
+        if let Some(reason) = self.fallback_reason {
+            parts.push(format!("兜底原因={reason}"));
+        }
+        if self.units.len() > 1 {
+            parts.push(format!("执行单元={}", self.units.len()));
         }
         if let Some(quality) = &self.quality {
             if !quality.issues.is_empty() {

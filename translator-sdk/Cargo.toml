@@ -10,6 +10,7 @@ members = [
     "crates/translator-rules",
     "crates/translator-resource",
     "crates/translator-runtime",
+    "crates/translator-learning",
     "crates/translator-nmt-bergamot",
     "crates/translator-nmt-ort",
     "tools/pack-dictionary",
@@ -41,6 +42,7 @@ translator-analysis = { path = "crates/translator-analysis" }
 translator-rules = { path = "crates/translator-rules" }
 translator-resource = { path = "crates/translator-resource" }
 translator-runtime = { path = "crates/translator-runtime" }
+translator-learning = { path = "crates/translator-learning" }
 translator-nmt-bergamot = { path = "crates/translator-nmt-bergamot" }
 translator-nmt-ort = { path = "crates/translator-nmt-ort" }
 pack-dictionary = { path = "tools/pack-dictionary" }

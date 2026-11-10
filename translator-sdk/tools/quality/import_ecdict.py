@@ -292,15 +292,32 @@ def main() -> int:
             definitions = [d.strip() for d in raw.get("definitions", []) if d.strip()]
             if not definitions:
                 continue
-            entries[key] = {
-                "headword": raw["headword"],
-                "pos": raw.get("pos"),
-                "definitions": definitions,
-                "_bnc": 0,
-                "_frq": 0,
-                "_is_phrase": " " in key,
-                "_supplement": True,
-            }
+            if key in entries and " " not in key:
+                # 单字技术补充不能丢掉 ECDICT 的日常义项（P18-L L-07）。
+                # 补充义排在前面，但保留已有义项；短语仍整体替换（避免旧错译）。
+                old = entries[key]
+                merged = list(definitions)
+                for sense in old["definitions"]:
+                    if sense not in merged:
+                        merged.append(sense)
+                old["definitions"] = merged[:12]
+                old_pos = [p for p in (raw.get("pos") or "").split("|") if p]
+                existing_pos = [p for p in (old.get("pos") or "").split("|") if p]
+                for p in old_pos:
+                    if p not in existing_pos:
+                        existing_pos.append(p)
+                old["pos"] = "|".join(existing_pos) if existing_pos else None
+                old["_supplement"] = True
+            else:
+                entries[key] = {
+                    "headword": raw["headword"],
+                    "pos": raw.get("pos"),
+                    "definitions": definitions,
+                    "_bnc": 0,
+                    "_frq": 0,
+                    "_is_phrase": " " in key,
+                    "_supplement": True,
+                }
             supplement_count += 1
         stats["supplement_entries"] = supplement_count
 

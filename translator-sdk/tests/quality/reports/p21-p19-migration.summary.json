@@ -1,0 +1,27 @@
+{
+  "cache_hits": 0,
+  "coverage": {
+    "model_ratio": 0.0975609756097561,
+    "model_units": 4,
+    "reliable_coverage": 0.9024390243902439,
+    "reliable_units": 37
+  },
+  "errors": 0,
+  "label": "p21-p19-migration",
+  "mode": "precise",
+  "resource_fingerprint": "dictionary.ecdict.en-zh@0.2.0#95dabf3cd899a348;composition.en-zh.daily@1#2a1c12a78a87fae287e6c48147f981ef5aaf457ede0e931a3a133e875035105d;semantic.composition.en-zh.daily@1#2a1c12a78a87fae287e6c48147f981ef5aaf457ede0e931a3a133e875035105d",
+  "route_stats": {
+    "best_candidates": 0,
+    "cache_hits": 0,
+    "dictionary_hits": 0,
+    "executions": 41,
+    "failures": 0,
+    "nmt_calls": 4,
+    "nmt_fallbacks": 0,
+    "remote_calls": 0,
+    "remote_fallbacks": 0,
+    "rule_matches": 37
+  },
+  "success": 41,
+  "total_wall_ms": 2722
+}

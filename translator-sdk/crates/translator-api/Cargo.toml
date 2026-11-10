@@ -26,6 +26,8 @@ nmt-ort = ["dep:translator-nmt-ort"]
 # 连 ORT 运行时一起编进来（会链接 onnxruntime 动态库，显著增加体积与内存）。
 # 分两层是为了让 CI 能在**没有运行时的机器**上先检查上层契约编译通过。
 nmt-ort-runtime = ["nmt-ort", "translator-nmt-ort/ort-runtime"]
+# 持续学习链（P17-A / P20-K 基础）。默认关闭：不写学习记录、不引入 SQLite 学习库。
+learning = ["dep:translator-learning"]
 
 [dependencies]
 sha2.workspace = true
@@ -37,6 +39,7 @@ translator-rules = { workspace = true, optional = true }
 translator-resource = { workspace = true, optional = true }
 translator-nmt-bergamot = { workspace = true, optional = true }
 translator-nmt-ort = { workspace = true, optional = true }
+translator-learning = { workspace = true, optional = true }
 
 [dev-dependencies]
 translator-analysis.workspace = true
@@ -45,6 +48,7 @@ translator-nmt-ort.workspace = true
 # 测试通过 `--all-features` 启用 mocks，解析出的特性对本 crate 同样生效
 translator-plugin-api = { workspace = true, features = ["mocks"] }
 pollster.workspace = true
+serde_json.workspace = true
 tempfile = "3"
 # P2.3 集成测试需要造一个真实词典包 + 一个资源仓库
 pack-dictionary.workspace = true

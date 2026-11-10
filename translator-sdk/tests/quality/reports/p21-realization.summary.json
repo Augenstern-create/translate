@@ -1,0 +1,27 @@
+{
+  "cache_hits": 0,
+  "coverage": {
+    "model_ratio": 0.0,
+    "model_units": 0,
+    "reliable_coverage": 1.0,
+    "reliable_units": 19
+  },
+  "errors": 0,
+  "label": "p21-realization",
+  "mode": "precise",
+  "resource_fingerprint": "dictionary.ecdict.en-zh@0.2.0#95dabf3cd899a348;composition.en-zh.daily@1#2a1c12a78a87fae287e6c48147f981ef5aaf457ede0e931a3a133e875035105d;semantic.composition.en-zh.daily@1#2a1c12a78a87fae287e6c48147f981ef5aaf457ede0e931a3a133e875035105d",
+  "route_stats": {
+    "best_candidates": 0,
+    "cache_hits": 0,
+    "dictionary_hits": 0,
+    "executions": 19,
+    "failures": 0,
+    "nmt_calls": 0,
+    "nmt_fallbacks": 0,
+    "remote_calls": 0,
+    "remote_fallbacks": 0,
+    "rule_matches": 19
+  },
+  "success": 19,
+  "total_wall_ms": 68
+}
