@@ -36,6 +36,9 @@ fn 纵向链路生成全部中间结构() {
     )
     .unwrap();
     let output = pipeline::analyze("She didn't buy two new books yesterday.", &lexicon).unwrap();
+    assert_eq!(output.route, pipeline::ParserRoute::Chart);
+    assert!(output.candidates >= 1);
+    assert!(output.candidate_score > 0);
     assert!(output.tokens.coverage.complete);
     for token in &output.tokens.tokens {
         assert!(token.span.end <= output.tokens.source.len());
@@ -158,6 +161,23 @@ fn 纵向链路生成全部中间结构() {
         assert!(!pipeline::validate(&output.meaning, &swapped).valid);
     }
 
+    // 保持 source/role 不变，只交换目标树中的主客体 NP 位置，必须拒绝。
+    let mut moved = output.chinese.clone();
+    let root = moved.root;
+    let mut np_positions: Vec<usize> = moved.nodes[root]
+        .children
+        .iter()
+        .enumerate()
+        .filter(|(_, id)| moved.nodes[**id].kind == pipeline::ChineseNodeKind::NounPhrase)
+        .map(|(index, _)| index)
+        .collect();
+    if np_positions.len() >= 2 {
+        let first = np_positions.remove(0);
+        let second = np_positions.remove(0);
+        moved.nodes[root].children.swap(first, second);
+        assert!(!pipeline::validate(&output.meaning, &moved).valid);
+    }
+
     // 否定作用域丢失必须拒绝。
     let mut no_neg = output.chinese.clone();
     for node in &mut no_neg.nodes {
@@ -191,6 +211,39 @@ fn 纵向链路生成全部中间结构() {
         .edges
         .iter()
         .any(|edge| edge.relation == pipeline::SyntaxRelation::Head));
+    let out =
+        pipeline::analyze("She bought two beautiful new books.", &lexicon).expect("multi-modifier");
+    assert_eq!(out.route, pipeline::ParserRoute::Chart);
+    assert!(out.text.contains("漂亮"));
+    assert!(out.text.contains("新"));
+    assert_eq!(
+        out.meaning
+            .relations
+            .iter()
+            .filter(|relation| relation.kind == pipeline::MeaningRelationKind::Modifier)
+            .count(),
+        2
+    );
+    let out = pipeline::analyze("The dog and the cat saw the man.", &lexicon).expect("coord");
+    assert_eq!(out.route, pipeline::ParserRoute::Chart);
+    assert!(out.text.contains("和"));
+    let out = pipeline::analyze("I don't want to go.", &lexicon).expect("want-neg");
+    assert_eq!(out.text, "我不想去。");
+    assert_eq!(out.route, pipeline::ParserRoute::Chart);
+    let out = pipeline::analyze("The dog saw the cat and the man.", &lexicon).expect("obj-coord");
+    assert_eq!(out.route, pipeline::ParserRoute::Chart);
+    assert!(out.text.contains("和"));
+    let out =
+        pipeline::analyze("I bought two books and three pens.", &lexicon).expect("quantity-coord");
+    assert_eq!(out.route, pipeline::ParserRoute::Chart);
+    assert!(out.text.contains("两本书"));
+    assert!(out.text.contains("三支笔"));
+    let out = pipeline::analyze("If it rains, I don't go.", &lexicon).expect("cond-neg");
+    assert_eq!(out.route, pipeline::ParserRoute::Chart);
+    assert_eq!(out.text, "如果下雨，我不去。");
+    let out = pipeline::analyze("She went to school.", &lexicon).expect("pp");
+    assert_eq!(out.route, pipeline::ParserRoute::Chart);
+    assert!(out.text.contains("学校"));
     let out = pipeline::analyze("I want to buy a book.", &lexicon).expect("want");
     assert_eq!(out.text, "我想买一本书。");
     let out = pipeline::analyze("If it rains, I will stay home.", &lexicon).expect("condition");
@@ -305,4 +358,113 @@ fn 图变形不改变语义关系() {
     assert!(roles
         .iter()
         .any(|(kind, value)| kind == "Patient" && value.contains("buy->she")));
+}
+
+#[test]
+fn 限定词短语由_chart组合() {
+    let lexicon = test_lexicon();
+    let graph = (pipeline::ChartParser { lexicon: &lexicon })
+        .parse(&pipeline::tokenize_lossless("The dog saw the cat."))
+        .expect("chart");
+    assert!(graph
+        .edges
+        .iter()
+        .any(|edge| edge.relation == pipeline::SyntaxRelation::Determiner));
+    assert!(graph
+        .edges
+        .iter()
+        .any(|edge| edge.relation == pipeline::SyntaxRelation::Subject));
+    assert!(graph
+        .edges
+        .iter()
+        .any(|edge| edge.relation == pipeline::SyntaxRelation::Object));
+    let out = pipeline::analyze("The dog saw the cat.", &lexicon).expect("analyze");
+    assert_eq!(out.route, pipeline::ParserRoute::Chart);
+}
+
+#[test]
+fn chart_保留跨度候选() {
+    let lexicon = test_lexicon();
+    let stream = pipeline::tokenize_lossless("The dog saw the cat.");
+    let chart = (pipeline::ChartParser { lexicon: &lexicon })
+        .parse_chart(&stream)
+        .expect("chart");
+    assert!(chart.items.iter().any(|item| item.rule == "np.det"));
+    assert!(chart
+        .items
+        .iter()
+        .any(|item| item.category == pipeline::ChartCategory::Clause));
+    let words = stream
+        .tokens
+        .iter()
+        .filter(|token| {
+            matches!(
+                token.kind,
+                pipeline::TokenKind::Word | pipeline::TokenKind::Number
+            )
+        })
+        .count();
+    assert!(!chart
+        .candidates(0, words, pipeline::ChartCategory::Clause)
+        .is_empty());
+}
+
+#[test]
+fn pp_附着保留多个候选() {
+    let lexicon = test_lexicon();
+    let stream = pipeline::tokenize_lossless("The dog saw the man with a book.");
+    let chart = (pipeline::ChartParser { lexicon: &lexicon })
+        .parse_chart(&stream)
+        .expect("chart");
+    let words = stream
+        .tokens
+        .iter()
+        .filter(|token| {
+            matches!(
+                token.kind,
+                pipeline::TokenKind::Word | pipeline::TokenKind::Number
+            )
+        })
+        .count();
+    let clauses = chart.candidates(0, words, pipeline::ChartCategory::Clause);
+    assert!(
+        clauses.len() >= 2,
+        "PP attachment candidates should be preserved"
+    );
+}
+
+#[test]
+fn relative_clause_结构候选() {
+    let lexicon = test_lexicon();
+    let graph = (pipeline::ChartParser { lexicon: &lexicon })
+        .parse(&pipeline::tokenize_lossless("The man who saw the dog ran."))
+        .expect("chart");
+    assert!(graph
+        .edges
+        .iter()
+        .any(|edge| edge.relation == pipeline::SyntaxRelation::Relative));
+    let out = pipeline::analyze("The man who saw the dog ran.", &lexicon).expect("relative");
+    assert_eq!(out.route, pipeline::ParserRoute::Chart);
+    assert!(out.text.contains("看见狗"));
+}
+
+#[test]
+fn clause_coord_syntax() {
+    let lexicon = test_lexicon();
+    let graph = (pipeline::ChartParser { lexicon: &lexicon })
+        .parse(&pipeline::tokenize_lossless(
+            "The dog ran and the cat slept.",
+        ))
+        .expect("chart");
+    assert!(graph
+        .edges
+        .iter()
+        .any(|edge| edge.relation == pipeline::SyntaxRelation::Conjunct));
+    assert!(graph
+        .edges
+        .iter()
+        .any(|edge| edge.relation == pipeline::SyntaxRelation::Conjunction));
+    let out = pipeline::analyze("The dog ran and the cat slept.", &lexicon).expect("clause-coord");
+    assert_eq!(out.route, pipeline::ParserRoute::Chart);
+    assert_eq!(out.text, "狗跑了，猫睡觉了。");
 }
