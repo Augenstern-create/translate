@@ -454,7 +454,13 @@ fn run_job(job: Job) {
                 exec.meter.record_unknown_billable();
                 exec.meter.record_failure();
                 let retryable = err.kind.is_retryable();
-                if retryable && attempt <= exec.max_retries && !cancelled() && !expired() {
+                // 已发出请求后的失败：最多再试一次（可能已经计费）
+                let retry_budget_left = if err.post_send {
+                    attempt <= 1
+                } else {
+                    attempt <= exec.max_retries
+                };
+                if retryable && retry_budget_left && !cancelled() && !expired() {
                     if !sleep_within(backoff_delay(attempt), deadline, cancel.as_ref()) {
                         if cancelled() {
                             exec.meter.record_cancelled();

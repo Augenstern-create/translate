@@ -69,6 +69,17 @@ impl MockResponse {
         self
     }
 
+    /// 响应体故意截断：头部声明 `declared` 字节，实际只写 `actual` 字节就关闭。
+    /// 用来模拟"请求已发出、读响应时连接被重置"。
+    pub fn truncated(body: &str, declared: usize) -> Self {
+        Self {
+            status: 200,
+            body: body.to_string(),
+            delay: None,
+            headers: vec![("X-Truncated-Length".to_string(), declared.to_string())],
+        }
+    }
+
     pub fn with_header(mut self, name: &str, value: &str) -> Self {
         self.headers.push((name.to_string(), value.to_string()));
         self
@@ -212,14 +223,19 @@ where
 
     let mut stream = stream;
     let mut extra = String::new();
+    let mut declared_length = response.body.len();
     for (name, value) in &response.headers {
+        if name.eq_ignore_ascii_case("X-Truncated-Length") {
+            declared_length = value.parse().unwrap_or(response.body.len());
+            continue;
+        }
         extra.push_str(&format!("{name}: {value}\r\n"));
     }
     let payload = format!(
         "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n{extra}Connection: close\r\n\r\n{}",
         response.status,
         reason(response.status),
-        response.body.len(),
+        declared_length,
         response.body
     );
     stream.write_all(payload.as_bytes())?;

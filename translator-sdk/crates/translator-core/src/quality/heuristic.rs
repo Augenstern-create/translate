@@ -76,6 +76,38 @@ pub fn check(source: &str, output: &str, target: &LanguageTag, report: &mut Qual
     }
 }
 
+/// 分段策略下对**单个片段**做保守的合理性检查。
+///
+/// 分段回退的结构完整性由保护模块保证，但"模型对这一段答非所问"没有任何
+/// 结构信号（返回的是非空、合法语言的内容）。这里只拦截**明显不可能**的情况：
+///
+/// - 目标语言是中文，片段有实义英文，却一个汉字都没有；
+/// - 片段译文相对源片段过短（<15%）或过长（>4×）。
+///
+/// 宁可漏判（交给人看），也不要把正常译文误判成错误。
+pub fn implausible_segment(source: &str, output: &str, target: &LanguageTag) -> Option<String> {
+    let source_letters = source.chars().filter(|c| c.is_ascii_alphabetic()).count();
+    let source_chars = source.chars().count();
+    let output_chars = output.chars().count();
+    let has_han = output
+        .chars()
+        .any(|c| ('\u{4E00}'..='\u{9FFF}').contains(&c));
+
+    if target.as_str().starts_with("zh") && source_letters >= 4 && !has_han {
+        return Some("片段译文里没有中文（模型可能答非所问）".to_string());
+    }
+    if source_letters >= 8 {
+        let ratio = output_chars as f32 / source_chars.max(1) as f32;
+        if ratio < 0.15 {
+            return Some(format!("片段译文过短（比例 {ratio:.2}）"));
+        }
+        if ratio > 4.0 {
+            return Some(format!("片段译文过长（比例 {ratio:.2}）"));
+        }
+    }
+    None
+}
+
 fn has_conditional_cue(lower_source: &str) -> bool {
     let padded = format!(" {lower_source} ");
     [
@@ -273,6 +305,19 @@ mod tests {
             .issues
             .iter()
             .any(|i| i.kind == QualityIssueKind::ConditionalDropped));
+    }
+
+    #[test]
+    fn 片段合理性检查只拦明显异常() {
+        let zh = LanguageTag::new("zh-Hans").unwrap();
+        // 正常译文不拦
+        assert!(implausible_segment("Visit example.com", "访问 example.com", &zh).is_none());
+        // 完全没有中文 → 拦
+        assert!(implausible_segment("Visit example.com now", "nonsense", &zh).is_some());
+        // 明显过短 → 拦
+        assert!(implausible_segment("and enter the secret code", "好", &zh).is_some());
+        // 纯符号片段不判（没有实义字母）
+        assert!(implausible_segment(" - ", " - ", &zh).is_none());
     }
 
     #[test]

@@ -232,6 +232,7 @@ pub fn execute_once(
         builder = builder.header("authorization", format!("Bearer {key}"));
     }
 
+    // `send()` 失败：请求**可能**已经发出（也可能连不上），按传输错误处理。
     let mut response = builder.send(body.as_str()).map_err(classify_transport)?;
     let status = response.status().as_u16();
     // 先读 Retry-After：读 body 之后响应对象会被消费
@@ -240,12 +241,14 @@ pub fn execute_once(
         .get("retry-after")
         .and_then(|value| value.to_str().ok())
         .and_then(parse_retry_after);
+    // 到这里响应头已经收到：说明请求一定已经抵达服务端，读体失败很可能已经计费，
+    // 因此显式标记 post_send（重试会加倍计费风险）。
     let text = response
         .body_mut()
         .with_config()
         .limit(max_body)
         .read_to_string()
-        .map_err(classify_transport)?;
+        .map_err(|e| classify_transport(e).after_send())?;
     Ok(HttpOutcome {
         status,
         body: text,

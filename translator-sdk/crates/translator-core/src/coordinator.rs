@@ -105,6 +105,10 @@ pub struct CoordinatorConfig {
     pub domain: Option<String>,
     /// 资源指纹（进缓存键与诊断，例如词典 `id@version`）。
     pub resource_fingerprint: String,
+    /// 可选：把缓存持久化到该文件（**会写入译文**，默认关闭）。
+    ///
+    /// 仅用于 CLI/桌面这类单用户场景；多用户服务不要开启。
+    pub cache_path: Option<std::path::PathBuf>,
 }
 
 impl std::fmt::Debug for CoordinatorConfig {
@@ -168,6 +172,7 @@ impl Default for CoordinatorConfig {
             privacy_scope: "default".to_string(),
             domain: None,
             resource_fingerprint: String::new(),
+            cache_path: None,
         }
     }
 }
@@ -194,7 +199,10 @@ pub struct Coordinator {
 
 impl Coordinator {
     pub fn new(registry: Arc<PluginRegistry>, config: CoordinatorConfig) -> Self {
-        let cache = QueryCache::new(config.cache_capacity);
+        let cache = match &config.cache_path {
+            Some(path) => QueryCache::load_from_file(path, config.cache_capacity).0,
+            None => QueryCache::new(config.cache_capacity),
+        };
         let language_identifier = config
             .language_identifier
             .clone()
@@ -603,7 +611,8 @@ impl Coordinator {
             }
         }
 
-        // 5. 保护文本
+        // 5. 保护文本（多单元时按单元切分，但最终校验仍针对整段）
+        let units = self.split_units(&work_text, options.paragraph_strategy);
         let mut plan = ProtectionPlan::prepare(&work_text, &self.config.protection)?;
         self.check_cancel(cancel)?;
 
@@ -668,8 +677,22 @@ impl Coordinator {
                 route.engine.record_content_retry();
             }
 
-            let executed = self
-                .execute(
+            let executed = if units.len() > 1 {
+                self.execute_units(
+                    &route,
+                    &units,
+                    &constraints,
+                    req,
+                    options,
+                    &source,
+                    deadline,
+                    cancel,
+                    retry_hint.as_deref(),
+                    &budget,
+                )
+                .await
+            } else {
+                self.execute(
                     &route,
                     &plan,
                     &constraints,
@@ -681,7 +704,8 @@ impl Coordinator {
                     retry_hint.as_deref(),
                     &budget,
                 )
-                .await;
+                .await
+            };
 
             match executed {
                 Ok(executed) => {
@@ -809,6 +833,7 @@ impl Coordinator {
             cached.diagnostics.elapsed_ms = 0;
             cache.insert(key, cached);
         }
+        self.persist_cache();
 
         Ok(TranslateOutput {
             result,
@@ -966,6 +991,86 @@ impl Coordinator {
         Ok((quality, terms, warnings))
     }
 
+    /// 按段落策略把文本切成翻译单元。
+    ///
+    /// - `Auto` / `Whole` / `Best` / `Context`：整段一次（默认，上下文最完整）；
+    /// - `Sentence`：逐句；
+    /// - `Group`：每 3 句一组。
+    fn split_units(&self, text: &str, strategy: ParagraphStrategy) -> Vec<String> {
+        match strategy {
+            ParagraphStrategy::Sentence => split_sentences(text),
+            ParagraphStrategy::Group => {
+                let sentences = split_sentences(text);
+                sentences.chunks(3).map(|chunk| chunk.join(" ")).collect()
+            }
+            _ => vec![text.to_string()],
+        }
+    }
+
+    /// 多单元执行：每段独立保护/还原，但共享同一份预算、截止时间与取消令牌。
+    #[allow(clippy::too_many_arguments)]
+    async fn execute_units(
+        &self,
+        route: &RouteOutcome,
+        units: &[String],
+        constraints: &[TermConstraint],
+        req: &TranslateRequest,
+        options: &TranslateOptions,
+        source: &LanguageTag,
+        deadline: Option<Instant>,
+        cancel: Option<&CancelToken>,
+        retry_hint: Option<&str>,
+        budget: &Arc<RequestBudget>,
+    ) -> Result<Executed, TranslationError> {
+        let mut parts = Vec::with_capacity(units.len());
+        let mut usage = TokenUsage::default();
+        let mut used_usage = false;
+        let mut model_id = None;
+        let mut model_revision = None;
+        let mut warnings = Vec::new();
+        let mut prompt_version = String::new();
+
+        for unit in units {
+            let plan = ProtectionPlan::prepare(unit, &self.config.protection)?;
+            let executed = self
+                .execute(
+                    route,
+                    &plan,
+                    constraints,
+                    req,
+                    options,
+                    source,
+                    deadline,
+                    cancel,
+                    retry_hint,
+                    budget,
+                )
+                .await?;
+            if let Some(u) = executed.usage {
+                usage.input_tokens += u.input_tokens;
+                usage.output_tokens += u.output_tokens;
+                used_usage = true;
+            }
+            model_id = executed.model_id.or(model_id);
+            model_revision = executed.model_revision.or(model_revision);
+            if prompt_version.is_empty() {
+                prompt_version = executed.prompt_version;
+            }
+            warnings.extend(executed.warnings);
+            parts.push(executed.text);
+        }
+
+        Ok(Executed {
+            text: parts.join(""),
+            engine_id: route.engine_id(),
+            model_id,
+            model_revision,
+            prompt_version,
+            usage: used_usage.then_some(usage),
+            warnings,
+        })
+    }
+
     /// 应用确定性规则包。规则失败不影响主链（只记录未生效）。
     fn apply_rules(&self, text: &str, source: &LanguageTag, target: &LanguageTag) -> RuleOutcome {
         match &self.config.rules {
@@ -980,6 +1085,24 @@ impl Coordinator {
             version: rules.version(),
             applied: applied.to_vec(),
         })
+    }
+
+    /// 把缓存写回磁盘（未配置 `cache_path` 时什么都不做）。
+    fn persist_cache(&self) {
+        let Some(path) = &self.config.cache_path else {
+            return;
+        };
+        if let Ok(cache) = self.cache.lock() {
+            if let Err(err) = cache.save_to_file(path) {
+                // 持久化失败不影响本次翻译，只在 stderr 留痕
+                eprintln!("缓存写入失败（{}）：{err}", path.display());
+            }
+        }
+    }
+
+    /// 显式落盘（宿主退出前可调用）。
+    pub fn flush_cache(&self) {
+        self.persist_cache();
     }
 
     fn cache_get(&self, key: &CacheKey) -> Option<CacheEntry> {
@@ -1149,6 +1272,7 @@ impl Coordinator {
                 },
             );
         }
+        self.persist_cache();
         result.elapsed_ms = elapsed_ms;
         Ok(TranslateOutput {
             result,
@@ -1244,6 +1368,16 @@ impl Coordinator {
                         return Err(TranslationError::new(
                             TranslationErrorCode::InvalidBackendResponse,
                             "模型对非空片段返回了空译文",
+                        ));
+                    }
+                    // 分段回退的结构完整性由保护模块保证，但"答非所问"没有结构信号，
+                    // 这里做保守的语义合理性检查（K-03）。
+                    if let Some(reason) =
+                        quality::heuristic::implausible_segment(segment, &output.text, &req.target)
+                    {
+                        return Err(TranslationError::new(
+                            TranslationErrorCode::IntegrityFailure,
+                            format!("分段译文不可信：{reason}"),
                         ));
                     }
                     if let Some(u) = output.usage {
@@ -1398,6 +1532,54 @@ fn hash8(text: &str) -> String {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     text.hash(&mut hasher);
     format!("{:08x}", hasher.finish() as u32)
+}
+
+#[cfg(test)]
+mod unit_split_tests {
+    use super::*;
+
+    #[test]
+    fn 句子切分保留标点且不切断小数点() {
+        let units = split_sentences("Version 2.1.3 is out. It costs 39.99 dollars! Really?");
+        assert_eq!(
+            units,
+            vec![
+                "Version 2.1.3 is out.".to_string(),
+                "It costs 39.99 dollars!".to_string(),
+                "Really?".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn 单句不会被切分() {
+        assert_eq!(split_sentences("Hello."), vec!["Hello.".to_string()]);
+        assert_eq!(split_sentences("无标点"), vec!["无标点".to_string()]);
+    }
+
+    fn test_coordinator() -> Coordinator {
+        let mut registry = PluginRegistry::new();
+        registry
+            .register_engine(translator_plugin_api::mocks::MockNmtEngine::new())
+            .expect("注册 mock 引擎失败");
+        Coordinator::new(Arc::new(registry), CoordinatorConfig::default())
+    }
+
+    #[test]
+    fn 段落策略决定单元数() {
+        let c = test_coordinator();
+        let text = "One. Two. Three. Four.";
+        assert_eq!(c.split_units(text, ParagraphStrategy::Auto).len(), 1);
+        assert_eq!(c.split_units(text, ParagraphStrategy::Whole).len(), 1);
+        assert_eq!(c.split_units(text, ParagraphStrategy::Sentence).len(), 4);
+        // 每 3 句一组 → 2 组
+        assert_eq!(c.split_units(text, ParagraphStrategy::Group).len(), 2);
+        assert_eq!(
+            c.split_units("Only one.", ParagraphStrategy::Sentence)
+                .len(),
+            1
+        );
+    }
 }
 
 #[cfg(test)]
@@ -1584,4 +1766,41 @@ mod finalize_tests {
         assert_eq!(err.code, TranslationErrorCode::IntegrityFailure);
         assert!(err.message.contains("术语"), "{}", err.message);
     }
+}
+
+/// 把文本切成句子（保留句末标点）。
+///
+/// 只在 `ParagraphStrategy::Sentence` / `Group` 下使用：切分点要求"句末标点 + 空白"，
+/// 避免把 `3.14`、`example.com` 这类内容切断。
+pub fn split_sentences(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut current = String::new();
+    let chars: Vec<char> = text.chars().collect();
+
+    for (index, c) in chars.iter().enumerate() {
+        current.push(*c);
+        let is_end = matches!(c, '.' | '!' | '?' | '。' | '！' | '？');
+        if !is_end {
+            continue;
+        }
+        let next = chars.get(index + 1);
+        let boundary = next.is_none_or(|n| n.is_whitespace());
+        if !boundary {
+            continue;
+        }
+        let trimmed = current.trim();
+        if !trimmed.is_empty() {
+            out.push(trimmed.to_string());
+        }
+        current.clear();
+    }
+
+    let tail = current.trim();
+    if !tail.is_empty() {
+        out.push(tail.to_string());
+    }
+    if out.is_empty() {
+        out.push(text.trim().to_string());
+    }
+    out
 }

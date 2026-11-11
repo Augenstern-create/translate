@@ -100,6 +100,11 @@ pub struct HttpError {
     pub message: String,
     /// 已尝试次数（含首次）。用于诊断成本失控。
     pub attempts: u32,
+    /// 错误发生在**请求已经发出之后**（例如读取响应体时连接被重置）。
+    ///
+    /// 这类失败很可能已经产生费用，因此重试策略更保守：最多再试一次，
+    /// 且计入 `potentially_billable_unknown_calls`。
+    pub post_send: bool,
 }
 
 impl HttpError {
@@ -109,6 +114,7 @@ impl HttpError {
             status: None,
             message: message.into(),
             attempts: 1,
+            post_send: false,
         }
     }
 
@@ -135,6 +141,12 @@ impl HttpError {
 
     pub fn with_attempts(mut self, attempts: u32) -> Self {
         self.attempts = attempts;
+        self
+    }
+
+    /// 标记"请求已发出后失败"（响应体读取中断等）。
+    pub fn after_send(mut self) -> Self {
+        self.post_send = true;
         self
     }
 

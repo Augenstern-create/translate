@@ -179,6 +179,11 @@ impl Translator {
         self.coordinator.clear_cache();
     }
 
+    /// 显式把缓存写回磁盘（未配置 `cache_file` 时什么都不做）。
+    pub fn flush_cache(&self) {
+        self.coordinator.flush_cache();
+    }
+
     pub fn cache_stats(&self) -> CacheStats {
         self.coordinator.cache_stats()
     }
@@ -469,6 +474,12 @@ impl TranslatorBuilder {
 
     pub fn cache_capacity(mut self, capacity: usize) -> Self {
         self.config.cache_capacity = capacity;
+        self
+    }
+
+    /// 把缓存持久化到文件（**会写入译文**，默认关闭；仅建议单用户场景使用）。
+    pub fn cache_file(mut self, path: impl Into<std::path::PathBuf>) -> Self {
+        self.config.cache_path = Some(path.into());
         self
     }
 

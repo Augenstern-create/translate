@@ -626,6 +626,34 @@ fn 取消后不再重试也不切换() {
 }
 
 #[test]
+fn 响应中断最多再试一次避免重复计费() {
+    // 头部声明 500 字节，实际只给 20 字节就断开：请求肯定已经发出。
+    let h = harness(|_| MockResponse::truncated(r#"{"choices":["#, 500));
+    let engine = engine_from(&simple_config(&h.url(), 5, 3000));
+
+    let err = run(&engine, &JobSpec::new("Hello.")).unwrap_err();
+    assert!(
+        matches!(
+            err.code,
+            TranslationErrorCode::BackendUnavailable | TranslationErrorCode::InvalidBackendResponse
+        ),
+        "{}",
+        err.message
+    );
+    assert!(
+        h.hits() <= 2,
+        "请求已发出后的失败最多再试一次，实际 {} 次",
+        h.hits()
+    );
+
+    let usage = engine.usage();
+    assert!(
+        usage.potentially_billable_unknown_calls >= 1,
+        "响应中断必须计入疑似计费：{usage:?}"
+    );
+}
+
+#[test]
 fn 用量统计区分完成与未知计费() {
     // 第一次成功、第二次连接被重置（服务端直接关闭）→ 未知计费
     let ok_once = harness(|_| MockResponse::completion("好。"));

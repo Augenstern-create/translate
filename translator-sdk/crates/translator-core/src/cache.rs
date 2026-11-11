@@ -179,9 +179,80 @@ impl CacheKey {
     pub fn identity(&self) -> &CacheIdentity {
         &self.identity
     }
+
+    /// 跨进程稳定的键标识（十六进制）。只用于磁盘缓存的索引，不参与内存哈希。
+    pub fn stable_id(&self) -> String {
+        let mut hasher = DefaultHasher::new();
+        self.hash(&mut hasher);
+        format!("{:016x}", hasher.finish())
+    }
 }
 
-/// 带容量上限的查询缓存（简单 FIFO 淘汰）。
+/// 磁盘缓存条目的身份（与内存键一一对应）。
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct PersistedEntry {
+    text_hash: u64,
+    source: String,
+    target: String,
+    backend_id: String,
+    model_id: Option<String>,
+    model_revision: Option<String>,
+    prompt_version: String,
+    glossary_version: String,
+    protection_version: String,
+    mode: String,
+    text_kind: String,
+    strategy: String,
+    route: String,
+    context_fingerprint: String,
+    privacy_scope: String,
+    generation_config_hash: String,
+    /// 译文（**会落盘**，只有显式配置 `cache_path` 时才写）。
+    text: String,
+    engine_id: String,
+    result_model_id: Option<String>,
+}
+
+/// 磁盘缓存文件格式。
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct PersistedCache {
+    schema_version: u32,
+    entries: Vec<PersistedEntry>,
+}
+
+const CACHE_SCHEMA_VERSION: u32 = 1;
+/// 磁盘缓存最多保存的条目数（防止文件无限增长）。
+const PERSIST_MAX_ENTRIES: usize = 512;
+
+fn mode_str(mode: TranslationMode) -> String {
+    mode.as_str().to_string()
+}
+fn mode_parse(raw: &str) -> TranslationMode {
+    if raw == "fast" {
+        TranslationMode::Fast
+    } else {
+        TranslationMode::Precise
+    }
+}
+fn kind_parse(raw: &str) -> TextKind {
+    match raw {
+        "word" | "phrase" => TextKind::Word,
+        "sentence" => TextKind::Sentence,
+        "paragraph" => TextKind::Paragraph,
+        "document" => TextKind::Document,
+        _ => TextKind::Auto,
+    }
+}
+fn route_parse(raw: &str) -> TranslationRoute {
+    match raw {
+        "dictionary" => TranslationRoute::Dictionary,
+        "rule" => TranslationRoute::Rule,
+        "local_nmt" => TranslationRoute::LocalNmt,
+        "mixed" => TranslationRoute::Mixed,
+        _ => TranslationRoute::Remote,
+    }
+}
+
 pub struct QueryCache {
     capacity: usize,
     map: HashMap<CacheKey, CacheEntry>,
@@ -253,6 +324,126 @@ impl QueryCache {
     pub fn clear(&mut self) {
         self.map.clear();
         self.order.clear();
+    }
+
+    /// 把缓存写入文件（原子替换）。
+    ///
+    /// 只在显式配置了 `cache_path` 时调用。写入的是**译文**，
+    /// 因此这一步必须是用户显式选择（隐私），见 docs/known-issues.md K-12。
+    pub fn save_to_file(&self, path: &std::path::Path) -> std::io::Result<()> {
+        let mut entries: Vec<PersistedEntry> = self
+            .map
+            .iter()
+            .take(PERSIST_MAX_ENTRIES)
+            .map(|(key, entry)| {
+                let id = &key.identity;
+                PersistedEntry {
+                    text_hash: key.text_hash,
+                    source: id.source.clone(),
+                    target: id.target.clone(),
+                    backend_id: id.backend_id.clone(),
+                    model_id: id.model_id.clone(),
+                    model_revision: id.model_revision.clone(),
+                    prompt_version: id.prompt_version.clone(),
+                    glossary_version: id.glossary_version.clone(),
+                    protection_version: id.protection_version.clone(),
+                    mode: mode_str(id.mode),
+                    text_kind: id.text_kind.as_str().to_string(),
+                    strategy: id.strategy.clone(),
+                    route: id.route.as_str().to_string(),
+                    context_fingerprint: id.context_fingerprint.clone(),
+                    privacy_scope: id.privacy_scope.clone(),
+                    generation_config_hash: id.generation_config_hash.clone(),
+                    text: entry.result.text.clone(),
+                    engine_id: entry.result.engine_id.clone(),
+                    result_model_id: entry.result.model_id.clone(),
+                }
+            })
+            .collect();
+        entries.sort_by(|a, b| {
+            (a.text_hash, &a.backend_id, &a.prompt_version).cmp(&(
+                b.text_hash,
+                &b.backend_id,
+                &b.prompt_version,
+            ))
+        });
+
+        let payload = PersistedCache {
+            schema_version: CACHE_SCHEMA_VERSION,
+            entries,
+        };
+        let json = serde_json::to_string(&payload)
+            .map_err(|e| std::io::Error::other(format!("缓存序列化失败：{e}")))?;
+
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)?;
+            }
+        }
+        // 先写临时文件再 rename：进程中断也不会留下半个文件
+        let tmp = path.with_extension("tmp");
+        std::fs::write(&tmp, json)?;
+        std::fs::rename(&tmp, path)?;
+        Ok(())
+    }
+
+    /// 从文件加载。文件缺失/损坏/版本不符时返回空缓存（不 panic、不阻塞启动）。
+    pub fn load_from_file(path: &std::path::Path, capacity: usize) -> (Self, usize) {
+        let mut cache = Self::new(capacity);
+        let Ok(text) = std::fs::read_to_string(path) else {
+            return (cache, 0);
+        };
+        let Ok(payload) = serde_json::from_str::<PersistedCache>(&text) else {
+            return (cache, 0);
+        };
+        if payload.schema_version != CACHE_SCHEMA_VERSION {
+            return (cache, 0);
+        }
+
+        let mut loaded = 0usize;
+        for entry in payload.entries.into_iter().take(capacity) {
+            let identity = CacheIdentity::new(entry.backend_id, mode_parse(&entry.mode))
+                .with_languages(entry.source, entry.target)
+                .with_model(entry.model_id, entry.model_revision)
+                .with_prompt(entry.prompt_version)
+                .with_glossary(entry.glossary_version)
+                .with_protection(entry.protection_version)
+                .with_kind(kind_parse(&entry.text_kind))
+                .with_strategy(entry.strategy)
+                .with_route(route_parse(&entry.route))
+                .with_context(entry.context_fingerprint)
+                .with_privacy_scope(entry.privacy_scope)
+                .with_generation_config(entry.generation_config_hash);
+
+            let key = CacheKey {
+                text_hash: entry.text_hash,
+                identity,
+            };
+            // 语言标签从磁盘恢复时不可信，直接复用中英标签占位；
+            // 真正决定命中与否的是 key（含语言字符串），结果里的标签只用于展示。
+            let source =
+                translator_types::LanguageTag::new("en").expect("常量语言标签 en 一定合法");
+            let target =
+                translator_types::LanguageTag::new("zh-CN").expect("常量语言标签 zh-CN 一定合法");
+            let result = TranslationResult {
+                text: entry.text,
+                source,
+                target,
+                engine_id: entry.engine_id.clone(),
+                model_id: entry.result_model_id,
+                elapsed_ms: 0,
+                warnings: Vec::new(),
+            };
+            cache.insert(
+                key,
+                CacheEntry {
+                    result,
+                    diagnostics: TranslationDiagnostics::minimal(entry.engine_id),
+                },
+            );
+            loaded += 1;
+        }
+        (cache, loaded)
     }
 
     pub fn stats(&self) -> CacheStats {
@@ -409,6 +600,42 @@ mod tests {
         cache.insert(CacheKey::new("a", identity()), entry("甲"));
         cache.clear();
         assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn 磁盘缓存可以往返加载() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.json");
+
+        let mut cache = QueryCache::new(8);
+        let key = CacheKey::new("hello", identity());
+        cache.insert(key.clone(), entry("你好"));
+        cache.save_to_file(&path).unwrap();
+
+        let (loaded, count) = QueryCache::load_from_file(&path, 8);
+        assert_eq!(count, 1);
+        let hit = loaded.map.get(&key).expect("同一身份+文本应命中磁盘缓存");
+        assert_eq!(hit.result.text, "你好");
+    }
+
+    #[test]
+    fn 损坏的缓存文件被忽略而不是崩溃() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.json");
+        std::fs::write(&path, "{ not json").unwrap();
+
+        let (cache, count) = QueryCache::load_from_file(&path, 8);
+        assert_eq!(count, 0);
+        assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn 版本不符的缓存文件被忽略() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.json");
+        std::fs::write(&path, r#"{"schema_version":99,"entries":[]}"#).unwrap();
+        let (_, count) = QueryCache::load_from_file(&path, 8);
+        assert_eq!(count, 0);
     }
 
     #[test]

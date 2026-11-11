@@ -163,16 +163,22 @@ fn honest_engine() -> Arc<ScriptedEngine> {
 }
 
 /// 会吞掉保护标记的引擎（真实模型的常见故障）。
+///
+/// 标记模式下返回"丢了标记的英文"（必然还原失败）；
+/// 分段模式下返回正常中文（分段策略不该因为模型吞标记而失败）。
 fn marker_eating_engine() -> Arc<ScriptedEngine> {
     ScriptedEngine::new("scripted.marker-eater", |job, _| {
         let mut out = job.text.to_string();
-        while let Some(start) = out.find('\u{27E6}') {
-            let Some(end_rel) = out[start..].find('\u{27E7}') else {
-                break;
-            };
-            out.replace_range(start..start + end_rel + 3, "");
+        if out.contains('\u{27E6}') {
+            while let Some(start) = out.find('\u{27E6}') {
+                let Some(end_rel) = out[start..].find('\u{27E7}') else {
+                    break;
+                };
+                out.replace_range(start..start + end_rel + 3, "");
+            }
+            return Ok(out);
         }
-        Ok(out)
+        Ok("请访问并输入。".to_string())
     })
 }
 
@@ -462,6 +468,38 @@ fn 第二次相同请求命中缓存且不再调用模型() {
         .warnings
         .iter()
         .any(|w| matches!(w, translator_api::TranslationWarning::CacheHit)));
+}
+
+#[test]
+fn 磁盘缓存在新实例之间生效() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("cache.json");
+    let engine = honest_engine();
+
+    let first = Translator::builder()
+        .engine(Arc::clone(&engine) as Arc<dyn TranslationEngine>)
+        .expect("注册失败")
+        .cache_file(&path)
+        .build()
+        .unwrap();
+    let text = pollster::block_on(first.translate(&request("Hello.")))
+        .expect("首次应成功")
+        .text;
+    assert_eq!(engine.calls(), 1);
+    first.flush_cache();
+
+    // 新的实例（进程内重建，模拟跨进程）应直接命中磁盘缓存
+    let second = Translator::builder()
+        .engine(Arc::clone(&engine) as Arc<dyn TranslationEngine>)
+        .expect("注册失败")
+        .cache_file(&path)
+        .build()
+        .unwrap();
+    let cached = pollster::block_on(second.translate_with_diagnostics(&request("Hello.")))
+        .expect("应命中缓存");
+    assert_eq!(cached.result.text, text);
+    assert!(cached.diagnostics.cache_hit, "应标记为缓存命中");
+    assert_eq!(engine.calls(), 1, "命中磁盘缓存不应再调用引擎");
 }
 
 #[test]
@@ -879,6 +917,73 @@ fn 预算耗尽后不再重试() {
     .unwrap_err();
     assert_eq!(err.code, TranslationErrorCode::BudgetExceeded);
     assert_eq!(engine.calls(), 1, "只有一次调用额度");
+}
+
+#[test]
+fn 分段回退遇到答非所问的译文会失败而不是拼出乱码() {
+    // 引擎对任何输入都回同一句无关英文：标记尝试失败 → 分段回退，
+    // 每段都不含中文，必须被拦截（K-03）。
+    let engine = ScriptedEngine::new("scripted.unrelated", |_, _| Ok("nonsense".to_string()));
+    let translator = translator_with(Arc::clone(&engine) as Arc<dyn TranslationEngine>);
+
+    let err = pollster::block_on(translator.translate(&request(
+        "Visit https://example.com/a and enter the code {file} now.",
+    )))
+    .unwrap_err();
+    assert_eq!(
+        err.code,
+        TranslationErrorCode::IntegrityFailure,
+        "{}",
+        err.message
+    );
+    assert_eq!(translator.cache_stats().len, 0, "失败结果不得进缓存");
+}
+
+#[test]
+fn 逐句策略按句切分并共享预算() {
+    let engine = ScriptedEngine::new("scripted.unit", |job, _| Ok(format!("〔{}〕", job.text)));
+    let translator = Translator::builder()
+        .engine(Arc::clone(&engine) as Arc<dyn TranslationEngine>)
+        .expect("注册失败")
+        .max_http_calls_per_request(8)
+        .build()
+        .unwrap();
+
+    let mut options = translator.default_options().clone();
+    options.paragraph_strategy = translator_api::ParagraphStrategy::Sentence;
+    let text = "One. Two. Three.";
+    let output = pollster::block_on(translator.translate_with_options(&request(text), &options))
+        .expect("逐句策略应成功");
+
+    assert_eq!(engine.calls(), 3, "三句应产生三次调用");
+    assert_eq!(output.text, "〔One.〕〔Two.〕〔Three.〕");
+}
+
+#[test]
+fn 逐句策略不会突破预算() {
+    // 会消费预算的引擎：三个句子 + 预算 2 → 第三句必须被预算拒绝
+    let engine = BudgetEatingEngine::new("好。");
+    let translator = Translator::builder()
+        .engine(Arc::clone(&engine) as Arc<dyn TranslationEngine>)
+        .expect("注册失败")
+        .max_http_calls_per_request(2)
+        .build()
+        .unwrap();
+
+    let mut options = translator.default_options().clone();
+    options.paragraph_strategy = translator_api::ParagraphStrategy::Sentence;
+    let err = pollster::block_on(
+        translator.translate_with_options(&request("One. Two. Three."), &options),
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        err.code,
+        TranslationErrorCode::BudgetExceeded,
+        "{}",
+        err.message
+    );
+    assert_eq!(engine.calls(), 2, "预算 2 只能产生两次调用");
 }
 
 // ============================================================

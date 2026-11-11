@@ -189,8 +189,32 @@ pub fn tokenize(text: &str) -> Vec<NumberToken> {
             }
         }
 
-        // 币种：`$39.99`
-        if matches!(c, '$' | '€' | '£' | '¥') {
+        // 币种代码：`USD 39.99` / `39.99 USD`（数字前后都识别）
+        if c.is_ascii_alphabetic() && is_word_start(&chars, i) {
+            let start = i;
+            let mut j = i;
+            while j < chars.len() && chars[j].is_ascii_alphabetic() {
+                j += 1;
+            }
+            let code: String = chars[start..j].iter().collect::<String>().to_uppercase();
+            if let Some((canonical, symbol)) = currency_code(&code) {
+                // 代码在数字**前面**：`USD 39.99`
+                if let Some((value, end)) = number_after_code(&chars, j) {
+                    out.push(NumberToken {
+                        raw: format!("{code} {value}"),
+                        kind: NumberKind::Currency,
+                        value: Some(value),
+                        currency: Some(format!("{canonical}|{symbol}")),
+                    });
+                    i = end;
+                    continue;
+                }
+            }
+            // 代码在数字**后面**的情况由下面的数字分支处理
+        }
+
+        // 币种符号：`$39.99` / `€10` / `₽500`
+        if matches!(c, '$' | '€' | '£' | '¥' | '₹' | '₽' | '₩' | '₺') {
             let symbol = c;
             if i + 1 < chars.len() && chars[i + 1].is_ascii_digit() {
                 let (value, end, raw_num) = parse_number(&chars, i + 1);
@@ -246,12 +270,18 @@ pub fn tokenize(text: &str) -> Vec<NumberToken> {
                 i += 1;
                 continue;
             };
-            let kind = classify_numeric(&chars, i, end, &raw);
+            let mut kind = classify_numeric(&chars, i, end, &raw);
+            let mut currency = None;
+            // `39.99 USD` / `1,250 EUR`：代码在数字后面
+            if let Some((canonical, symbol)) = currency_code_after(&chars, end) {
+                kind = NumberKind::Currency;
+                currency = Some(format!("{canonical}|{symbol}"));
+            }
             out.push(NumberToken {
                 raw,
                 kind,
                 value: Some(value),
-                currency: None,
+                currency,
             });
             i = end;
             continue;
@@ -694,6 +724,29 @@ fn time_alternatives(raw: &str) -> Vec<String> {
         format!("{hour}点{minute}分"),
         format!("{hour}:{minute:02}"),
     ];
+    // 中文常用口语：`两点半`、`九点一刻`、`差一刻十点`
+    let hour_cn: Vec<String> = chinese_forms(hour as f64);
+    for form in &hour_cn {
+        out.push(format!("{form}点{minute:02}分"));
+        out.push(format!("{form}点{minute}分"));
+    }
+    if minute == 30 {
+        out.push(format!("{hour}点半"));
+        for form in &hour_cn {
+            out.push(format!("{form}点半"));
+            out.push(format!("{form}时30分"));
+        }
+    }
+    if minute == 15 {
+        out.push(format!("{hour}点一刻"));
+        for form in &hour_cn {
+            out.push(format!("{form}点一刻"));
+        }
+    }
+    if minute == 45 {
+        let next = if hour == 23 { 24 } else { hour + 1 };
+        out.push(format!("差一刻{next}点"));
+    }
     if hour < 12 {
         // 上午/凌晨：12 小时制下小时数不变，`2:00 AM` → `凌晨2点`
         for prefix in ["上午", "凌晨", "早上"] {
@@ -716,16 +769,75 @@ fn time_alternatives(raw: &str) -> Vec<String> {
     out
 }
 
+/// 币种代码表：代码 → (规范名, 符号)。
+fn currency_code(code: &str) -> Option<(&'static str, &'static str)> {
+    match code {
+        "USD" => Some(("USD", "$")),
+        "EUR" => Some(("EUR", "€")),
+        "GBP" => Some(("GBP", "£")),
+        "CNY" | "RMB" => Some(("CNY", "¥")),
+        "JPY" => Some(("JPY", "¥")),
+        "INR" => Some(("INR", "₹")),
+        "RUB" => Some(("RUB", "₽")),
+        "KRW" => Some(("KRW", "₩")),
+        "TRY" => Some(("TRY", "₺")),
+        "BTC" => Some(("BTC", "₿")),
+        "ETH" => Some(("ETH", "Ξ")),
+        _ => None,
+    }
+}
+
+/// `USD 39.99`：代码后面跟数字。
+fn number_after_code(chars: &[char], from: usize) -> Option<(f64, usize)> {
+    let mut j = from;
+    while j < chars.len() && chars[j] == ' ' {
+        j += 1;
+    }
+    if j >= chars.len() || !chars[j].is_ascii_digit() {
+        return None;
+    }
+    let (value, end, _) = parse_number(chars, j);
+    value.map(|value| (value, end))
+}
+
+/// 数字**后面**是否紧跟币种代码（`39.99 USD`）。
+fn currency_code_after(chars: &[char], from: usize) -> Option<(&'static str, &'static str)> {
+    let mut j = from;
+    while j < chars.len() && chars[j] == ' ' {
+        j += 1;
+    }
+    if j >= chars.len() || !chars[j].is_ascii_alphabetic() {
+        return None;
+    }
+    let start = j;
+    while j < chars.len() && chars[j].is_ascii_alphabetic() {
+        j += 1;
+    }
+    let code: String = chars[start..j].iter().collect::<String>().to_uppercase();
+    currency_code(&code)
+}
+
+/// 译文里是否出现了该币种（符号或中文/代码写法）。
 fn currency_word_present(symbol: &str, output: &str) -> bool {
+    // 复合写法：`USD|$`（来自代码分支）
+    if let Some((code, sym)) = symbol.split_once('|') {
+        return currency_word_present(sym, output) || output.contains(code);
+    }
     match symbol {
-        "$" => ["美元", "美金", "USD", "刀", "元"]
+        "$" => ["美元", "美金", "USD", "刀", "元", "块"]
             .iter()
             .any(|w| output.contains(w)),
         "€" => ["欧元", "EUR"].iter().any(|w| output.contains(w)),
         "£" => ["英镑", "GBP"].iter().any(|w| output.contains(w)),
-        "¥" => ["元", "人民币", "日元", "CNY", "JPY"]
+        "¥" => ["元", "人民币", "日元", "CNY", "JPY", "RMB"]
             .iter()
             .any(|w| output.contains(w)),
+        "₹" => ["卢比", "INR"].iter().any(|w| output.contains(w)),
+        "₽" => ["卢布", "RUB"].iter().any(|w| output.contains(w)),
+        "₩" => ["韩元", "KRW"].iter().any(|w| output.contains(w)),
+        "₺" => ["里拉", "TRY"].iter().any(|w| output.contains(w)),
+        "₿" => ["比特币", "BTC"].iter().any(|w| output.contains(w)),
+        "Ξ" => ["以太", "以太坊", "ETH"].iter().any(|w| output.contains(w)),
         _ => false,
     }
 }
@@ -837,6 +949,15 @@ pub fn chinese_forms(value: f64) -> Vec<String> {
         if (2..10).contains(&n) {
             out.push(format!("两{}", int_to_chinese(n)));
         }
+    } else if (value - 0.5).abs() < f64::EPSILON {
+        // `半` 是最常见的小数写法（`一半`/`两个半`）
+        out.push("半".to_string());
+        out.push("零点五".to_string());
+    } else if (value.fract() - 0.5).abs() < f64::EPSILON && value >= 1.0 {
+        let whole = (value - 0.5) as u64;
+        out.push(format!("{}个半", int_to_chinese(whole)));
+        out.push(format!("{}半", int_to_chinese(whole)));
+        out.push(format!("{}点五", int_to_chinese(whole)));
     } else if value >= 0.0 {
         // 小数：整数部分 + 点 + 逐位小数
         let text = format!("{value}");
@@ -866,13 +987,19 @@ pub fn parse_chinese_number(text: &str) -> Option<f64> {
     let mut section = 0u64;
     let mut current: Option<u64> = None;
     let mut saw_any = false;
+    let mut used_unit = false;
+    // `半` 是后缀：`一半` / `两个半` / `半`。先把它摘掉，
+    // 剩下的部分按普通中文数字解析（量词如 `个` 会自然中断解析）。
+    let half = text.contains('半');
+    let body: String = text.chars().filter(|c| *c != '半').collect();
 
-    for c in text.chars() {
+    for c in body.chars() {
         if let Some(d) = cn_digit(c) {
             current = Some(current.unwrap_or(0) * 10 + d);
             saw_any = true;
             continue;
         }
+        used_unit = true;
         if let Some(mult) = match c {
             '十' => Some(10u64),
             '百' => Some(100),
@@ -905,10 +1032,20 @@ pub fn parse_chinese_number(text: &str) -> Option<f64> {
         }
     }
 
-    if !saw_any {
+    if !saw_any && !half {
         return None;
     }
-    Some((total + section + current.unwrap_or(0)) as f64)
+    let mut base = (total + section + current.unwrap_or(0)) as f64;
+    if half {
+        // `一半` 是 0.5（"一个半" 才是 1.5）；`两个半` 是 2.5。
+        // 判断依据：只有"一"且没有量级单位时，按"半个"理解。
+        let only_one = base == 1.0 && !used_unit;
+        if only_one {
+            base = 0.0;
+        }
+        base += 0.5;
+    }
+    Some(base)
 }
 
 /// 提取文本里所有中文数字的数值。
@@ -1104,6 +1241,43 @@ mod tests {
     fn 千分位与空格千分位等价() {
         let check = check("Total 1,250 USD.", "总计 1250 美元。");
         assert!(!check.has_fatal(), "{:?}", check.issues);
+    }
+
+    #[test]
+    fn 半与口语时间写法可识别() {
+        assert_eq!(parse_chinese_number("半"), Some(0.5));
+        assert_eq!(parse_chinese_number("一半"), Some(0.5));
+        assert_eq!(parse_chinese_number("两个半"), Some(2.5));
+        assert!(chinese_forms(0.5).contains(&"半".to_string()));
+
+        let half_hour = check("The meeting starts at 2:30.", "会议两点半开始。");
+        assert!(half_hour.issues.is_empty(), "{:?}", half_hour.issues);
+
+        let quarter = check("The meeting starts at 9:15.", "会议九点一刻开始。");
+        assert!(quarter.issues.is_empty(), "{:?}", quarter.issues);
+
+        let wrong = check("The meeting starts at 2:30.", "会议三点半开始。");
+        assert!(!wrong.issues.is_empty(), "时间被改必须报告");
+    }
+
+    #[test]
+    fn 币种代码与加密货币可识别() {
+        let code_prefix = check("It costs USD 39.99.", "价格 39.99 美元。");
+        assert!(!code_prefix.has_fatal(), "{:?}", code_prefix.issues);
+        assert!(code_prefix.issues.is_empty(), "{:?}", code_prefix.issues);
+
+        let code_suffix = check("It costs 39.99 EUR.", "价格 39.99 欧元。");
+        assert!(code_suffix.issues.is_empty(), "{:?}", code_suffix.issues);
+
+        let crypto = check("Paid 0.5 BTC today.", "今天支付 0.5 比特币。");
+        assert!(crypto.issues.is_empty(), "{:?}", crypto.issues);
+
+        let rupee = check("Paid ₹500 now.", "现在支付 500 卢比。");
+        assert!(rupee.issues.is_empty(), "{:?}", rupee.issues);
+
+        // 币种丢失仍要报告
+        let lost = check("It costs USD 39.99.", "价格 39.99。");
+        assert!(lost.issues.iter().any(|i| i.detail.contains("币种")));
     }
 
     #[test]

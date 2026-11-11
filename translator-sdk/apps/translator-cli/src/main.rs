@@ -260,6 +260,9 @@ struct TranslationSection {
 struct CacheSection {
     #[serde(default)]
     capacity: Option<usize>,
+    /// 把缓存持久化到该文件（会写入译文，默认关闭）。
+    #[serde(default)]
+    file: Option<PathBuf>,
 }
 
 fn load_file_config(path: &Path) -> Result<FileConfig, Failure> {
@@ -335,6 +338,9 @@ fn build_translator(config: &FileConfig) -> Result<Translator, Failure> {
     }
     if let Some(capacity) = config.cache.capacity {
         builder = builder.cache_capacity(capacity);
+    }
+    if let Some(path) = &config.cache.file {
+        builder = builder.cache_file(path.clone());
     }
     if let Some(path) = &config.glossary {
         builder = builder.glossary_file(path)?;

@@ -633,6 +633,7 @@ dependencies = [
  "pollster",
  "serde",
  "serde_json",
+ "tempfile",
  "translator-plugin-api",
  "translator-types",
 ]
