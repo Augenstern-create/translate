@@ -28,7 +28,7 @@ cargo test -p translator-api           # 端到端流水线（脚本化引擎）
 当前基线（Linux，`refactor/online-translation-v1`）：
 
 ```text
-passed = 330   failed = 0   ignored = 4
+passed = 335   failed = 0   ignored = 4
 ```
 
 覆盖的关键场景：
@@ -77,6 +77,10 @@ passed = 330   failed = 0   ignored = 4
 - 首页可访问、带随机 CSRF 令牌与安全响应头；页面不含 `innerHTML`
 - 合法同源请求可完成翻译；健康检查不需要令牌
 - 缺少/错误 CSRF → 403；跨站 Origin → 403；非法 Host → 403
+- 重复的 Host / Origin / x-csrf-token / Content-Type → 400
+- 重启服务后 CSRF 令牌变化；令牌为 256 bit（64 个十六进制字符）
+- 首页带 CSP：`default-src 'none'`、脚本/样式只认 nonce、无 `unsafe-inline`；
+  header 中的 nonce 必须与 `<script nonce>` / `<style nonce>` 一致
 - 超大 Content-Length → 413 且**不读取请求体**（有耗时断言）
 - 非法 Content-Length → 400；chunked → 400；超大请求头 → 431
 - 非 JSON Content-Type → 415；PUT → 405；非法 JSON → 400
@@ -125,6 +129,25 @@ cargo run -p quality-runner -- \
 - `PENDING_HUMAN` 不等于"通过"。
 
 ---
+
+## 3.1 浏览器端到端检查（手工，可选）
+
+CSP 与 XSS 只靠 Rust 测试无法完全证明——需要真实浏览器执行页面脚本。
+
+```bash
+# 1) 起一个 mock 模型 + 带恶意释义的词典包 + UI
+python3 mock_openai.py &                       # 任意 OpenAI 兼容 mock
+pack-dictionary dict.jsonl ./dictpkg --format jsonl --id dictionary.xss.test --version 1.0.0 \
+  --language en --target zh-CN --license MIT   # 释义里放 <img src=x onerror=alert(1)>
+translator-cli serve --port 18096 &
+
+# 2) 用 CDP 驱动 headless chromium（Node 22 自带 WebSocket）
+node browser_check.mjs http://127.0.0.1:18096/
+```
+
+判定标准（本轮实测）：令牌长度 64、译文正常返回、词典文本原样显示为**文本**、
+`#dict img` 元素数为 0、页面标题未被改写、无 CSP 违规；
+另外用"动态插入内联 `<script>`"做正向控制，确认被 CSP 拦截。
 
 ## 4. 验收门禁（自动部分）
 

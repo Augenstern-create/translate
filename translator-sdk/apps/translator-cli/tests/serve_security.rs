@@ -166,7 +166,11 @@ fn 首页可访问且带随机令牌与安全头() {
     );
 
     let token = csrf_token(port);
-    assert_eq!(token.len(), 32, "令牌长度应为 32：{token}");
+    assert_eq!(
+        token.len(),
+        64,
+        "令牌应为 256 bit（64 个十六进制字符）：{token}"
+    );
 }
 
 #[test]
@@ -350,4 +354,93 @@ fn 超大请求头被拒绝() {
     );
     let response = raw_request(port, &request);
     assert_eq!(status_of(&response), 431, "{response}");
+}
+
+#[test]
+fn 重复的安全请求头被拒绝() {
+    let port = start_ui();
+    let token = csrf_token(port);
+
+    let cases = [
+        (
+            "Host",
+            format!(
+                "POST /api/translate HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nx-csrf-token: {token}\r\nContent-Length: 18\r\nConnection: close\r\n\r\n{{\"text\":\"Hello.\"}}"
+            ),
+        ),
+        (
+            "Origin",
+            format!(
+                "POST /api/translate HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nOrigin: http://127.0.0.1:{port}\r\nOrigin: http://127.0.0.1:{port}\r\nContent-Type: application/json\r\nx-csrf-token: {token}\r\nContent-Length: 18\r\nConnection: close\r\n\r\n{{\"text\":\"Hello.\"}}"
+            ),
+        ),
+        (
+            "x-csrf-token",
+            format!(
+                "POST /api/translate HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nx-csrf-token: {token}\r\nx-csrf-token: {token}\r\nContent-Length: 18\r\nConnection: close\r\n\r\n{{\"text\":\"Hello.\"}}"
+            ),
+        ),
+        (
+            "Content-Type",
+            format!(
+                "POST /api/translate HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nContent-Type: application/json\r\nx-csrf-token: {token}\r\nContent-Length: 18\r\nConnection: close\r\n\r\n{{\"text\":\"Hello.\"}}"
+            ),
+        ),
+    ];
+
+    for (name, request) in cases {
+        let response = raw_request(port, &request);
+        assert_eq!(
+            status_of(&response),
+            400,
+            "重复 {name} 应返回 400：{response}"
+        );
+        assert!(
+            body_of(&response).contains(name) || body_of(&response).contains("重复"),
+            "错误信息应说明重复的头：{response}"
+        );
+    }
+}
+
+#[test]
+fn 重启后令牌会变化() {
+    let first = csrf_token(start_ui());
+    let second = csrf_token(start_ui());
+    assert_ne!(first, second, "每次启动都应生成新的 CSRF 令牌");
+}
+
+#[test]
+fn csp_不影响合法翻译与查词请求() {
+    let port = start_ui();
+    let token = csrf_token(port);
+
+    // 翻译
+    let response = post(
+        port,
+        "/api/translate",
+        &[
+            ("Origin", &format!("http://127.0.0.1:{port}")),
+            ("Content-Type", "application/json"),
+            ("x-csrf-token", &token),
+        ],
+        r#"{"text":"Hello."}"#,
+    );
+    assert_eq!(status_of(&response), 200, "{response}");
+
+    // 查词（未安装词典 → 明确的业务错误，而不是被 CSP/CSRF 拦掉）
+    let lookup = post(
+        port,
+        "/api/lookup",
+        &[
+            ("Origin", &format!("http://127.0.0.1:{port}")),
+            ("Content-Type", "application/json"),
+            ("x-csrf-token", &token),
+        ],
+        r#"{"term":"hello"}"#,
+    );
+    assert_eq!(status_of(&lookup), 400, "{lookup}");
+    assert!(
+        body_of(&lookup).contains("词典"),
+        "应返回词典未安装的业务错误：{lookup}"
+    );
 }

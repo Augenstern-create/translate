@@ -14,10 +14,18 @@
   请求行/头/体上限（413 在读取请求体之前拒绝）、方法与 Content-Type 校验、读写超时。
 - 诊断新增 `repair` 字段（`unchanged` / `applied` / `rejected`）。
 
+### 收尾（安全加固）
+
+- CSRF 令牌改用操作系统 CSPRNG（`getrandom`）生成 256 bit；取不到随机数时拒绝启动。
+- `Host` / `Origin` / `x-csrf-token` / `Content-Type` 重复一律 400。
+- 增加 CSP：`default-src 'none'`、脚本/样式只认每次响应随机生成的 nonce、
+  `connect-src 'self'`，不使用 `unsafe-inline`；内联 style 属性改为 CSS 类。
+
 ### 测试
 
-新增 6 个终检白盒用例、3 个保护计数用例、6 个 serve 纯函数用例、
-14 个真实 socket 安全用例；总计 **330 passed / 0 failed / 4 ignored**。
+新增 6 个终检白盒用例、3 个保护计数用例、8 个 serve 纯函数用例、
+17 个真实 socket 安全用例；总计 **335 passed / 0 failed / 4 ignored**。
+另用 headless 浏览器（CDP）实测：CSP 生效、词典恶意释义不被执行、翻译与查词正常。
 
 ## v1.0 在线翻译主线重构（2026-11-11）
 

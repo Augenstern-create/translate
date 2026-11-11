@@ -99,7 +99,10 @@ $CLI serve --port 8765       # 本地翻译页面（仅监听 127.0.0.1）
 - 只绑定 `127.0.0.1`，没有"对外开放"选项；
 - 校验 `Host`（只接受 `127.0.0.1:<port>` / `localhost:<port>`）与 `Origin`（只接受同源），
   防止任意网页向本机服务提交写请求；
-- 每次启动生成随机 CSRF 令牌，页面通过 `<meta>` 取得，POST 必须带 `x-csrf-token`；
+- 每次启动用**操作系统 CSPRNG** 生成 256 bit CSRF 令牌（取不到随机数就拒绝启动），
+  页面通过 `<meta>` 取得，POST 必须带 `x-csrf-token`；
+- 页面响应带 CSP：`default-src 'none'`，脚本与样式只认每次响应随机生成的 nonce，
+  `connect-src 'self'`，不使用 `unsafe-inline`；
 - 请求行 ≤ 8 KiB、请求头 ≤ 16 KiB、请求体 ≤ 256 KiB；超限在读取前直接 413/431；
 - 只接受 GET/HEAD/POST，POST 必须是 `application/json`；
 - 页面渲染一律 `textContent`，不解析词典数据为 HTML。

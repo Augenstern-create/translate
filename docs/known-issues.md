@@ -42,6 +42,9 @@
 | K-29 | 查词结果用 `innerHTML` 渲染 | 全部改 `createElement` + `textContent`；新增"页面不得出现 `innerHTML`"回归断言（S1-02） |
 | K-30 | `serve` 缺少 CSRF / Origin / Host 校验与请求大小限制 | Host/Origin 校验 + 每次启动随机 CSRF 令牌 + 请求行/头/体上限（413 在读取前拒绝）+ 方法与 Content-Type 校验（S1-03/04） |
 | K-33 | 未检测"受保护内容被多吐一份" | 按源文出现次数严格校验，多吐即 `UnexpectedDuplicate`；合法重叠不误报（S1-05） |
+| K-34 | CSRF 令牌用 `RandomState` + 时间/进程号派生，不是密码学随机 | 改用操作系统 CSPRNG（`getrandom`）生成 256 bit 令牌；取不到随机数时**拒绝启动**，不回退弱随机（S1 收尾） |
+| K-35 | `Host`/`Origin`/`x-csrf-token`/`Content-Type` 重复时未拒绝（只有 `Content-Length` 有检查） | 四类安全头重复一律 400，并有 4 个真实 socket 用例（S1 收尾） |
+| K-36 | 本地页面没有 CSP，任何注入脚本都能执行 | 增加 CSP：`default-src 'none'`，脚本/样式只认每次响应随机生成的 nonce，`connect-src 'self'`，无 `unsafe-inline`；用 headless 浏览器验证动态注入的内联脚本被拦截（S1 收尾） |
 
 ### 后续阶段处理（S2 / S3 / S4）
 

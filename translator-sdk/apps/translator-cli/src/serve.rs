@@ -64,10 +64,9 @@ pub fn serve_listener(listener: TcpListener, translator: Arc<Translator>) -> Res
         .local_addr()
         .map_err(|e| format!("读取监听地址失败：{e}"))?;
     let port = addr.port();
-    let state = Arc::new(ServerState {
-        translator,
-        csrf: generate_token(),
-    });
+    // 令牌必须是密码学随机；拿不到就直接拒绝启动（不回退弱随机）
+    let csrf = generate_token()?;
+    let state = Arc::new(ServerState { translator, csrf });
 
     println!("翻译界面已启动：http://{addr}/");
     println!("（仅监听回环地址；按 Ctrl+C 结束。文本会发送到已配置的后端）");
@@ -170,6 +169,8 @@ fn read_request(stream: &TcpStream) -> Result<Request, HeadError> {
     let mut content_type = None;
     let mut content_length: Option<usize> = None;
     let mut header_count = 0usize;
+    // 安全相关的头只允许出现一次：重复值会让"校验哪一个"变成实现细节。
+    let mut seen_security_headers: Vec<&'static str> = Vec::new();
 
     loop {
         read_line(&mut reader, &mut total, &mut line)?;
@@ -188,6 +189,22 @@ fn read_request(stream: &TcpStream) -> Result<Request, HeadError> {
         };
         let name_lower = name.trim().to_ascii_lowercase();
         let value = value.trim().to_string();
+
+        // 安全头重复 → 400（Host / Origin / x-csrf-token / Content-Type）
+        let security_header = match name_lower.as_str() {
+            "host" => Some("Host"),
+            "origin" => Some("Origin"),
+            "x-csrf-token" => Some("x-csrf-token"),
+            "content-type" => Some("Content-Type"),
+            _ => None,
+        };
+        if let Some(label) = security_header {
+            if seen_security_headers.contains(&label) {
+                return Err(HeadError::Malformed(format!("重复的 {label} 请求头")));
+            }
+            seen_security_headers.push(label);
+        }
+
         match name_lower.as_str() {
             "host" => host = Some(value),
             "origin" => origin = Some(value),
@@ -347,8 +364,23 @@ fn handle(mut stream: TcpStream, state: &ServerState, port: u16) -> std::io::Res
     let path = request.path.split('?').next().unwrap_or("").to_string();
     match (request.method.as_str(), path.as_str()) {
         ("GET", "/") | ("GET", "/index.html") => {
-            let html = INDEX_HTML.replace("{{CSRF_TOKEN}}", &state.csrf);
-            respond_html(&mut stream, &html)
+            // CSP nonce 每次响应重新生成；脚本与样式都只认这个 nonce，
+            // 不使用 'unsafe-inline'。
+            let nonce = match generate_nonce() {
+                Ok(nonce) => nonce,
+                Err(err) => {
+                    return respond_json(
+                        &mut stream,
+                        500,
+                        &serde_json::json!({ "error": err }).to_string(),
+                    );
+                }
+            };
+            let html = INDEX_HTML
+                .replace("{{CSRF_TOKEN}}", &state.csrf)
+                .replace("{{SCRIPT_NONCE}}", &nonce);
+            let csp = content_security_policy(&nonce);
+            respond_html(&mut stream, &html, &csp)
         }
         ("HEAD", "/") => respond_head(&mut stream, "text/html; charset=utf-8"),
         ("GET", "/api/health") => {
@@ -513,10 +545,19 @@ fn respond_json_inner(
     stream.flush()
 }
 
-fn respond_html(stream: &mut TcpStream, body: &str) -> std::io::Result<()> {
+/// 页面 CSP：默认全禁，只放行带 nonce 的脚本/样式与同源 fetch。
+fn content_security_policy(nonce: &str) -> String {
+    format!(
+        "default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; \
+         connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    )
+}
+
+fn respond_html(stream: &mut TcpStream, body: &str, csp: &str) -> std::io::Result<()> {
     let payload = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\n{}Connection: close\r\n\r\n{}",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\nContent-Security-Policy: {}\r\n{}Connection: close\r\n\r\n{}",
         body.len(),
+        csp,
         security_headers(),
         body
     );
@@ -542,32 +583,30 @@ fn reason(status: u16) -> &'static str {
         405 => "Method Not Allowed",
         413 => "Payload Too Large",
         415 => "Unsupported Media Type",
+        500 => "Internal Server Error",
         431 => "Request Header Fields Too Large",
         _ => "Status",
     }
 }
 
-/// 生成随机会话令牌（每次启动不同，不是硬编码常量）。
-fn generate_token() -> String {
-    use std::collections::hash_map::RandomState;
-    use std::hash::{BuildHasher, Hasher};
+/// 从操作系统 CSPRNG 取 `n` 字节并编码为十六进制。
+///
+/// **失败即失败**：拿不到密码学随机数时不允许退化成时间/进程号之类的弱随机，
+/// 调用方必须把它当成启动错误处理（`serve` 返回 `Err`）。
+fn random_hex(bytes: usize) -> Result<String, String> {
+    let mut buffer = vec![0u8; bytes];
+    getrandom::fill(&mut buffer).map_err(|e| format!("无法从操作系统获取安全随机数：{e}"))?;
+    Ok(buffer.iter().map(|b| format!("{b:02x}")).collect())
+}
 
-    let state = RandomState::new();
-    let mut hasher = state.build_hasher();
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    hasher.write_u128(nanos);
-    hasher.write_u32(std::process::id());
-    let first = hasher.finish();
+/// CSRF 会话令牌：256 bit（32 字节）随机。
+fn generate_token() -> Result<String, String> {
+    random_hex(32)
+}
 
-    let mut second_hasher = state.build_hasher();
-    second_hasher.write_u64(first);
-    second_hasher.write_u64(0x9E37_79B9_7F4A_7C15);
-    let second = second_hasher.finish();
-
-    format!("{first:016x}{second:016x}")
+/// CSP nonce：128 bit（16 字节）随机，每次响应重新生成。
+fn generate_nonce() -> Result<String, String> {
+    random_hex(16)
 }
 
 /// 单页界面。刻意不引用任何外部资源：离线也能用；渲染一律用 textContent。
@@ -578,7 +617,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="csrf-token" content="{{CSRF_TOKEN}}">
 <title>英译中翻译</title>
-<style>
+<style nonce="{{SCRIPT_NONCE}}">
   :root { color-scheme: light dark; }
   body { font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans CJK SC", sans-serif;
          max-width: 780px; margin: 2rem auto; padding: 0 1rem; line-height: 1.6; }
@@ -599,6 +638,10 @@ const INDEX_HTML: &str = r#"<!doctype html>
   input[type=text] { padding: .45rem; font: inherit; border-radius: 8px; border: 1px solid #8884; }
   ul { padding-left: 1.2rem; }
   .entry-head { font-weight: 600; }
+  /* 这些原本是内联 style 属性；CSP 不允许 style 属性内联，因此改成类 */
+  hr.sep { margin: 2rem 0; border: none; border-top: 1px solid #8883; }
+  h1.sub { font-size: 1.1rem; }
+  input.grow { flex: 1 1 12rem; }
 </style>
 </head>
 <body>
@@ -616,16 +659,16 @@ const INDEX_HTML: &str = r#"<!doctype html>
 <div class="meta" id="meta"></div>
 <div class="warn" id="warn"></div>
 
-<hr style="margin:2rem 0; border:none; border-top:1px solid #8883">
+<hr class="sep">
 
-<h1 style="font-size:1.1rem">查词</h1>
+<h1 class="sub">查词</h1>
 <div class="row">
-  <input type="text" id="term" placeholder="hello" style="flex:1 1 12rem">
+  <input type="text" id="term" placeholder="hello" class="grow">
   <button id="lookup">查询</button>
 </div>
 <div id="dict"></div>
 
-<script>
+<script nonce="{{SCRIPT_NONCE}}">
 (function () {
   "use strict";
   var $ = function (id) { return document.getElementById(id); };
@@ -768,14 +811,47 @@ mod tests {
     }
 
     #[test]
-    fn csrf_必须精确匹配且每次启动不同() {
-        let token = generate_token();
-        assert_eq!(token.len(), 32);
+    fn csrf_令牌是_256bit_且每次不同() {
+        let token = generate_token().expect("OS CSPRNG 应可用");
+        assert_eq!(token.len(), 64, "256 bit = 32 字节 = 64 个十六进制字符");
+        assert!(token.chars().all(|c| c.is_ascii_hexdigit()));
         assert!(csrf_matches(Some(&token), &token));
         assert!(!csrf_matches(None, &token));
         assert!(!csrf_matches(Some(""), &token));
-        assert!(!csrf_matches(Some(&token[..31]), &token));
-        assert_ne!(generate_token(), token, "令牌必须每次不同");
+        assert!(!csrf_matches(Some(&token[..63]), &token));
+        assert_ne!(
+            generate_token().expect("OS CSPRNG 应可用"),
+            token,
+            "令牌必须每次不同"
+        );
+    }
+
+    #[test]
+    fn nonce_是_128bit_且每次不同() {
+        let nonce = generate_nonce().expect("OS CSPRNG 应可用");
+        assert_eq!(nonce.len(), 32, "128 bit = 16 字节 = 32 个十六进制字符");
+        assert_ne!(generate_nonce().expect("OS CSPRNG 应可用"), nonce);
+    }
+
+    #[test]
+    fn csp_只放行_nonce_且没有_unsafe_inline() {
+        let nonce = generate_nonce().unwrap();
+        let csp = content_security_policy(&nonce);
+        assert!(
+            csp.contains(&format!("script-src 'nonce-{nonce}'")),
+            "{csp}"
+        );
+        assert!(csp.contains(&format!("style-src 'nonce-{nonce}'")), "{csp}");
+        assert!(csp.contains("default-src 'none'"), "{csp}");
+        assert!(csp.contains("connect-src 'self'"), "{csp}");
+        assert!(csp.contains("frame-ancestors 'none'"), "{csp}");
+        assert!(
+            !csp.contains("unsafe-inline"),
+            "不得放行 inline 脚本/样式：{csp}"
+        );
+        assert!(!csp.contains("unsafe-eval"), "{csp}");
+        assert!(!csp.contains("http://"), "{csp}");
+        assert!(!csp.contains("https://"), "{csp}");
     }
 
     #[test]

@@ -533,6 +533,7 @@ fn 连不上的端口报不可用() {
         Duration::from_millis(500),
         Arc::clone(&meter),
     );
+    let started = Instant::now();
     let err = pollster::block_on(transport.send(
         translator_http::HttpRequest {
             url: "http://127.0.0.1:9/v1/chat/completions".to_string(),
@@ -544,7 +545,25 @@ fn 连不上的端口报不可用() {
         None,
     ))
     .unwrap_err();
-    assert_eq!(err.kind, HttpErrorKind::Unavailable);
+
+    // 平台差异：Linux 上"端口没人监听"通常是立即 ECONNREFUSED（Unavailable），
+    // Windows 上同一操作可能落到连接超时（Timeout）。两者都表示"后端连不上"，
+    // 都必须可重试并且快速失败，因此断言的是这个不变量，而不是具体变体。
+    assert!(
+        matches!(
+            err.kind,
+            HttpErrorKind::Unavailable | HttpErrorKind::Timeout
+        ),
+        "连不上后端应报不可用或超时，实际：{:?}（{}）",
+        err.kind,
+        err.message
+    );
+    assert!(err.kind.is_retryable(), "连不上后端应可重试");
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "应快速失败，实际耗时 {:?}",
+        started.elapsed()
+    );
 }
 
 #[test]
