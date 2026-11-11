@@ -425,7 +425,7 @@ fn csp_不影响合法翻译与查词请求() {
         ],
         r#"{"text":"Hello."}"#,
     );
-    assert_eq!(status_of(&response), 200, "{response}");
+    assert_eq!(status_of(&response), 200, "翻译请求失败：{response}");
 
     // 查词（未安装词典 → 明确的业务错误，而不是被 CSP/CSRF 拦掉）
     let lookup = post(

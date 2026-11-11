@@ -548,7 +548,10 @@ fn 连不上的端口报不可用() {
 
     // 平台差异：Linux 上"端口没人监听"通常是立即 ECONNREFUSED（Unavailable），
     // Windows 上同一操作可能落到连接超时（Timeout）。两者都表示"后端连不上"，
-    // 都必须可重试并且快速失败，因此断言的是这个不变量，而不是具体变体。
+    // 断言的是这个不变量与"快速失败"，而不是具体变体。
+    //
+    // 注意：`Timeout` 本身**不是**可重试类别（超时可能意味着已经发出请求、
+    // 重发有重复计费风险，见 S2 的错误分类），因此这里不要求 `is_retryable()`。
     assert!(
         matches!(
             err.kind,
@@ -558,7 +561,14 @@ fn 连不上的端口报不可用() {
         err.kind,
         err.message
     );
-    assert!(err.kind.is_retryable(), "连不上后端应可重试");
+    assert!(
+        matches!(
+            err.kind.code(),
+            TranslationErrorCode::BackendUnavailable | TranslationErrorCode::BackendTimeout
+        ),
+        "连不上后端应映射到后端不可用/超时，实际：{:?}",
+        err.kind.code()
+    );
     assert!(
         started.elapsed() < Duration::from_secs(5),
         "应快速失败，实际耗时 {:?}",
