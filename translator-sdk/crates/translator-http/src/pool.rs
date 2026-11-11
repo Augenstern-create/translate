@@ -513,3 +513,40 @@ pub fn build_agent(settings: &HttpSettings, connect_timeout: Duration) -> ureq::
         .build();
     config.into()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn 观察线程只持有弱引用() {
+        let watcher = Watcher::new();
+        let weak = Arc::downgrade(&watcher);
+        // 线程启动后 upgrade 仍然成功（说明 Pool 还没释放）
+        std::thread::sleep(Duration::from_millis(20));
+        assert!(weak.upgrade().is_some());
+
+        drop(watcher);
+        // 线程在 tick 期间可能短暂持有强引用，等它放掉后再断言
+        let deadline = std::time::Instant::now() + Duration::from_millis(500);
+        while weak.upgrade().is_some() && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(weak.upgrade().is_none(), "观察线程不得长期自持 Arc");
+    }
+
+    #[test]
+    fn 状态检查不消费结果() {
+        let slot = Slot::new();
+        slot.complete(Ok(crate::client::HttpOutcome {
+            status: 200,
+            body: "ok".to_string(),
+            retry_after: None,
+        }));
+        for _ in 0..3 {
+            assert!(slot.is_done(), "结果应保持可读");
+        }
+        let taken = slot.take_result().expect("状态检查不得消费结果");
+        assert_eq!(taken.unwrap().status, 200);
+    }
+}

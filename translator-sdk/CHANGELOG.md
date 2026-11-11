@@ -18,7 +18,7 @@
   使用 `1 + max_retries` 的本地预算，避免形成"无预算调用通道"。
 
 测试：新增 4 个 HTTP 回归用例 + 3 个 Builder 共享并发/队列用例 + 3 个错误分类单测；
-总计 **370 passed / 0 failed / 4 ignored**。
+总计 **372 passed / 0 failed / 4 ignored**。
 
 ## 稳定化 S2：HTTP 预算、并发、队列与成本统计（2026-11-12）
 

@@ -69,20 +69,33 @@ impl MockModel {
 }
 
 fn respond(mut stream: TcpStream) -> std::io::Result<()> {
+    use std::io::{BufRead, BufReader};
+
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
-    let mut head = Vec::new();
-    let mut byte = [0u8; 1];
-    // 读到头部结束即可（body 内容不影响本测试）
-    while !head.ends_with(b"\r\n\r\n") {
-        let n = stream.read(&mut byte)?;
-        if n == 0 {
+    // 必须把请求**读完整**再响应：只读头部就回包时，Windows 上会出现
+    // "客户端仍在写 body、服务端已关连接"的竞态（Peer disconnected）。
+    let mut reader = BufReader::new(stream.try_clone()?);
+    let mut content_length = 0usize;
+    loop {
+        let mut line = String::new();
+        if reader.read_line(&mut line)? == 0 {
             break;
         }
-        head.push(byte[0]);
-        if head.len() > 64 * 1024 {
+        let trimmed = line.trim_end_matches(['\r', '\n']);
+        if trimmed.is_empty() {
             break;
+        }
+        if let Some((name, value)) = trimmed.split_once(':') {
+            if name.eq_ignore_ascii_case("content-length") {
+                content_length = value.trim().parse().unwrap_or(0);
+            }
         }
     }
+    if content_length > 0 {
+        let mut body = vec![0u8; content_length];
+        reader.read_exact(&mut body)?;
+    }
+
     let body = serde_json::json!({
         "id": "chatcmpl-test",
         "model": "mock-model",

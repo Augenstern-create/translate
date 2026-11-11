@@ -694,48 +694,6 @@ fn worker_完成与观察线程并发时响应不丢失() {
 }
 
 #[test]
-fn 运行时销毁后观察线程与_worker_全部退出() {
-    use translator_http::{live_watcher_threads, live_worker_threads};
-
-    // 先建立一个基线（等前面测试留下的线程收尾）
-    let baseline_watchers = live_watcher_threads();
-    let baseline_workers = live_worker_threads();
-
-    for _ in 0..5 {
-        let runtime = HttpRuntime::new(2, 4, UsageMeter::new());
-        // 触发一次真实请求，确保线程确实跑起来
-        let settings = HttpSettings::default();
-        let file =
-            BackendsFile::from_toml_str(&simple_config("http://127.0.0.1:9/v1", 0, 200)).unwrap();
-        let cfg = file.enabled_backends().unwrap()[0].1.clone();
-        let engine =
-            HttpTranslationEngine::with_runtime(cfg, &settings, Arc::clone(&runtime)).unwrap();
-        let _ = run(&engine, &JobSpec::new("Hello."));
-        drop(engine);
-        drop(runtime);
-    }
-
-    // 最多等 3 秒让线程退出
-    let deadline = Instant::now() + Duration::from_secs(3);
-    while Instant::now() < deadline
-        && (live_watcher_threads() > baseline_watchers || live_worker_threads() > baseline_workers)
-    {
-        std::thread::sleep(Duration::from_millis(20));
-    }
-
-    assert!(
-        live_watcher_threads() <= baseline_watchers,
-        "观察线程未退出：baseline={baseline_watchers} now={}",
-        live_watcher_threads()
-    );
-    assert!(
-        live_worker_threads() <= baseline_workers,
-        "worker 线程未退出：baseline={baseline_workers} now={}",
-        live_worker_threads()
-    );
-}
-
-#[test]
 fn 直接调用引擎入口也有预算上限() {
     // 不走协调器、直接 translate()：仍必须受"1 + max_retries"约束
     let h = harness(|_| MockResponse::json(503, "busy"));

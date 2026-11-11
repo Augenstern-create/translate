@@ -28,7 +28,7 @@ cargo test -p translator-api           # 端到端流水线（脚本化引擎）
 当前基线（Linux，`refactor/online-translation-v1`）：
 
 ```text
-passed = 370   failed = 0   ignored = 4
+passed = 372   failed = 0   ignored = 4
 ```
 
 覆盖的关键场景：
@@ -216,7 +216,7 @@ node browser_check.mjs http://127.0.0.1:18096/
 |---|---|---|
 | 全工作区编译（含测试目标） | `cargo xwin check --workspace --all-targets --target x86_64-pc-windows-msvc` | 通过 |
 | CLI 二进制链接 | `cargo xwin build -p translator-cli --target x86_64-pc-windows-msvc` | 生成 `translator-cli.exe` |
-| 单元 + 集成测试 | Windows 实机 `cargo test --workspace --no-fail-fast` | **370 passed / 0 failed / 4 ignored**（S2 审查收尾后复跑） |
+| 单元 + 集成测试 | Windows 实机 `cargo test --workspace --no-fail-fast` | **372 passed / 0 failed / 4 ignored**（S2 审查收尾后复跑） |
 
 **仍未做（S4）**
 
