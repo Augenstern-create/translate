@@ -41,8 +41,9 @@ impl MockModel {
 
 fn serve_completion(mut stream: TcpStream) -> std::io::Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
-    let mut buffer = [0u8; 8192];
-    let _ = stream.read(&mut buffer)?;
+    // 必须把请求**读完整**再响应：只读一次缓冲区时，Windows 上可能出现
+    // "客户端还在写 body，服务端已经关连接"的竞态，表现为客户端写失败。
+    read_full_request(&mut stream)?;
     let body = serde_json::json!({
         "id": "chatcmpl-test",
         "model": "mock-model-2026-11-11",
@@ -61,6 +62,35 @@ fn serve_completion(mut stream: TcpStream) -> std::io::Result<()> {
     );
     stream.write_all(payload.as_bytes())?;
     stream.flush()
+}
+
+/// 读到 `\r\n\r\n`，再按 Content-Length 读满请求体。
+fn read_full_request(stream: &mut TcpStream) -> std::io::Result<()> {
+    use std::io::{BufRead, BufReader};
+    let mut reader = BufReader::new(stream.try_clone()?);
+    let mut head = String::new();
+    let mut content_length = 0usize;
+    loop {
+        let mut line = String::new();
+        if reader.read_line(&mut line)? == 0 {
+            return Ok(());
+        }
+        let trimmed = line.trim_end_matches(['\r', '\n']);
+        if trimmed.is_empty() {
+            break;
+        }
+        if let Some((name, value)) = trimmed.split_once(':') {
+            if name.eq_ignore_ascii_case("content-length") {
+                content_length = value.trim().parse().unwrap_or(0);
+            }
+        }
+        head.push_str(&line);
+    }
+    if content_length > 0 {
+        let mut body = vec![0u8; content_length];
+        reader.read_exact(&mut body)?;
+    }
+    Ok(())
 }
 
 /// 启动待测的 UI 服务端，返回端口。
