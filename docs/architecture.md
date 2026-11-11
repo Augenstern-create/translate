@@ -186,6 +186,41 @@ context_fingerprint     privacy_scope         generation_config_hash
 `TranslationEngine` 是唯一的后端契约。需要术语约束的后端实现
 `translate_job(&TranslationJob)`（默认实现会退化成 `translate()`）。
 
+### 8.1 执行层：预算 / 并发 / 队列（S2）
+
+```text
+协调器（每次逻辑翻译创建一个 RequestBudget）
+   │  TranslationJob { budget, deadline, cancel }
+   ▼
+HttpRuntime（每个 Translator 一个，所有后端共享）
+   ├── Pool        固定 worker（= 全局并发上限） + 有界队列 + 单一取消观察线程
+   └── global      Limiter
+   ▼
+HttpTransport（每个后端一个）
+   ├── backend limiter   该后端并发上限
+   ├── agent             连接池 / TLS / 单次尝试超时
+   └── meter             用量统计
+```
+
+执行顺序（每一步都检查取消与整体截止时间）：
+
+```text
+取消 → 截止时间 → 预算扣减 → 全局配额 → 后端配额 → 发出请求
+```
+
+- **预算**：`max_http_calls_per_request`（默认 4）限制**物理调用**总数，
+  分段回退、内容重试、传输重试共享同一份额度；超出返回 `BudgetExceeded`，
+  且不会改用别的后端绕过。
+- **全局并发**：`[http] max_concurrent_requests`（默认 4）是**所有后端共享**的
+  上限；每个后端另有 `max_concurrent_requests`。两者都通过 RAII Permit 归还，
+  任何错误/取消/超时路径都不会泄漏配额。
+- **有界队列**：`[http] max_queue_size`（默认 16）。队列满立即返回 `QueueFull`，
+  不阻塞、不无限排队；线程总数恒定为 `workers + 1`。
+- **取消**：排队中立即取消（不消耗预算）；已取得配额未发送则停止；
+  已发出的请求由 worker 等待网络超时结束，但 Future 立即返回
+  `Cancelled` 且不再重试/切换后端（见 `docs/known-issues.md` K-15）。
+- **Retry-After**：429/503 带 `Retry-After` 时遵守（上限 120 秒，且不超过截止时间）。
+
 ---
 
 ## 9. 明确不做的事

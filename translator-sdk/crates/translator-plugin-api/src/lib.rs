@@ -14,9 +14,9 @@ use std::sync::Arc;
 use translator_types::{
     BackendDescriptor, CancelToken, Capability, CapabilityInfo, CompatibilityReport,
     DictionaryEntry, EngineDescriptor, LanguageTag, LookupRequest, ModelManifest, NmtInput,
-    NmtOutput, PluginApiVersion, ProviderDescriptor, ResourceLimits, TermConstraint, TextKind,
-    TokenUsage, TranslateRequest, TranslationError, TranslationErrorCode, TranslationMode,
-    TranslationResult,
+    NmtOutput, PluginApiVersion, ProviderDescriptor, RequestBudget, ResourceLimits, TermConstraint,
+    TextKind, TokenUsage, TranslateRequest, TranslationError, TranslationErrorCode,
+    TranslationMode, TranslationResult,
 };
 
 /// 插件异步返回类型。
@@ -62,6 +62,12 @@ pub struct TranslationJob<'a> {
     pub deadline: Option<std::time::Instant>,
     /// 取消令牌。可在任意阶段检查，取消后不得继续重试。
     pub cancel: Option<&'a CancelToken>,
+    /// 本次**逻辑请求**共享的物理 HTTP 调用预算。
+    ///
+    /// 协调器创建一次，分段翻译与内容重试共用；后端每发出一次真实网络请求
+    /// 扣一次名额。`None` 表示调用方没有预算概念（例如单元测试），
+    /// 后端应退回自身配置的保守默认值。
+    pub budget: Option<Arc<RequestBudget>>,
     /// 调用方要求的输出上限（token）。`None` 表示用后端默认值。
     pub max_output_tokens: Option<u32>,
 }
@@ -77,6 +83,13 @@ impl std::fmt::Debug for TranslationJob<'_> {
             .field("glossary", &self.glossary.len())
             .field("placeholders", &self.placeholders.len())
             .field("retry_hint", &self.retry_hint.is_some())
+            .field(
+                "budget",
+                &self
+                    .budget
+                    .as_ref()
+                    .map(|b| (b.calls_started(), b.max_calls())),
+            )
             .field("deadline", &self.deadline.is_some())
             .finish()
     }
@@ -173,6 +186,11 @@ pub trait TranslationEngine: Send + Sync {
             })
         })
     }
+
+    /// 通知后端"协调器正在进行一次内容完整性重试"。
+    ///
+    /// 只有能统计用量的后端需要覆盖它；默认什么都不做，保持既有实现非破坏。
+    fn record_content_retry(&self) {}
 
     /// 模型身份（可选）。能提供的后端应当提供：缓存键需要它。
     fn model_identity(&self) -> Option<ModelIdentity> {

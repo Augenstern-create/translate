@@ -1,5 +1,42 @@
 # 变更记录
 
+## 稳定化 S2：HTTP 预算、并发、队列与成本统计（2026-11-12）
+
+### 新增
+
+- **请求预算** `RequestBudget`：一次逻辑翻译共享的物理 HTTP 调用额度（默认 4），
+  分段回退、内容重试、传输重试都计入；耗尽返回 `BudgetExceeded`，不会改后端绕过。
+- **真正的全局并发**：`[http] max_concurrent_requests`（默认 4）现在由同一
+  `Translator` 的所有后端共享（`HttpRuntime` + `Limiter`），后端上限独立生效。
+- **有界队列与固定 worker**：`[http] max_queue_size`（默认 16），满则立即
+  `QueueFull`；线程数恒定为 `workers + 1`（取消由单一观察线程处理）。
+- **统一截止时间**：排队、配额等待、连接、读响应、重试退避共享同一 deadline；
+  排队中的取消/超时不会发出网络请求。
+- **错误分类**：新增 `QueueFull`、`BudgetExceededLocal`；429/503 支持 `Retry-After`
+  （上限 120s，且不超过截止时间）；401/403/400/404 不重试。
+- **用量统计**：区分 logical_requests / http_calls_started / completed /
+  transport_retries / content_retries / failed_calls / cancelled_requests /
+  `potentially_billable_unknown_calls`（已发出但无响应，可能仍计费）。
+- 诊断新增 `http_calls`；CLI 的 `--json` 与 Web UI 结果都会显示。
+
+### 配置
+
+```toml
+[http]
+max_concurrent_requests = 4      # 全局（所有后端共享）
+max_queue_size = 16              # 有界队列
+
+[translation]
+max_http_calls_per_request = 4   # 一次逻辑请求的物理调用上限
+```
+
+旧配置保持兼容；缺省值保证"不会无限并发/无限重试"。
+
+### 测试
+
+新增 20 个 HTTP 限流/预算/队列用例、3 个协调器预算用例、3 个 limiter 单测；
+总计 **361 passed / 0 failed / 4 ignored**。
+
 ## 稳定化 S1：翻译完整性与安全（2026-11-11）
 
 ### 修复

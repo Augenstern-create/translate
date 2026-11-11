@@ -1,32 +1,32 @@
-//! 传输层：把**阻塞**的 HTTP 调用桥接成 Future，并负责超时、重试、限流与取消。
+//! HTTP 传输层门面：把一次网络请求交给有界执行池，并桥接成 Future。
 //!
-//! # 为什么不用 async HTTP 客户端
+//! # 分层
 //!
-//! SDK 至今**没有** async runtime 依赖（`BoxFuture` 由宿主/`pollster` 驱动）。
-//! 引入 tokio 只为了发一个 HTTP 请求，会把运行时选择强加给宿主。
-//! 因此这里用同步客户端 `ureq`，在**独立 worker 线程**里执行，通过
-//! `Waker` 通知 Future：执行器永远不阻塞，宿主也不被迫选运行时。
+//! ```text
+//! HttpRuntimeImpl（每个 Translator 一个）
+//!    ├── Pool      固定 worker + 有界队列 + 单一取消观察线程
+//!    └── global    Limiter（所有后端共享的总并发上限）
 //!
-//! # 不变量
+//! HttpTransport（每个后端一个）
+//!    ├── agent            连接池 / TLS / 超时
+//!    ├── backend limiter  该后端自己的并发上限
+//!    └── meter            用量统计
+//! ```
 //!
-//! 1. **执行器不阻塞**：所有网络 I/O 都在 worker 线程里。
-//! 2. **重试有界**：最多 `max_retries` 次额外尝试，且全部共享同一个截止时间。
-//! 3. **取消即停止**：Future 立刻返回 `Cancelled`；worker 在两次重试之间检查令牌，
-//!    不会继续烧钱。已在飞行中的那一次请求无法中断（HTTP 客户端拿不到中断句柄），
-//!    这一点在 `docs/known-issues.md` 里明确记录。
-//! 4. **不重试不可重试的错误**：鉴权/余额/配置错误原样重发只会重复失败。
+//! 同步客户端（`ureq`）在线程里执行，宿主不需要 async runtime；
+//! 执行器不会因为网络 I/O 而阻塞。
 
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
-use std::task::{Context, Poll, Waker};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use translator_types::CancelToken;
+use translator_types::{CancelToken, RequestBudget};
 
 use crate::config::HttpSettings;
 use crate::errors::{HttpError, HttpErrorKind};
+use crate::limiter::Limiter;
+use crate::pool::{Bridge, Execute, Job, Pool, Slot};
 use crate::usage::UsageMeter;
 
 /// 一次 HTTP 请求。
@@ -36,170 +36,78 @@ pub struct HttpRequest {
     /// `None` = 不发送 `Authorization` 头（本机模型服务常见）。
     pub api_key: Option<String>,
     pub body: serde_json::Value,
-    /// 单次尝试的总超时（由 worker 再与全局截止时间取小）。
+    /// 单次尝试的超时上限（还会与整体截止时间取小）。
     pub timeout: Duration,
 }
 
-/// 一次 HTTP 响应（状态码 + 文本体）。
+/// 一次 HTTP 响应（状态码 + 文本体 + 重试提示）。
 #[derive(Clone, Debug)]
 pub struct HttpOutcome {
     pub status: u16,
     pub body: String,
+    /// `Retry-After`（秒）。只在 429/503 等场景出现。
+    pub retry_after: Option<u64>,
 }
 
-/// 并发闸门：限制同时在飞行中的请求数量。
-///
-/// 等待发生在 **worker 线程**里（阻塞是允许的），不会占用执行器。
-#[derive(Debug)]
-struct Limiter {
-    limit: usize,
-    active: Mutex<usize>,
-    cv: Condvar,
+/// 每个 `Translator` 共享的运行时：全局并发 + 有界队列。
+pub struct HttpRuntime {
+    pool: Arc<Pool>,
+    global: Arc<Limiter>,
 }
 
-impl Limiter {
-    fn new(limit: usize) -> Self {
-        Self {
-            limit: limit.max(1),
-            active: Mutex::new(0),
-            cv: Condvar::new(),
-        }
-    }
-
-    fn acquire(&self) {
-        let mut active = self.active.lock().unwrap_or_else(|e| e.into_inner());
-        while *active >= self.limit {
-            active = self.cv.wait(active).unwrap_or_else(|e| e.into_inner());
-        }
-        *active += 1;
-    }
-
-    fn release(&self) {
-        let mut active = self.active.lock().unwrap_or_else(|e| e.into_inner());
-        *active = active.saturating_sub(1);
-        self.cv.notify_one();
+impl std::fmt::Debug for HttpRuntime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HttpRuntime")
+            .field("workers", &self.workers())
+            .field("queue_capacity", &self.queue_capacity())
+            .finish()
     }
 }
 
-/// 线程桥接槽：worker 写结果，Future 读结果。
-struct Slot {
-    result: Mutex<Option<Result<HttpOutcome, HttpError>>>,
-    waker: Mutex<Option<Waker>>,
-    finished: AtomicUsize,
-    /// 是否已经启动过"取消观察线程"（每个请求最多一个）。
-    watcher_started: AtomicUsize,
-}
-
-impl Slot {
-    fn new() -> Arc<Self> {
-        Arc::new(Self {
-            result: Mutex::new(None),
-            waker: Mutex::new(None),
-            finished: AtomicUsize::new(0),
-            watcher_started: AtomicUsize::new(0),
-        })
+impl HttpRuntime {
+    pub fn new(workers: usize, queue_capacity: usize, meter: Arc<UsageMeter>) -> Arc<Self> {
+        let workers = workers.max(1);
+        let global = Limiter::new(workers);
+        let pool = Pool::new(workers, queue_capacity, meter);
+        Arc::new(Self { pool, global })
     }
 
-    fn complete(&self, value: Result<HttpOutcome, HttpError>) {
-        {
-            let mut slot = self.result.lock().unwrap_or_else(|e| e.into_inner());
-            // 只保留第一个结果（取消之后到达的结果被丢弃）
-            if slot.is_none() {
-                *slot = Some(value);
-            }
-        }
-        self.finished.store(1, Ordering::Release);
-        if let Some(waker) = self.waker.lock().unwrap_or_else(|e| e.into_inner()).take() {
-            waker.wake();
-        }
+    pub fn pool(&self) -> &Arc<Pool> {
+        &self.pool
     }
 
-    fn is_finished(&self) -> bool {
-        self.finished.load(Ordering::Acquire) == 1
+    pub fn global(&self) -> &Arc<Limiter> {
+        &self.global
     }
 
-    fn take(&self) -> Option<Result<HttpOutcome, HttpError>> {
-        self.result.lock().unwrap_or_else(|e| e.into_inner()).take()
+    pub fn workers(&self) -> usize {
+        self.pool.workers()
+    }
+
+    pub fn queue_capacity(&self) -> usize {
+        self.pool.capacity()
     }
 }
 
-/// 等待 worker 结果的 Future。
-struct Bridge {
-    slot: Arc<Slot>,
-    cancel: Option<CancelToken>,
-}
-
-impl Future for Bridge {
-    type Output = Result<HttpOutcome, HttpError>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // 取消优先：即使结果已经到了也不返回它（调用方已经不要了）
-        if let Some(token) = &self.cancel {
-            if token.is_cancelled() {
-                return Poll::Ready(Err(HttpError::cancelled()));
-            }
-        }
-
-        if let Some(result) = self.slot.take() {
-            return Poll::Ready(result);
-        }
-
-        // 先登记 waker 再复查一次，避免 worker 在两者之间完成导致丢失唤醒。
-        *self.slot.waker.lock().unwrap_or_else(|e| e.into_inner()) = Some(cx.waker().clone());
-        if let Some(result) = self.slot.take() {
-            return Poll::Ready(result);
-        }
-
-        // `CancelToken` 没有回调机制：它只是一块原子标志。为了让"取消"能真正
-        // 唤醒执行器（而不是等后端自己返回），这里起一个极轻的观察线程，
-        // 每 10ms 看一次标志位。每个带取消令牌的请求最多一个。
-        if let Some(token) = self.cancel.clone() {
-            if self
-                .slot
-                .watcher_started
-                .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
-                .is_ok()
-            {
-                let slot = Arc::clone(&self.slot);
-                std::thread::Builder::new()
-                    .name("translate-cancel-watch".to_string())
-                    .spawn(move || {
-                        while !slot.is_finished() {
-                            if token.is_cancelled() {
-                                slot.complete(Err(HttpError::cancelled()));
-                                break;
-                            }
-                            std::thread::sleep(Duration::from_millis(10));
-                        }
-                    })
-                    .ok();
-            }
-        }
-
-        Poll::Pending
-    }
-}
-
-/// HTTP 传输器。
+/// 单个后端的传输器。
 pub struct HttpTransport {
-    agent: ureq::Agent,
-    limiter: Arc<Limiter>,
-    max_retries: u32,
-    /// 响应体上限：防止对端返回超大 HTML 时把内存吃光。
-    max_body_bytes: u64,
-    meter: Arc<UsageMeter>,
+    runtime: Arc<HttpRuntime>,
+    exec: Arc<Execute>,
 }
 
 impl std::fmt::Debug for HttpTransport {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("HttpTransport")
-            .field("max_retries", &self.max_retries)
-            .field("max_body_bytes", &self.max_body_bytes)
+            .field("backend", &self.exec.backend_id)
+            .field("max_retries", &self.exec.max_retries)
+            .field("workers", &self.runtime.workers())
+            .field("queue", &self.runtime.queue_capacity())
             .finish()
     }
 }
 
 impl HttpTransport {
+    /// 独立传输器（测试/单后端宿主）：内部自建运行时。
     pub fn new(
         settings: &HttpSettings,
         max_retries: u32,
@@ -207,174 +115,94 @@ impl HttpTransport {
         connect_timeout: Duration,
         meter: Arc<UsageMeter>,
     ) -> Self {
-        let config = ureq::Agent::config_builder()
-            // 状态码不当作错误：4xx/5xx 的**响应体**里才有对端的错误说明，
-            // 拿不到就只剩一个数字，无法区分"余额不足"和"密钥错误"。
-            .http_status_as_error(false)
-            .timeout_connect(Some(connect_timeout))
-            .user_agent(settings.user_agent.clone())
-            .build();
-        Self {
-            agent: config.into(),
-            limiter: Arc::new(Limiter::new(max_concurrent)),
+        let runtime = HttpRuntime::new(
+            settings.max_concurrent_requests.max(1),
+            settings.max_queue_size,
+            Arc::clone(&meter),
+        );
+        Self::with_runtime(
+            runtime,
+            settings,
+            "http.default",
             max_retries,
-            max_body_bytes: 1 << 20,
+            max_concurrent,
+            connect_timeout,
             meter,
-        }
+        )
     }
 
-    /// 发起请求（带重试）。Future 在 worker 线程完成后就绪。
-    pub fn send<'a>(
-        &'a self,
+    /// 共享运行时（同一 `Translator` 的所有后端共用全局并发与队列）。
+    pub fn with_runtime(
+        runtime: Arc<HttpRuntime>,
+        settings: &HttpSettings,
+        backend_id: &str,
+        max_retries: u32,
+        max_concurrent: usize,
+        connect_timeout: Duration,
+        meter: Arc<UsageMeter>,
+    ) -> Self {
+        let exec = Arc::new(Execute {
+            agent: crate::pool::build_agent(settings, connect_timeout),
+            backend_id: backend_id.to_string(),
+            backend: Limiter::new(max_concurrent.max(1)),
+            global: Arc::clone(runtime.global()),
+            max_retries,
+            max_body: 1 << 20,
+            default_timeout: Duration::from_secs(30),
+            meter,
+        });
+        Self { runtime, exec }
+    }
+
+    pub fn backend_id(&self) -> &str {
+        &self.exec.backend_id
+    }
+
+    pub fn workers(&self) -> usize {
+        self.runtime.workers()
+    }
+
+    pub fn queue_capacity(&self) -> usize {
+        self.runtime.queue_capacity()
+    }
+
+    /// 发起请求。队列满时立即返回 `QueueFull`。
+    pub fn send(
+        &self,
         request: HttpRequest,
         cancel: Option<CancelToken>,
         deadline: Option<Instant>,
-    ) -> Pin<Box<dyn Future<Output = Result<HttpOutcome, HttpError>> + Send + 'a>> {
-        let slot = Slot::new();
-        let bridge = Bridge {
-            slot: Arc::clone(&slot),
-            cancel: cancel.clone(),
-        };
-
-        let slot_for_thread = Arc::clone(&slot);
-        let agent = self.agent.clone();
-        let limiter = Arc::clone(&self.limiter);
-        let meter = Arc::clone(&self.meter);
-        let max_retries = self.max_retries;
-        let max_body = self.max_body_bytes;
-
-        let spawned = std::thread::Builder::new()
-            .name("translate-http".to_string())
-            .spawn(move || {
-                let outcome = run_with_retries(
-                    agent,
-                    limiter,
-                    meter,
-                    request,
-                    cancel,
-                    deadline,
-                    max_retries,
-                    max_body,
-                );
-                slot_for_thread.complete(outcome);
+        budget: Option<Arc<RequestBudget>>,
+    ) -> Pin<Box<dyn Future<Output = Result<HttpOutcome, HttpError>> + Send + '_>> {
+        // 提交前先做最便宜的检查，避免把注定失败的请求塞进队列
+        if cancel.as_ref().is_some_and(CancelToken::is_cancelled) {
+            return Box::pin(async { Err(HttpError::cancelled()) });
+        }
+        if deadline.is_some_and(|d| Instant::now() >= d) {
+            return Box::pin(async {
+                Err(HttpError::timeout("请求在提交前已超过截止时间"))
             });
-
-        if let Err(err) = spawned {
-            // 线程起不来（极端资源耗尽）：直接给结构化错误，不要 panic。
-            slot.complete(Err(HttpError::new(
-                HttpErrorKind::Transport,
-                format!("无法启动 HTTP worker 线程：{err}"),
-            )));
         }
 
-        Box::pin(bridge)
+        let slot = Slot::new();
+        let job = Job {
+            exec: Arc::clone(&self.exec),
+            request,
+            budget,
+            cancel: cancel.clone(),
+            deadline,
+            slot: Arc::clone(&slot),
+        };
+        if let Err(err) = self.runtime.pool().submit(job) {
+            return Box::pin(async move { Err(err) });
+        }
+
+        Box::pin(Bridge::new(slot, cancel))
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn run_with_retries(
-    agent: ureq::Agent,
-    limiter: Arc<Limiter>,
-    meter: Arc<UsageMeter>,
-    request: HttpRequest,
-    cancel: Option<CancelToken>,
-    deadline: Option<Instant>,
-    max_retries: u32,
-    max_body: u64,
-) -> Result<HttpOutcome, HttpError> {
-    let mut attempt: u32 = 0;
-    loop {
-        attempt += 1;
-
-        if is_cancelled(&cancel) {
-            meter.record_cancelled();
-            return Err(HttpError::cancelled().with_attempts(attempt));
-        }
-        if let Some(deadline) = deadline {
-            if Instant::now() >= deadline {
-                return Err(HttpError::timeout("请求在发出前已超过截止时间").with_attempts(attempt));
-            }
-        }
-
-        limiter.acquire();
-        let result = execute_once(&agent, &request, deadline, max_body);
-        limiter.release();
-
-        match result {
-            Ok(outcome) => {
-                let retryable_status = matches!(outcome.status, 408 | 425 | 429 | 500..=599);
-                if retryable_status && attempt <= max_retries && !is_cancelled(&cancel) {
-                    meter.record_retry();
-                    if !backoff(attempt, deadline, &cancel) {
-                        // 退避期间被取消/超时：不再重试
-                        if is_cancelled(&cancel) {
-                            meter.record_cancelled();
-                            return Err(HttpError::cancelled().with_attempts(attempt));
-                        }
-                        return Err(
-                            HttpError::timeout("重试等待期间超过截止时间").with_attempts(attempt)
-                        );
-                    }
-                    continue;
-                }
-                meter.record_request();
-                return Ok(outcome);
-            }
-            Err(err) => {
-                let retryable = err.kind.is_retryable();
-                if retryable && attempt <= max_retries && !is_cancelled(&cancel) {
-                    meter.record_retry();
-                    if !backoff(attempt, deadline, &cancel) {
-                        if is_cancelled(&cancel) {
-                            meter.record_cancelled();
-                            return Err(HttpError::cancelled().with_attempts(attempt));
-                        }
-                        return Err(
-                            HttpError::timeout("重试等待期间超过截止时间").with_attempts(attempt)
-                        );
-                    }
-                    continue;
-                }
-                meter.record_failure();
-                return Err(err.with_attempts(attempt));
-            }
-        }
-    }
-}
-
-fn is_cancelled(token: &Option<CancelToken>) -> bool {
-    token.as_ref().is_some_and(CancelToken::is_cancelled)
-}
-
-/// 指数退避（100ms、200ms、400ms…上限 2s），且不超过截止时间。
-/// 返回 `false` 表示等待期间被取消或已超过截止时间。
-fn backoff(attempt: u32, deadline: Option<Instant>, cancel: &Option<CancelToken>) -> bool {
-    let base = 100u64.saturating_mul(1u64 << attempt.min(4));
-    let mut wait = Duration::from_millis(base.min(2_000));
-    if let Some(deadline) = deadline {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            return false;
-        }
-        if wait > remaining {
-            wait = remaining;
-        }
-    }
-    // 分片睡眠，保证取消能较快生效
-    let step = Duration::from_millis(25);
-    let mut slept = Duration::ZERO;
-    while slept < wait {
-        if is_cancelled(cancel) {
-            return false;
-        }
-        let slice = step.min(wait - slept);
-        std::thread::sleep(slice);
-        slept += slice;
-    }
-    !is_cancelled(cancel)
-}
-
-fn execute_once(
+/// 执行一次 HTTP 往返（同步，只在 worker 线程里调用）。
+pub fn execute_once(
     agent: &ureq::Agent,
     request: &HttpRequest,
     deadline: Option<Instant>,
@@ -386,9 +214,7 @@ fn execute_once(
         if remaining.is_zero() {
             return Err(HttpError::timeout("请求超过截止时间"));
         }
-        if remaining < timeout {
-            timeout = remaining;
-        }
+        timeout = timeout.min(remaining);
     }
 
     let body = serde_json::to_string(&request.body)
@@ -407,16 +233,33 @@ fn execute_once(
     }
 
     let mut response = builder.send(body.as_str()).map_err(classify_transport)?;
-
     let status = response.status().as_u16();
+    // 先读 Retry-After：读 body 之后响应对象会被消费
+    let retry_after = response
+        .headers()
+        .get("retry-after")
+        .and_then(|value| value.to_str().ok())
+        .and_then(parse_retry_after);
     let text = response
         .body_mut()
         .with_config()
         .limit(max_body)
         .read_to_string()
         .map_err(classify_transport)?;
+    Ok(HttpOutcome {
+        status,
+        body: text,
+        retry_after,
+    })
+}
 
-    Ok(HttpOutcome { status, body: text })
+/// 解析 `Retry-After`：支持秒数；HTTP 日期格式解析成本高且少见，直接忽略。
+fn parse_retry_after(value: &str) -> Option<u64> {
+    value
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .map(|seconds| seconds.min(120))
 }
 
 fn classify_transport(err: ureq::Error) -> HttpError {
@@ -439,30 +282,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn 延迟退避且在取消时立即停止() {
-        let cancel = Some(CancelToken::new());
-        let c = cancel.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(30));
-            c.as_ref().unwrap().cancel();
-        });
-        let start = Instant::now();
-        assert!(!backoff(3, None, &cancel));
-        assert!(
-            start.elapsed() < Duration::from_millis(800),
-            "取消后应尽快返回"
-        );
-    }
-
-    #[test]
-    fn 截止时间已过时退避立即失败() {
-        let deadline = Instant::now() - Duration::from_millis(1);
-        assert!(!backoff(1, Some(deadline), &None));
-    }
-
-    #[test]
     fn 传输层异常分类() {
         let err = classify_transport(ureq::Error::HostNotFound);
         assert_eq!(err.kind, HttpErrorKind::Unavailable);
+    }
+
+    #[test]
+    fn 预取消请求不进入队列() {
+        let meter = UsageMeter::new();
+        let transport = HttpTransport::new(
+            &HttpSettings::default(),
+            0,
+            1,
+            Duration::from_millis(200),
+            meter,
+        );
+        let token = CancelToken::new();
+        token.cancel();
+        let err = pollster::block_on(transport.send(
+            HttpRequest {
+                url: "http://127.0.0.1:9/v1".to_string(),
+                api_key: None,
+                body: serde_json::json!({}),
+                timeout: Duration::from_millis(100),
+            },
+            Some(token),
+            None,
+            None,
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind, HttpErrorKind::Cancelled);
     }
 }

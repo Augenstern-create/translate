@@ -109,6 +109,7 @@ impl<'a> JobSpec<'a> {
             deadline: None,
             cancel: self.cancel,
             max_output_tokens: self.max_output_tokens,
+            budget: None,
         }
     }
 }
@@ -237,7 +238,7 @@ max_retries = 1
     let out = run_engine(&engine, &JobSpec::new("Hello.").build()).expect("重试后应成功");
     assert_eq!(out.text, "重试成功");
     assert_eq!(counter.load(Ordering::SeqCst), 2);
-    assert_eq!(engine.usage().retries, 1);
+    assert_eq!(engine.usage().transport_retries, 1);
 }
 
 #[test]
@@ -407,7 +408,7 @@ max_concurrent_requests = 1
         h.join().unwrap();
     }
     assert_eq!(peak.load(Ordering::SeqCst), 1, "并发闸门应把并发压到 1");
-    assert_eq!(engine.usage().requests, 3);
+    assert_eq!(engine.usage().logical_requests, 3);
 }
 
 #[test]
@@ -517,6 +518,7 @@ fn 传输层直接调用可以拿到原始状态与响应体() {
         },
         None,
         None,
+        None,
     ))
     .expect("传输层不把 4xx 当传输错误");
     assert_eq!(outcome.status, 418);
@@ -541,6 +543,7 @@ fn 连不上的端口报不可用() {
             body: serde_json::json!({}),
             timeout: Duration::from_millis(500),
         },
+        None,
         None,
         None,
     ))

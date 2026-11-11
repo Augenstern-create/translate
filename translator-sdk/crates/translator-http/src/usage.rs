@@ -19,12 +19,16 @@ use translator_types::TokenUsage;
 /// 线程安全的用量累计器。
 #[derive(Debug, Default)]
 pub struct UsageMeter {
-    requests: AtomicU64,
-    failures: AtomicU64,
-    retries: AtomicU64,
+    logical_requests: AtomicU64,
+    http_calls_started: AtomicU64,
+    http_calls_completed: AtomicU64,
+    transport_retries: AtomicU64,
+    content_retries: AtomicU64,
+    failed_calls: AtomicU64,
+    cancelled_requests: AtomicU64,
+    unknown_billable_calls: AtomicU64,
     input_tokens: AtomicU64,
     output_tokens: AtomicU64,
-    cancelled: AtomicU64,
 }
 
 impl UsageMeter {
@@ -32,20 +36,41 @@ impl UsageMeter {
         Arc::new(Self::default())
     }
 
-    pub fn record_request(&self) {
-        self.requests.fetch_add(1, Ordering::Relaxed);
+    /// 一次**用户可见**的逻辑翻译请求。
+    pub fn record_logical_request(&self) {
+        self.logical_requests.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// 一次物理 HTTP 调用即将发出（预算已扣除、配额已取得）。
+    pub fn record_call_started(&self) {
+        self.http_calls_started.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// 收到了 HTTP 响应（任何状态码）。
+    pub fn record_call_completed(&self) {
+        self.http_calls_completed.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_transport_retry(&self) {
+        self.transport_retries.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// 协调器因内容完整性失败发起的一次重试。
+    pub fn record_content_retry(&self) {
+        self.content_retries.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn record_failure(&self) {
-        self.failures.fetch_add(1, Ordering::Relaxed);
+        self.failed_calls.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn record_cancelled(&self) {
-        self.cancelled.fetch_add(1, Ordering::Relaxed);
+        self.cancelled_requests.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn record_retry(&self) {
-        self.retries.fetch_add(1, Ordering::Relaxed);
+    /// 请求已经发出但没有拿到响应：**可能仍会产生费用**，不能当作零成本。
+    pub fn record_unknown_billable(&self) {
+        self.unknown_billable_calls.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn record_tokens(&self, usage: TokenUsage) {
@@ -57,10 +82,14 @@ impl UsageMeter {
 
     pub fn snapshot(&self) -> UsageSnapshot {
         UsageSnapshot {
-            requests: self.requests.load(Ordering::Relaxed),
-            failures: self.failures.load(Ordering::Relaxed),
-            retries: self.retries.load(Ordering::Relaxed),
-            cancelled: self.cancelled.load(Ordering::Relaxed),
+            logical_requests: self.logical_requests.load(Ordering::Relaxed),
+            http_calls_started: self.http_calls_started.load(Ordering::Relaxed),
+            http_calls_completed: self.http_calls_completed.load(Ordering::Relaxed),
+            transport_retries: self.transport_retries.load(Ordering::Relaxed),
+            content_retries: self.content_retries.load(Ordering::Relaxed),
+            failed_calls: self.failed_calls.load(Ordering::Relaxed),
+            cancelled_requests: self.cancelled_requests.load(Ordering::Relaxed),
+            potentially_billable_unknown_calls: self.unknown_billable_calls.load(Ordering::Relaxed),
             tokens: TokenUsage {
                 input_tokens: self.input_tokens.load(Ordering::Relaxed),
                 output_tokens: self.output_tokens.load(Ordering::Relaxed),
@@ -70,12 +99,16 @@ impl UsageMeter {
 
     pub fn reset(&self) {
         for counter in [
-            &self.requests,
-            &self.failures,
-            &self.retries,
+            &self.logical_requests,
+            &self.http_calls_started,
+            &self.http_calls_completed,
+            &self.transport_retries,
+            &self.content_retries,
+            &self.failed_calls,
+            &self.cancelled_requests,
+            &self.unknown_billable_calls,
             &self.input_tokens,
             &self.output_tokens,
-            &self.cancelled,
         ] {
             counter.store(0, Ordering::Relaxed);
         }
@@ -85,22 +118,52 @@ impl UsageMeter {
 /// 某一时刻的用量快照。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct UsageSnapshot {
-    /// 发起的翻译请求数（含失败与取消）。
-    pub requests: u64,
-    pub failures: u64,
-    /// 传输层重试次数（不含首次）。
-    pub retries: u64,
-    pub cancelled: u64,
+    /// 逻辑翻译请求数（用户发起次数）。
+    pub logical_requests: u64,
+    /// 实际发出的物理 HTTP 调用数（含重试）。
+    pub http_calls_started: u64,
+    /// 收到响应的调用数（任何状态码）。
+    pub http_calls_completed: u64,
+    /// 传输层重试次数。
+    pub transport_retries: u64,
+    /// 内容完整性重试次数（由协调器上报）。
+    pub content_retries: u64,
+    /// 未拿到响应的调用数。
+    pub failed_calls: u64,
+    /// 被取消的请求数。
+    pub cancelled_requests: u64,
+    /// 已发出但没有可靠响应的调用数——**可能仍然计费**，不能算作零成本。
+    pub potentially_billable_unknown_calls: u64,
     pub tokens: TokenUsage,
 }
 
 impl UsageSnapshot {
     /// 按单价估算费用（美元）。单价缺失时返回 `None`：不要编一个默认价格。
+    ///
+    /// 注意：这是**估算**。服务端可能有缓存命中价、分时价或其它计费规则，
+    /// 最终账单以转发站为准。
     pub fn estimate_cost_usd(&self, pricing: Option<Pricing>) -> Option<f64> {
         let pricing = pricing?;
         let input = self.tokens.input_tokens as f64 / 1_000_000.0 * pricing.input_per_million;
         let output = self.tokens.output_tokens as f64 / 1_000_000.0 * pricing.output_per_million;
         Some(input + output)
+    }
+
+    /// 一行摘要（不含文本）。
+    pub fn summary(&self) -> String {
+        format!(
+            "请求 {}（HTTP {}，完成 {}，失败 {}，传输重试 {}，内容重试 {}，取消 {}，疑似计费未知 {}）；token {}/{}",
+            self.logical_requests,
+            self.http_calls_started,
+            self.http_calls_completed,
+            self.failed_calls,
+            self.transport_retries,
+            self.content_retries,
+            self.cancelled_requests,
+            self.potentially_billable_unknown_calls,
+            self.tokens.input_tokens,
+            self.tokens.output_tokens
+        )
     }
 }
 
@@ -126,22 +189,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn 累计器记录请求与令牌() {
+    fn 累计器区分逻辑请求与物理调用() {
         let meter = UsageMeter::new();
-        meter.record_request();
-        meter.record_request();
-        meter.record_retry();
-        meter.record_failure();
+        meter.record_logical_request();
+        meter.record_call_started();
+        meter.record_call_completed();
+        meter.record_transport_retry();
+        meter.record_content_retry();
+        meter.record_unknown_billable();
         meter.record_tokens(TokenUsage {
             input_tokens: 100,
             output_tokens: 40,
         });
 
-        let snap = meter.snapshot();
-        assert_eq!(snap.requests, 2);
-        assert_eq!(snap.retries, 1);
-        assert_eq!(snap.failures, 1);
-        assert_eq!(snap.tokens.total(), 140);
+        let snapshot = meter.snapshot();
+        assert_eq!(snapshot.logical_requests, 1);
+        assert_eq!(snapshot.http_calls_started, 1);
+        assert_eq!(snapshot.http_calls_completed, 1);
+        assert_eq!(snapshot.transport_retries, 1);
+        assert_eq!(snapshot.content_retries, 1);
+        assert_eq!(snapshot.potentially_billable_unknown_calls, 1);
+        assert_eq!(snapshot.tokens.total(), 140);
+        assert!(snapshot.summary().contains("疑似计费未知 1"));
 
         meter.reset();
         assert_eq!(meter.snapshot(), UsageSnapshot::default());
@@ -149,17 +218,17 @@ mod tests {
 
     #[test]
     fn 未配置价格时不估算费用() {
-        let snap = UsageSnapshot {
+        let snapshot = UsageSnapshot {
             tokens: TokenUsage {
                 input_tokens: 1_000_000,
                 output_tokens: 1_000_000,
             },
             ..UsageSnapshot::default()
         };
-        assert_eq!(snap.estimate_cost_usd(None), None);
+        assert_eq!(snapshot.estimate_cost_usd(None), None);
 
         let pricing = Pricing::from_option(Some(2.0), Some(8.0)).unwrap();
-        let cost = snap.estimate_cost_usd(Some(pricing)).unwrap();
+        let cost = snapshot.estimate_cost_usd(Some(pricing)).unwrap();
         assert!((cost - 10.0).abs() < 1e-9, "{cost}");
     }
 

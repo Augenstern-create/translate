@@ -64,6 +64,8 @@ pub struct TranslationDiagnostics {
     pub route_reason: String,
     /// 实际使用的保护策略（`marker` / `segment`）。
     pub protection_strategy: String,
+    /// 本次逻辑请求实际发出的物理 HTTP 调用数（含重试与分段）。
+    pub http_calls: u32,
     /// 格式修复的处置结果（`unchanged` / `applied` / `rejected`）。
     ///
     /// `rejected` 表示"修复会破坏译文，已退回原候选"——排查质量问题时很有用。
@@ -96,6 +98,7 @@ impl TranslationDiagnostics {
             resource_fingerprint: String::new(),
             route_reason: String::new(),
             protection_strategy: "none".to_string(),
+            http_calls: 0,
             repair: "unchanged".to_string(),
             protected_spans: Vec::new(),
             glossary: None,
@@ -127,6 +130,9 @@ impl TranslationDiagnostics {
         }
         if let Some(quality) = &self.quality {
             parts.push(quality.summary());
+        }
+        if self.http_calls > 0 {
+            parts.push(format!("HTTP调用={}", self.http_calls));
         }
         if self.attempts > 1 {
             parts.push(format!("尝试={}", self.attempts));

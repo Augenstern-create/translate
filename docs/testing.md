@@ -28,7 +28,7 @@ cargo test -p translator-api           # 端到端流水线（脚本化引擎）
 当前基线（Linux，`refactor/online-translation-v1`）：
 
 ```text
-passed = 335   failed = 0   ignored = 4
+passed = 361   failed = 0   ignored = 4
 ```
 
 覆盖的关键场景：
@@ -84,6 +84,19 @@ passed = 335   failed = 0   ignored = 4
 - 超大 Content-Length → 413 且**不读取请求体**（有耗时断言）
 - 非法 Content-Length → 400；chunked → 400；超大请求头 → 431
 - 非 JSON Content-Type → 415；PUT → 405；非法 JSON → 400
+
+**HTTP 预算 / 并发 / 队列（`crates/translator-http/tests/s2_limits.rs`）**
+
+- 成功请求只消耗 1 次调用；传输重试各消耗 1 次；预算耗尽返回 `BudgetExceeded`
+  且不再发请求（用服务端命中次数断言）
+- 同一 `RequestBudget` 跨多次发送共享；32 线程竞争 10 次额度恰好成功 10 次
+- 全局并发（2）在两个后端之间共享，峰值 ≤2；单后端上限（1）独立生效
+- 失败路径结束后 `global.active() == 0`（无配额泄漏）
+- 队列满立即 `QueueFull`；排队中取消/超时都不发到服务端（服务端命中数=1）
+- `workers`/`queue_capacity` 与配置一致
+- 401/403 不重试；500/502/503 重试后 `BackendUnavailable`；504/408 → `BackendTimeout`
+- 429 遵守 `Retry-After: 1`（≥900ms 后再试）；非法响应体不触发传输重试
+- 取消后不再重试（服务端命中 ≤2）
 
 **流水线（`translator-api`）**
 

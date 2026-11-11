@@ -475,6 +475,7 @@ fn translate(translator: &Translator, body: &str) -> Result<String, String> {
         "engine_id": output.result.engine_id,
         "elapsed_ms": elapsed,
         "attempts": output.diagnostics.attempts,
+        "http_calls": output.diagnostics.http_calls,
         "cached": output.diagnostics.cache_hit,
         "protection": output.diagnostics.protection_strategy,
         "repair": output.diagnostics.repair,

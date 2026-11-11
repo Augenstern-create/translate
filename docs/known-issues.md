@@ -46,20 +46,27 @@
 | K-35 | `Host`/`Origin`/`x-csrf-token`/`Content-Type` 重复时未拒绝（只有 `Content-Length` 有检查） | 四类安全头重复一律 400，并有 4 个真实 socket 用例（S1 收尾） |
 | K-36 | 本地页面没有 CSP，任何注入脚本都能执行 | 增加 CSP：`default-src 'none'`，脚本/样式只认每次响应随机生成的 nonce，`connect-src 'self'`，无 `unsafe-inline`；用 headless 浏览器验证动态注入的内联脚本被拦截（S1 收尾） |
 
-### 后续阶段处理（S2 / S3 / S4）
+### S2 已关闭
+
+| ID | 问题 | 修复 |
+|---|---|---|
+| K-31 | 排队阶段无取消/超时 | 有界队列 + 截止时间感知的配额等待；排队中取消/超时不会发到服务端（真实 socket 用例） |
+| K-32 | 没有物理调用预算 | `RequestBudget`：一次逻辑请求共享调用额度，分段/内容重试/传输重试都计入，耗尽返回 `BudgetExceeded` |
+| K-16 | 每请求一个 worker 线程 | 固定 worker 池（= 全局并发上限）+ 单一取消观察线程，线程数恒定 |
+
+### 后续阶段处理（S3 / S4）
 
 以下问题本轮**不处理**，继续记录在案：
 
 | ID | 模块 | 问题 | 影响 | 计划 |
 |---|---|---|---|---|
-| K-31 | 后端 | 排队阶段的取消与超时不够精细：取消在"重试之间"生效，排队等待中的请求不能立即放弃 | 中 | S2（有界队列 + Permit + 截止时间） |
-| K-32 | 成本 | 没有单次请求的 HTTP 调用预算与 token/费用上限 | 中 | S2（RequestBudget） |
-| K-14 | 后端 | 响应中断可能重复计费 | 中 | S2 记录 `unknown_billable_calls` |
-| K-15 | 后端 | 在途 HTTP 请求无法中断 | 低 | S2 记录为已知限制 |
-| K-16 | 后端 | 每请求一个 worker 线程 | 低 | S2（有界 worker 池） |
+| K-15 | 后端 | 已发出的单次 HTTP 请求无法被 `ureq` 中断；取消只能让 Future 立即返回并阻止后续重试 | 低 | Accepted（已发布的传输层限制，见 §S2 说明） |
+| K-14 | 后端 | 响应中断可能重复计费 | 中 | Partially fixed：现在计入 `potentially_billable_unknown_calls`，但仍无法避免 |
 | K-18 | 段落 | `paragraph_strategy` 不改变执行方式 | 中 | S3 质量阶段评估 |
 | K-19 | 评测 | `fixtures/eval` 无人工参考译文 | 高 | S3（人工盲测） |
 | K-20 | 评测 | 未在真实转发站跑批量评测 | 高 | S3 |
 | K-21 | 本地模型 | 与远程基线的质量对比未做 | 高 | S3 |
-| K-22 | 平台 | Windows 已实机跑通 `cargo test --workspace`（335 passed）；但 CLI/Web UI 的手工操作、TLS/代理/路径/编码等场景仍未在该机器上验证 | 中 | S4（实机功能验证） |
+| K-22 | 平台 | Windows 已实机跑通 `cargo test --workspace`；但 CLI/Web UI 手工操作、TLS/代理/路径/编码仍未在该机器验证 | 中 | S4（实机功能验证） |
 | K-25 | 词典 | 释义未人工校对 | 中 | S3 |
+| K-37 | 成本 | 只有"调用次数 + 输出 token 上限"，没有跨请求的每日/每月预算 | 中 | Accepted（硬额度由转发站执行） |
+| K-38 | 队列 | 队列为进程内 FIFO，不跨进程/不持久化；进程重启后丢失 | 低 | Accepted |

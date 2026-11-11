@@ -35,14 +35,18 @@ pub mod client;
 pub mod config;
 pub mod engine;
 pub mod errors;
+pub mod limiter;
+pub mod pool;
 pub mod prompt;
 pub mod protocol;
 pub mod usage;
 
-pub use client::{HttpOutcome, HttpRequest, HttpTransport};
+pub use client::{HttpOutcome, HttpRequest, HttpRuntime, HttpTransport};
 pub use config::{BackendConfig, BackendsFile, HttpSettings, ThinkingStyle, DEFAULT_API_KEY_ENV};
 pub use engine::{engines_from_toml, HttpTranslationEngine};
 pub use errors::{HttpError, HttpErrorKind};
+pub use limiter::{AcquireError, Limiter, Permit};
+pub use pool::Pool;
 pub use prompt::{PromptInput, PromptTemplate, EMBEDDED_FAST_V1, EMBEDDED_PRECISE_V1};
 pub use protocol::{
     build_request_body, parse_response, sanitize_translation, ChatCompletion, PromptMessage,

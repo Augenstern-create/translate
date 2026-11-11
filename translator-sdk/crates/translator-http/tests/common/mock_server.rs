@@ -6,6 +6,9 @@
 //!
 //! 仅在 `cfg(test)` 或 `feature = "mock-server"` 下编译。
 
+// 该模块被多个测试二进制分别 include，各自只用到其中一部分 API。
+#![allow(dead_code)]
+
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -42,6 +45,8 @@ pub struct MockResponse {
     pub status: u16,
     pub body: String,
     pub delay: Option<Duration>,
+    /// 额外响应头（例如 `Retry-After`）。
+    pub headers: Vec<(String, String)>,
 }
 
 impl MockResponse {
@@ -50,6 +55,7 @@ impl MockResponse {
             status,
             body: body.into(),
             delay: None,
+            headers: Vec::new(),
         }
     }
 
@@ -60,6 +66,11 @@ impl MockResponse {
 
     pub fn with_delay(mut self, delay: Duration) -> Self {
         self.delay = Some(delay);
+        self
+    }
+
+    pub fn with_header(mut self, name: &str, value: &str) -> Self {
+        self.headers.push((name.to_string(), value.to_string()));
         self
     }
 }
@@ -200,8 +211,12 @@ where
     }
 
     let mut stream = stream;
+    let mut extra = String::new();
+    for (name, value) in &response.headers {
+        extra.push_str(&format!("{name}: {value}\r\n"));
+    }
     let payload = format!(
-        "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n{extra}Connection: close\r\n\r\n{}",
         response.status,
         reason(response.status),
         response.body.len(),

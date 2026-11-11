@@ -85,6 +85,9 @@ fn default_max_retries() -> u32 {
 fn default_max_concurrent() -> usize {
     4
 }
+fn default_max_queue_size() -> usize {
+    16
+}
 fn default_language_pairs() -> Vec<String> {
     vec!["en->zh-CN".to_string(), "en->zh-Hans".to_string()]
 }
@@ -344,25 +347,67 @@ fn hex16(bytes: &[u8]) -> String {
 }
 
 /// 全局 HTTP 设置。
+///
+/// `max_concurrent_requests` 是**所有后端共享**的总并发（也就是 worker 数量）；
+/// `max_queue_size` 是等待队列容量，满了立即返回 `QueueFull`，绝不无限排队。
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct HttpSettings {
-    /// 所有后端共享的并发上限（0 表示只受各后端自己的限制）。
+    /// 所有后端共享的并发上限（worker 数）。0 视为未配置，使用默认 4。
     #[serde(default)]
     pub max_concurrent_requests: usize,
+    /// 等待队列容量（0 视为未配置，使用默认 16）。
+    #[serde(default)]
+    pub max_queue_size: usize,
     /// User-Agent。
     #[serde(default = "default_user_agent")]
     pub user_agent: String,
 }
 
+impl HttpSettings {
+    /// 实际生效的全局并发（缺失/0 → 安全默认值）。
+    pub fn effective_max_concurrent(&self) -> usize {
+        if self.max_concurrent_requests == 0 {
+            default_max_concurrent()
+        } else {
+            self.max_concurrent_requests
+        }
+    }
+
+    /// 实际生效的队列容量。
+    pub fn effective_queue_size(&self) -> usize {
+        if self.max_queue_size == 0 {
+            default_max_queue_size()
+        } else {
+            self.max_queue_size
+        }
+    }
+
+    /// 校验：负数在 usize 下已不可能，这里只拒绝明显不合理的上限。
+    pub fn validate(&self) -> Result<(), HttpError> {
+        if self.max_concurrent_requests > 256 {
+            return Err(HttpError::config(
+                "max_concurrent_requests 过大（>256），请检查配置",
+            ));
+        }
+        if self.max_queue_size > 4096 {
+            return Err(HttpError::config(
+                "max_queue_size 过大（>4096），请检查配置",
+            ));
+        }
+        Ok(())
+    }
+}
+
 fn default_user_agent() -> String {
-    format!("augenstern-translate/{}", env!("CARGO_PKG_VERSION"))
+    format!("augstern-translate/{}", env!("CARGO_PKG_VERSION"))
 }
 
 impl Default for HttpSettings {
     fn default() -> Self {
         Self {
-            max_concurrent_requests: 0,
+            max_concurrent_requests: default_max_concurrent(),
+            max_queue_size: default_max_queue_size(),
             user_agent: default_user_agent(),
         }
     }

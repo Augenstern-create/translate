@@ -23,6 +23,10 @@ pub enum HttpErrorKind {
     RateLimited,
     /// 额度/余额不足（402，或对端明确的余额错误）。
     BudgetExceeded,
+    /// 本次逻辑请求的**物理调用预算**已用完（SDK 侧限制）。
+    BudgetExceededLocal,
+    /// HTTP 执行队列已满（有界队列拒绝）。
+    QueueFull,
     /// 连接失败 / DNS 失败 / 5xx：后端暂时不可用。
     Unavailable,
     /// 超过截止时间。
@@ -42,6 +46,8 @@ impl HttpErrorKind {
             Self::Auth => "auth",
             Self::RateLimited => "rate_limited",
             Self::BudgetExceeded => "budget_exceeded",
+            Self::BudgetExceededLocal => "budget_exceeded_local",
+            Self::QueueFull => "queue_full",
             Self::Unavailable => "unavailable",
             Self::Timeout => "timeout",
             Self::Cancelled => "cancelled",
@@ -67,6 +73,8 @@ impl HttpErrorKind {
             Self::Auth => TranslationErrorCode::AuthenticationFailed,
             Self::RateLimited => TranslationErrorCode::RateLimited,
             Self::BudgetExceeded => TranslationErrorCode::BudgetExceeded,
+            Self::BudgetExceededLocal => TranslationErrorCode::BudgetExceeded,
+            Self::QueueFull => TranslationErrorCode::QueueFull,
             Self::Unavailable => TranslationErrorCode::BackendUnavailable,
             Self::Timeout => TranslationErrorCode::BackendTimeout,
             Self::Cancelled => TranslationErrorCode::Cancelled,

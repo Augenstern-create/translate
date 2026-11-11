@@ -18,7 +18,7 @@ use translator_types::{
     TranslationErrorCode, TranslationMode,
 };
 
-use crate::client::{HttpRequest, HttpTransport};
+use crate::client::{HttpRequest, HttpRuntime, HttpTransport};
 use crate::config::{BackendConfig, BackendsFile, HttpSettings};
 use crate::errors::{HttpError, HttpErrorKind};
 use crate::prompt::{PromptInput, PromptTemplate};
@@ -55,13 +55,28 @@ impl HttpTranslationEngine {
         Self::with_settings(config, &HttpSettings::default())
     }
 
-    /// 由配置 + 全局 HTTP 设置构造。
-    ///
-    /// `[http]` 段（User-Agent、全局并发上限）此前被忽略，是配置文件里的一个死字段；
-    /// 现在真正生效：全局并发上限会对每个后端取更严格者。
+    /// 由配置 + 全局 HTTP 设置构造（自建运行时：测试与单后端宿主使用）。
     pub fn with_settings(
         config: BackendConfig,
         settings: &HttpSettings,
+    ) -> Result<Self, HttpError> {
+        settings.validate()?;
+        let runtime = HttpRuntime::new(
+            settings.effective_max_concurrent(),
+            settings.effective_queue_size(),
+            UsageMeter::new(),
+        );
+        Self::with_runtime(config, settings, runtime)
+    }
+
+    /// 由配置 + 全局设置 + **共享运行时**构造。
+    ///
+    /// 同一 `Translator` 的所有后端必须共享同一个运行时，否则"全局并发"会退化成
+    /// "每个后端各自的上限"（这正是 S2 要修的问题）。
+    pub fn with_runtime(
+        config: BackendConfig,
+        settings: &HttpSettings,
+        runtime: Arc<HttpRuntime>,
     ) -> Result<Self, HttpError> {
         config.validate()?;
         let id = config.engine_id(&config.id);
@@ -69,17 +84,12 @@ impl HttpTranslationEngine {
         let fast = PromptTemplate::for_mode(&config, TranslationMode::Fast)?;
 
         let meter = UsageMeter::new();
-        let concurrency = if settings.max_concurrent_requests > 0 {
-            config
-                .max_concurrent_requests
-                .min(settings.max_concurrent_requests)
-        } else {
-            config.max_concurrent_requests
-        };
-        let transport = HttpTransport::new(
+        let transport = HttpTransport::with_runtime(
+            Arc::clone(&runtime),
             settings,
+            &id,
             config.max_retries,
-            concurrency,
+            config.max_concurrent_requests,
             Duration::from_millis(config.connect_timeout_ms),
             Arc::clone(&meter),
         );
@@ -102,10 +112,22 @@ impl HttpTranslationEngine {
     }
 
     /// 从已解析的配置构造所有启用的后端（按配置文件名排序，顺序确定）。
+    ///
+    /// 所有后端**共享同一个** `HttpRuntime`：全局并发与有界队列是真正全局的。
     pub fn from_file(file: &BackendsFile) -> Result<Vec<Self>, HttpError> {
+        file.http.validate()?;
+        let runtime = HttpRuntime::new(
+            file.http.effective_max_concurrent(),
+            file.http.effective_queue_size(),
+            UsageMeter::new(),
+        );
         let mut engines = Vec::new();
         for (_, backend) in file.enabled_backends()? {
-            engines.push(Self::with_settings(backend.clone(), &file.http)?);
+            engines.push(Self::with_runtime(
+                backend.clone(),
+                &file.http,
+                Arc::clone(&runtime),
+            )?);
         }
         Ok(engines)
     }
@@ -187,7 +209,11 @@ impl HttpTranslationEngine {
         };
 
         let cancel = job.cancel.cloned();
-        let outcome = self.transport.send(request, cancel, job.deadline).await?;
+        self.meter.record_logical_request();
+        let outcome = self
+            .transport
+            .send(request, cancel, job.deadline, job.budget.clone())
+            .await?;
         let completion = parse_response(outcome.status, &outcome.body)?;
 
         if let Some(usage) = completion.usage {
@@ -238,6 +264,7 @@ impl HttpTranslationEngine {
             deadline,
             cancel,
             max_output_tokens: None,
+            budget: None,
         }
     }
 }
@@ -307,6 +334,10 @@ impl TranslationEngine for HttpTranslationEngine {
                 warnings: out.warnings,
             })
         })
+    }
+
+    fn record_content_retry(&self) {
+        self.meter.record_content_retry();
     }
 
     fn model_identity(&self) -> Option<translator_plugin_api::ModelIdentity> {

@@ -46,8 +46,8 @@ pub use translator_core::{
 };
 pub use translator_dictionary as dictionary;
 pub use translator_http::{
-    engines_from_toml, BackendConfig, BackendsFile, HttpError, HttpErrorKind,
-    HttpTranslationEngine, Pricing, PromptTemplate, ThinkingStyle, UsageSnapshot,
+    engines_from_toml, BackendConfig, BackendsFile, HttpError, HttpErrorKind, HttpRuntime,
+    HttpSettings, HttpTranslationEngine, Pricing, PromptTemplate, ThinkingStyle, UsageSnapshot,
 };
 pub use translator_plugin_api::{
     DictionaryProvider, EngineOutput, InferenceBackend, LoadedModel, ModelIdentity, PluginRegistry,
@@ -257,6 +257,10 @@ pub struct TranslatorBuilder {
     glossary: Option<Arc<Glossary>>,
     templates: Option<Arc<dyn SentenceTemplates>>,
     rules: Option<Arc<dyn TextRules>>,
+    /// 全局 HTTP 设置（并发/队列）；文件里的值会被这里的显式覆盖。
+    http_settings: HttpSettings,
+    /// 是否显式设置过全局并发/队列（避免默认值覆盖配置文件）。
+    http_overrides: (bool, bool),
     lemmatizer: Option<Arc<dyn MorphologyAnalyzer>>,
     language_identifier: Option<Arc<dyn LanguageIdentifier>>,
 }
@@ -280,6 +284,8 @@ impl TranslatorBuilder {
             glossary: None,
             templates: None,
             rules: None,
+            http_settings: HttpSettings::default(),
+            http_overrides: (false, false),
             // 词典查词默认启用轻量词形还原：只在"精确未命中"时作为候选，
             // 不会改写翻译输入。宿主可用 `.lemmatizer(...)` 覆盖或置空。
             lemmatizer: Some(Arc::new(EnglishLemmatizer::new())),
@@ -495,6 +501,26 @@ impl TranslatorBuilder {
 
     pub fn max_input_chars(mut self, chars: usize) -> Self {
         self.config.max_input_chars = chars;
+        self
+    }
+
+    /// 一次逻辑请求允许的物理 HTTP 调用上限（分段与重试共享）。
+    pub fn max_http_calls_per_request(mut self, calls: u32) -> Self {
+        self.config.max_http_calls_per_request = calls.max(1);
+        self
+    }
+
+    /// 全局并发上限（所有后端共享，决定 worker 数量）。
+    pub fn http_global_concurrency(mut self, workers: usize) -> Self {
+        self.http_settings.max_concurrent_requests = workers.max(1);
+        self.http_overrides.0 = true;
+        self
+    }
+
+    /// 有界队列容量；满了立即返回 `QueueFull`。
+    pub fn http_queue_size(mut self, capacity: usize) -> Self {
+        self.http_settings.max_queue_size = capacity.max(1);
+        self.http_overrides.1 = true;
         self
     }
 

@@ -738,6 +738,150 @@ fn 模板路径与模型路径的终检规则一致() {
 }
 
 // ============================================================
+// S2：预算与调用计数（协调器侧）
+// ============================================================
+
+/// 会"消费 HTTP 预算"的测试引擎：模拟真实后端的扣费行为。
+struct BudgetEatingEngine {
+    calls: Arc<AtomicUsize>,
+    /// 返回的文本（不含标记），用于触发完整性失败与分段回退。
+    reply: String,
+}
+
+impl BudgetEatingEngine {
+    fn new(reply: &str) -> Arc<Self> {
+        Arc::new(Self {
+            calls: Arc::new(AtomicUsize::new(0)),
+            reply: reply.to_string(),
+        })
+    }
+
+    fn calls(&self) -> usize {
+        self.calls.load(Ordering::SeqCst)
+    }
+}
+
+impl TranslationEngine for BudgetEatingEngine {
+    fn descriptor(&self) -> translator_api::EngineDescriptor {
+        translator_api::EngineDescriptor::new(
+            "mock.budget",
+            [translator_api::Capability::Nmt],
+            100,
+            "MIT",
+        )
+    }
+
+    fn supports(&self, _source: &LanguageTag, _target: &LanguageTag) -> bool {
+        true
+    }
+
+    fn translate<'a>(
+        &'a self,
+        req: &'a TranslateRequest,
+    ) -> translator_plugin_api::BoxFuture<
+        'a,
+        Result<translator_api::TranslationResult, TranslationError>,
+    > {
+        Box::pin(async move {
+            Ok(translator_api::TranslationResult {
+                text: self.reply.clone(),
+                source: req
+                    .source
+                    .clone()
+                    .unwrap_or_else(|| LanguageTag::new("en").unwrap()),
+                target: req.target.clone(),
+                engine_id: "mock.budget".to_string(),
+                model_id: None,
+                elapsed_ms: 0,
+                warnings: Vec::new(),
+            })
+        })
+    }
+
+    fn translate_job<'a>(
+        &'a self,
+        job: &'a TranslationJob<'a>,
+    ) -> translator_plugin_api::BoxFuture<'a, Result<EngineOutput, TranslationError>> {
+        Box::pin(async move {
+            // 真实后端在发请求前扣预算；这里复现同一契约
+            if let Some(budget) = &job.budget {
+                if !budget.try_start_call() {
+                    return Err(TranslationError::new(
+                        TranslationErrorCode::BudgetExceeded,
+                        "预算耗尽",
+                    ));
+                }
+            }
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            // 模拟"吞掉标记"的模型：永远只返回固定文本，任何占位符都丢失
+            let _ = job.text;
+            Ok(EngineOutput::new(self.reply.clone()))
+        })
+    }
+}
+
+#[test]
+fn 预算按逻辑请求创建并被协调器计入诊断() {
+    let engine = BudgetEatingEngine::new("你好。");
+    let translator = Translator::builder()
+        .engine(Arc::clone(&engine) as Arc<dyn TranslationEngine>)
+        .expect("注册失败")
+        .max_http_calls_per_request(4)
+        .build()
+        .unwrap();
+
+    let output = pollster::block_on(translator.translate_with_diagnostics(&request("Hello.")))
+        .expect("应成功");
+    assert_eq!(engine.calls(), 1);
+    assert_eq!(output.diagnostics.http_calls, 1, "诊断应报告实际调用数");
+}
+
+#[test]
+fn 分段回退与内容重试共享同一预算() {
+    // 预算 2：第一次（标记）消耗 1 → 完整性失败 → 分段回退需要 3 段，
+    // 第二段的第二次调用就会撞上预算上限。
+    let engine = BudgetEatingEngine::new("无标记的译文。");
+    let translator = Translator::builder()
+        .engine(Arc::clone(&engine) as Arc<dyn TranslationEngine>)
+        .expect("注册失败")
+        .max_http_calls_per_request(2)
+        .content_retry(1)
+        .build()
+        .unwrap();
+
+    let err = pollster::block_on(
+        translator.translate(&request("Visit https://example.com/a and {file} now.")),
+    )
+    .unwrap_err();
+    assert_eq!(
+        err.code,
+        TranslationErrorCode::BudgetExceeded,
+        "{}",
+        err.message
+    );
+    assert_eq!(engine.calls(), 2, "预算只允许两次真实调用");
+}
+
+#[test]
+fn 预算耗尽后不再重试() {
+    let engine = BudgetEatingEngine::new("无标记的译文。");
+    let translator = Translator::builder()
+        .engine(Arc::clone(&engine) as Arc<dyn TranslationEngine>)
+        .expect("注册失败")
+        .max_http_calls_per_request(1)
+        .content_retry(3)
+        .build()
+        .unwrap();
+
+    let err = pollster::block_on(
+        translator.translate(&request("Visit https://example.com/a and {file} now.")),
+    )
+    .unwrap_err();
+    assert_eq!(err.code, TranslationErrorCode::BudgetExceeded);
+    assert_eq!(engine.calls(), 1, "只有一次调用额度");
+}
+
+// ============================================================
 // 取消 / 查词 / 路由
 // ============================================================
 

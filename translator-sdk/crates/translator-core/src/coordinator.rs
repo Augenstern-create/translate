@@ -36,9 +36,9 @@ use std::time::{Duration, Instant};
 use translator_plugin_api::{BoxFuture, PluginRegistry, TranslationJob};
 use translator_types::{
     CancelToken, CapabilityInfo, DictionaryEntry, LanguageTag, LookupRequest, ParagraphStrategy,
-    RemoteFallbackPolicy, RouteDecision, RouteStats, TermConstraint, TokenUsage, TranslateOptions,
-    TranslateRequest, TranslationError, TranslationErrorCode, TranslationMode, TranslationResult,
-    TranslationRoute, TranslationWarning,
+    RemoteFallbackPolicy, RequestBudget, RouteDecision, RouteStats, TermConstraint, TokenUsage,
+    TranslateOptions, TranslateRequest, TranslationError, TranslationErrorCode, TranslationMode,
+    TranslationResult, TranslationRoute, TranslationWarning,
 };
 
 use crate::cache::{CacheEntry, CacheIdentity, CacheKey, CacheStats, QueryCache};
@@ -87,7 +87,14 @@ pub struct CoordinatorConfig {
     /// 默认超时（毫秒）。请求可用 `TranslateRequest::timeout_ms` 覆盖。
     pub default_timeout_ms: u64,
     /// 内容完整性失败后的**额外**尝试次数（默认 1）。
+    ///
+    /// 注意：这只限制"翻译尝试"，真正的费用上限是
+    /// [`Self::max_http_calls_per_request`]。
     pub content_retry: u32,
+    /// 一次逻辑请求允许发出的**物理 HTTP 调用**总数（默认 4）。
+    ///
+    /// 分段翻译、内容重试与传输层重试共享这一额度；超出即 `BudgetExceeded`。
+    pub max_http_calls_per_request: u32,
     /// 语言识别器；`None` 时使用内置启发式。
     pub language_identifier: Option<Arc<dyn LanguageIdentifier>>,
     /// 形态分析器（仅用于查词未命中后的候选）。
@@ -128,6 +135,10 @@ impl std::fmt::Debug for CoordinatorConfig {
             .field("preferred_backend", &self.preferred_backend)
             .field("max_input_chars", &self.max_input_chars)
             .field("content_retry", &self.content_retry)
+            .field(
+                "max_http_calls_per_request",
+                &self.max_http_calls_per_request,
+            )
             .field("privacy_scope", &self.privacy_scope)
             .field("domain", &self.domain)
             .finish()
@@ -151,6 +162,7 @@ impl Default for CoordinatorConfig {
             max_input_chars: 20_000,
             default_timeout_ms: 30_000,
             content_retry: 1,
+            max_http_calls_per_request: 4,
             language_identifier: None,
             lemmatizer: None,
             privacy_scope: "default".to_string(),
@@ -633,6 +645,11 @@ impl Coordinator {
 
         // 9. 执行（含一次受限重试）
         let deadline = self.deadline(req);
+        // 预算按**逻辑请求**创建一次：分段与重试共享同一份额度
+        let budget = Arc::new(RequestBudget::new(
+            self.config.max_http_calls_per_request,
+            deadline,
+        ));
         let max_attempts = 1 + self.config.content_retry;
         let mut attempt: u32 = 0;
         let mut retry_hint: Option<String> = None;
@@ -648,6 +665,7 @@ impl Coordinator {
             self.check_cancel(cancel)?;
             if attempt > 1 {
                 self.counters.retries.fetch_add(1, Ordering::Relaxed);
+                route.engine.record_content_retry();
             }
 
             let executed = self
@@ -661,6 +679,7 @@ impl Coordinator {
                     deadline,
                     cancel,
                     retry_hint.as_deref(),
+                    &budget,
                 )
                 .await;
 
@@ -772,6 +791,7 @@ impl Coordinator {
             outcome.prompt_version.clone(),
             self.rules_trace(&rule_applied),
             finalized.repair,
+            budget.calls_started(),
         );
 
         // 12. 写缓存（只有通过校验的结果才会走到这里）
@@ -1103,6 +1123,7 @@ impl Coordinator {
             resource_fingerprint: self.config.resource_fingerprint.clone(),
             route_reason: "整句模板命中".to_string(),
             protection_strategy: plan.strategy().as_str().to_string(),
+            http_calls: 0,
             repair: finalized.repair.as_str().to_string(),
             protected_spans: plan.spans().to_vec(),
             glossary: self.term_trace(finalized.terms.as_ref()),
@@ -1148,6 +1169,7 @@ impl Coordinator {
         deadline: Option<Instant>,
         cancel: Option<&CancelToken>,
         retry_hint: Option<&str>,
+        budget: &Arc<RequestBudget>,
     ) -> Result<Executed, TranslationError> {
         self.counters.model_calls.fetch_add(1, Ordering::Relaxed);
         match plan.strategy() {
@@ -1166,6 +1188,7 @@ impl Coordinator {
                     deadline,
                     cancel,
                     max_output_tokens: None,
+                    budget: Some(Arc::clone(budget)),
                 };
                 let output = route.engine.translate_job(&job).await?;
                 let restored = plan.restore(&output.text)?;
@@ -1212,6 +1235,7 @@ impl Coordinator {
                         deadline,
                         cancel,
                         max_output_tokens: None,
+                        budget: Some(Arc::clone(budget)),
                     };
                     let output = route.engine.translate_job(&job).await?;
                     if output.text.trim().is_empty() {
@@ -1282,6 +1306,7 @@ impl Coordinator {
         prompt_version: String,
         rules: Option<RuleTrace>,
         repair: RepairOutcome,
+        http_calls: u32,
     ) -> TranslationDiagnostics {
         let glossary = self.term_trace(terms);
 
@@ -1297,6 +1322,7 @@ impl Coordinator {
             resource_fingerprint: self.config.resource_fingerprint.clone(),
             route_reason: route.reason.clone(),
             protection_strategy: plan.strategy().as_str().to_string(),
+            http_calls,
             repair: repair.as_str().to_string(),
             protected_spans: plan.spans().to_vec(),
             glossary,

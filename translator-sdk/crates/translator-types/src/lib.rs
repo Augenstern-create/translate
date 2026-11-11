@@ -662,6 +662,86 @@ pub struct DictionaryEntry {
     pub confidence: f32,
 }
 
+/// 一次**逻辑翻译请求**的物理 HTTP 调用预算。
+///
+/// # 为什么需要它
+///
+/// 一次用户请求可能产生多次真实网络调用：内容完整性失败后的重试、
+/// 标记策略失败后的分段回退（每个片段一次）、以及传输层重试。
+/// 只限制"翻译尝试次数"无法限制费用，因此这里直接限制**物理调用数**。
+///
+/// 预算由协调器在请求开始时创建，并通过 [`crate::TranslateRequest`]
+/// 之外的内部门路（`TranslationJob.budget`）传给后端；分段与重试共享同一实例。
+#[derive(Debug)]
+pub struct RequestBudget {
+    max_calls: u32,
+    deadline: Option<std::time::Instant>,
+    calls_started: std::sync::atomic::AtomicU32,
+}
+
+impl RequestBudget {
+    pub fn new(max_calls: u32, deadline: Option<std::time::Instant>) -> Self {
+        Self {
+            max_calls,
+            deadline,
+            calls_started: std::sync::atomic::AtomicU32::new(0),
+        }
+    }
+
+    /// 便捷构造：需要跨线程/跨段共享时使用。
+    pub fn shared(max_calls: u32, deadline: Option<std::time::Instant>) -> std::sync::Arc<Self> {
+        std::sync::Arc::new(Self::new(max_calls, deadline))
+    }
+
+    pub fn max_calls(&self) -> u32 {
+        self.max_calls
+    }
+
+    pub fn calls_started(&self) -> u32 {
+        self.calls_started.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    pub fn remaining_calls(&self) -> u32 {
+        self.max_calls.saturating_sub(self.calls_started())
+    }
+
+    /// 原子地占用一次调用名额。返回 `false` 表示预算已耗尽。
+    ///
+    /// 只在**即将发出网络请求**时调用；排队等待不消耗名额。
+    pub fn try_start_call(&self) -> bool {
+        use std::sync::atomic::Ordering;
+        let mut current = self.calls_started.load(Ordering::SeqCst);
+        loop {
+            if current >= self.max_calls {
+                return false;
+            }
+            match self.calls_started.compare_exchange(
+                current,
+                current + 1,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => return true,
+                Err(actual) => current = actual,
+            }
+        }
+    }
+
+    pub fn deadline(&self) -> Option<std::time::Instant> {
+        self.deadline
+    }
+
+    pub fn remaining_time(&self) -> Option<std::time::Duration> {
+        self.deadline
+            .map(|deadline| deadline.saturating_duration_since(std::time::Instant::now()))
+    }
+
+    pub fn expired(&self) -> bool {
+        self.deadline
+            .is_some_and(|deadline| std::time::Instant::now() >= deadline)
+    }
+}
+
 /// 语言识别候选。短文本或低置信度时必须返回多个候选，
 /// 不要强行判定（设计文档 §7 与资源文档 §4）。
 #[derive(Clone, Debug)]
@@ -901,6 +981,8 @@ pub enum TranslationErrorCode {
     ConfigurationError,
     /// 词典未安装或无法打开。
     DictionaryUnavailable,
+    /// HTTP 执行队列已满（请求被拒绝，未产生费用）。
+    QueueFull,
 }
 
 impl TranslationErrorCode {
@@ -926,6 +1008,7 @@ impl TranslationErrorCode {
             Self::InvalidBackendResponse => "InvalidBackendResponse",
             Self::ConfigurationError => "ConfigurationError",
             Self::DictionaryUnavailable => "DictionaryUnavailable",
+            Self::QueueFull => "QueueFull",
         }
     }
 }

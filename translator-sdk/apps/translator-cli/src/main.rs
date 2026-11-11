@@ -236,6 +236,9 @@ struct TranslationSection {
     timeout_ms: Option<u64>,
     #[serde(default)]
     max_input_chars: Option<usize>,
+    /// 一次逻辑请求允许的物理 HTTP 调用数（分段与重试共享）。
+    #[serde(default)]
+    max_http_calls_per_request: Option<u32>,
     #[serde(default)]
     strict_integrity: Option<bool>,
     /// `disabled` / `on-local-unavailable` / `on-local-failure`
@@ -295,6 +298,16 @@ fn build_translator(config: &FileConfig) -> Result<Translator, Failure> {
     }
     if let Some(chars) = config.translation.max_input_chars {
         builder = builder.max_input_chars(chars);
+    }
+    if let Some(calls) = config.translation.max_http_calls_per_request {
+        builder = builder.max_http_calls_per_request(calls);
+    }
+    // [http] 段：全局并发与队列容量（0/缺省表示用安全默认值）
+    if config.http.max_concurrent_requests > 0 {
+        builder = builder.http_global_concurrency(config.http.max_concurrent_requests);
+    }
+    if config.http.max_queue_size > 0 {
+        builder = builder.http_queue_size(config.http.max_queue_size);
     }
     if let Some(strict) = config.translation.strict_integrity {
         builder = builder.strict_integrity(strict);
@@ -512,6 +525,7 @@ fn cmd_translate(global: &GlobalArgs, args: &[String]) -> Result<u8, Failure> {
             "elapsed_ms": result.elapsed_ms,
             "cached": diagnostics.cache_hit,
             "attempts": diagnostics.attempts,
+            "http_calls": diagnostics.http_calls,
             "warnings": result.warnings.iter().map(|w| format!("{w:?}")).collect::<Vec<_>>(),
             "quality": diagnostics.quality.as_ref().map(|q| serde_json::json!({
                 "issues": q.issues.len(),
@@ -799,10 +813,15 @@ fn cmd_usage(global: &GlobalArgs) -> Result<u8, Failure> {
             .map(|(name, snapshot)| {
                 serde_json::json!({
                     "backend": name,
-                    "requests": snapshot.requests,
-                    "failures": snapshot.failures,
-                    "retries": snapshot.retries,
-                    "cancelled": snapshot.cancelled,
+                    "logical_requests": snapshot.logical_requests,
+                    "http_calls_started": snapshot.http_calls_started,
+                    "http_calls_completed": snapshot.http_calls_completed,
+                    "transport_retries": snapshot.transport_retries,
+                    "content_retries": snapshot.content_retries,
+                    "failed_calls": snapshot.failed_calls,
+                    "cancelled_requests": snapshot.cancelled_requests,
+                    "potentially_billable_unknown_calls": snapshot
+                        .potentially_billable_unknown_calls,
                     "input_tokens": snapshot.tokens.input_tokens,
                     "output_tokens": snapshot.tokens.output_tokens,
                 })
@@ -817,14 +836,7 @@ fn cmd_usage(global: &GlobalArgs) -> Result<u8, Failure> {
     } else {
         println!("注意：客户端计数只用于提醒，可信计费边界在服务端。");
         for (name, snapshot) in usage {
-            println!(
-                "  后端 {name}: 请求 {} 失败 {} 重试 {} 输入 {} tokens 输出 {} tokens",
-                snapshot.requests,
-                snapshot.failures,
-                snapshot.retries,
-                snapshot.tokens.input_tokens,
-                snapshot.tokens.output_tokens
-            );
+            println!("  后端 {name}: {}", snapshot.summary());
         }
         if let Some(cost) = translator.estimated_cost_usd() {
             println!("  估算费用：${cost:.4}（按配置单价；未配置单价的后端不计入）");
