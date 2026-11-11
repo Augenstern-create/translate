@@ -188,12 +188,21 @@ node browser_check.mjs http://127.0.0.1:18096/
 
 ---
 
-## 6. 交叉编译检查（Windows）
+## 6. Windows 验证现状
 
-```bash
-rustup target add x86_64-pc-windows-gnu   # 只需一次
-cargo check --workspace --target x86_64-pc-windows-gnu
-```
+**已做（2026-11-12）**
 
-这只能证明**代码可编译**，不能证明运行时行为（路径、编码、防火墙、代理）。
-真实 Windows 验证仍是 `PENDING_HUMAN`。
+| 项目 | 方式 | 结果 |
+|---|---|---|
+| 全工作区编译（含测试目标） | `cargo xwin check --workspace --all-targets --target x86_64-pc-windows-msvc` | 通过 |
+| CLI 二进制链接 | `cargo xwin build -p translator-cli --target x86_64-pc-windows-msvc` | 生成 `translator-cli.exe` |
+| 单元 + 集成测试 | Windows 实机 `cargo test --workspace --no-fail-fast` | **335 passed / 0 failed / 4 ignored** |
+
+**仍未做（S4）**
+
+- 在该机器上手工运行 CLI 与 Web UI（TLS 证书、系统代理、中文路径、防火墙提示）；
+- 词典 mmap 在大文件上的行为、长时间连续运行；
+- 真实转发站（需要密钥）。
+
+因此"Windows 构建与测试"已通过实机验证，但"Windows 端到端功能验证"仍需在 S4 补齐，
+不能据此宣称 Windows 版本可直接交付。
