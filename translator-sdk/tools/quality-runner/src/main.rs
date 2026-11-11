@@ -1,778 +1,425 @@
-//! T5：批量质量运行器。
+//! 评测运行器：把 `fixtures/eval/*.jsonl` 跑过真实后端，输出**可复现**报告。
 //!
-//! 输入 JSONL（每条至少 `id` + `source`），输出 JSONL（译文 + 引擎 + 诊断 + 质量检查）。
-//! 设计目标：
+//! # 它检查什么、不检查什么
 //!
-//! - **一次构建、批量跑**：避免每条样本都启动进程/加载模型；
-//! - **失败不中断**：单条错误写成 `error` 字段，后续样本继续；
-//! - **输出可 diff**：同一输入在不同配置下的输出按 `id` 对齐；
-//! - **不做指标判定**：指标由 Python 脚本计算，运行器只负责产出原始结果。
+//! 检查（机器可判定，必须 100% 通过）：
 //!
-//! 默认不编译 ORT；需要真实模型时加 `--features ort`。
+//! - `must_preserve`：URL / 邮箱 / 模板变量 / 代码 / 标签必须逐字出现；
+//! - `must_keep_numbers`：编号/日期/百分比/金额等关键数字必须保留；
+//! - `glossary`：术语约束是否被满足；
+//! - 空译文、保护标记残留（由 SDK 的完整性门禁负责，运行器只记录结果）。
+//!
+//! **不**检查：译文是否准确、自然、地道。那需要人读（`reference_zh` 目前为 `null`，
+//! 状态 `PENDING_HUMAN`）。运行器绝不把"自动指标通过"说成"质量验收通过"。
+//!
+//! # 用法
+//!
+//! ```text
+//! quality-runner --dataset fixtures/eval/smoke.jsonl --config translate.toml --out report.json
+//! quality-runner --dataset fixtures/eval/smoke.jsonl --mock --limit 3 --out smoke.json
+//! ```
+//!
+//! 退出码：0 = 所有机器可判定项通过；1 = 有失败；2 = 用法/配置错误。
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::process::ExitCode;
 
-use serde_json::{json, Map, Value};
-use translator_analysis::{EnglishLemmatizer, MorphologyAnalyzer};
-use translator_api::{
-    DictionaryEntry, LanguageTag, LookupRequest, TermPolicy, TranslateRequest, TranslationMode,
-    TranslationWarning, Translator,
-};
+use serde::{Deserialize, Serialize};
+use translator_api::Translator;
+use translator_http::{BackendConfig, BackendsFile, HttpSettings};
+use translator_types::{LanguageTag, TextKind, TranslateRequest, TranslationMode};
 
-struct Args {
-    input: Option<PathBuf>,
-    output: Option<PathBuf>,
-    lookup_input: Option<PathBuf>,
-    lookup_output: Option<PathBuf>,
-    lookup_exact: bool,
-    dictionaries: Vec<PathBuf>,
-    rules: Option<PathBuf>,
-    terms: Option<PathBuf>,
-    templates: Option<PathBuf>,
-    composition: Option<PathBuf>,
-    semantic_composition: Option<PathBuf>,
-    term_policy: TermPolicy,
-    mode: TranslationMode,
-    text_kind: translator_api::TextKind,
-    paragraph_strategy: translator_api::ParagraphStrategy,
-    label: String,
-    limit: Option<usize>,
-    cache_capacity: usize,
-    strict_integrity: bool,
-    source: Option<LanguageTag>,
-    target: LanguageTag,
-    policy: translator_api::TranslationPolicy,
-    lookup_limit: usize,
-    #[cfg(feature = "ort")]
-    ort_model_dir: Option<PathBuf>,
-    #[cfg(feature = "ort")]
-    max_new_tokens: Option<usize>,
-    #[cfg(feature = "ort")]
-    threads: usize,
-    #[cfg(feature = "ort")]
-    beam_width: usize,
-    #[cfg(feature = "ort")]
-    encoder_file: Option<String>,
-    #[cfg(feature = "ort")]
-    decoder_file: Option<String>,
-    #[cfg(feature = "ort")]
-    tokenizer_file: Option<String>,
-    #[cfg(feature = "ort")]
-    model_variant: Option<String>,
-    summary: Option<PathBuf>,
-}
+const EXIT_OK: u8 = 0;
+const EXIT_FAIL: u8 = 1;
+const EXIT_USAGE: u8 = 2;
 
-impl Default for Args {
-    fn default() -> Self {
-        Self {
-            input: None,
-            output: None,
-            lookup_input: None,
-            lookup_output: None,
-            lookup_exact: false,
-            dictionaries: Vec::new(),
-            rules: None,
-            terms: None,
-            templates: None,
-            composition: None,
-            semantic_composition: None,
-            term_policy: TermPolicy::Warn,
-            mode: TranslationMode::Precise,
-            text_kind: translator_api::TextKind::Auto,
-            paragraph_strategy: translator_api::ParagraphStrategy::Auto,
-            label: "default".to_string(),
-            limit: None,
-            cache_capacity: 256,
-            strict_integrity: true,
-            source: None,
-            target: LanguageTag::new("zh-Hans").expect("静态标签合法"),
-            policy: translator_api::TranslationPolicy::AutoLocalFirst,
-            lookup_limit: 10,
-            #[cfg(feature = "ort")]
-            ort_model_dir: None,
-            #[cfg(feature = "ort")]
-            max_new_tokens: None,
-            #[cfg(feature = "ort")]
-            threads: 1,
-            #[cfg(feature = "ort")]
-            beam_width: 1,
-            #[cfg(feature = "ort")]
-            encoder_file: None,
-            #[cfg(feature = "ort")]
-            decoder_file: None,
-            #[cfg(feature = "ort")]
-            tokenizer_file: None,
-            #[cfg(feature = "ort")]
-            model_variant: None,
-            summary: None,
+fn main() -> ExitCode {
+    match run() {
+        Ok(code) => ExitCode::from(code),
+        Err(err) => {
+            eprintln!("错误：{err}");
+            ExitCode::from(EXIT_USAGE)
         }
     }
 }
 
-fn usage() -> &'static str {
-    "quality-runner —— 批量翻译/查词质量运行器
-
-用法:
-  quality-runner --input <golden.jsonl> --output <out.jsonl> [选项]
-  quality-runner --lookup-input <words.txt> --lookup-output <out.jsonl> [选项]
-
-选项:
-  --dict <dir>            挂载词典包（可重复）
-  --rules <file>          挂载规则包
-  --terms <file>          挂载输出侧术语表
-  --templates <file>      挂载完整句子模板（P16-R）
-  --composition <file>   挂载组合式日常句型规则（P19-G）
-  --semantic-composition <file> 挂载语义组合/中文生成规则（P20-C）
-  --term-policy <p>       off | warn | enforce（默认 warn）
-  --mode <m>              precise | fast（默认 precise）
-  --text-kind <k>         auto | word | sentence | paragraph | document（默认 auto）
-  --paragraph-strategy <s> auto | whole | sentence | group（默认 auto）
-  --label <name>          配置标签，写进每条输出
-  --limit <n>             只跑前 n 条
-  --cache-capacity <n>    查询缓存条数（0 关闭，默认 256）
-  --strict-integrity <b>  true | false（默认 true）
-  --source <lang>         指定源语言（默认自动识别）
-  --target <lang>         目标语言（默认 zh-Hans）
-  --policy <p>            auto | local | dictionary（默认 auto）
-  --lookup-limit <n>      查词返回条数（默认 10）
-  --lookup-exact          只认完整词头/短语 + 词形回退，不做前缀补全（覆盖统计用）
-  --summary <file>        额外写一份汇总 JSON
-
-真实 NMT（需 --features ort）:
-  --ort-model-dir <dir>   模型目录（encoder/decoder/tokenizer）
-  --max-new-tokens <n>    解码上界（默认模型配置 192）
-  --threads <n>           intra-op 线程数（默认 1）
-  --beam <n>              beam 宽度（1 = 贪心，>1 = 实验性 beam search）
-  --encoder-file <f>      编码器文件名（默认 int8）
-  --decoder-file <f>      解码器文件名
-  --tokenizer-file <f>    分词器文件名
-  --model-variant <v>     int8 | fp16 | fp32（推荐 fp32 做质量对照）
-"
-}
-
-fn parse_args() -> Result<Args, String> {
-    let mut args = Args::default();
-    let mut iter = std::env::args().skip(1);
-    while let Some(flag) = iter.next() {
-        let mut value = || iter.next().ok_or_else(|| format!("{flag} 缺少参数"));
-        match flag.as_str() {
-            "-h" | "--help" => {
-                print!("{}", usage());
-                std::process::exit(0);
-            }
-            "--input" => args.input = Some(PathBuf::from(value()?)),
-            "--output" => args.output = Some(PathBuf::from(value()?)),
-            "--lookup-input" => args.lookup_input = Some(PathBuf::from(value()?)),
-            "--lookup-output" => args.lookup_output = Some(PathBuf::from(value()?)),
-            "--dict" => args.dictionaries.push(PathBuf::from(value()?)),
-            "--rules" => args.rules = Some(PathBuf::from(value()?)),
-            "--terms" => args.terms = Some(PathBuf::from(value()?)),
-            "--templates" => args.templates = Some(PathBuf::from(value()?)),
-            "--composition" => args.composition = Some(PathBuf::from(value()?)),
-            "--semantic-composition" => args.semantic_composition = Some(PathBuf::from(value()?)),
-            "--term-policy" => {
-                args.term_policy = match value()?.as_str() {
-                    "off" => TermPolicy::Off,
-                    "warn" => TermPolicy::Warn,
-                    "enforce" => TermPolicy::Enforce,
-                    other => return Err(format!("未知 term-policy：{other}")),
-                }
-            }
-            "--mode" => {
-                args.mode = match value()?.as_str() {
-                    "precise" => TranslationMode::Precise,
-                    "fast" => TranslationMode::Fast,
-                    other => return Err(format!("未知 mode：{other}")),
-                }
-            }
-            "--text-kind" => {
-                args.text_kind = match value()?.as_str() {
-                    "auto" => translator_api::TextKind::Auto,
-                    "word" => translator_api::TextKind::Word,
-                    "sentence" => translator_api::TextKind::Sentence,
-                    "paragraph" => translator_api::TextKind::Paragraph,
-                    "document" => translator_api::TextKind::Document,
-                    other => return Err(format!("未知 text-kind：{other}")),
-                }
-            }
-            "--paragraph-strategy" => {
-                args.paragraph_strategy = match value()?.as_str() {
-                    "auto" => translator_api::ParagraphStrategy::Auto,
-                    "whole" => translator_api::ParagraphStrategy::Whole,
-                    "sentence" => translator_api::ParagraphStrategy::Sentence,
-                    "group" => translator_api::ParagraphStrategy::Group,
-                    "best" => translator_api::ParagraphStrategy::Best,
-                    "context" => translator_api::ParagraphStrategy::Context,
-                    other => return Err(format!("未知 paragraph-strategy：{other}")),
-                }
-            }
-            "--label" => args.label = value()?,
-            "--limit" => args.limit = Some(value()?.parse().map_err(|e| format!("{e}"))?),
-            "--cache-capacity" => {
-                args.cache_capacity = value()?.parse().map_err(|e| format!("{e}"))?
-            }
-            "--strict-integrity" => {
-                args.strict_integrity = match value()?.as_str() {
-                    "true" | "1" => true,
-                    "false" | "0" => false,
-                    other => return Err(format!("未知 strict-integrity：{other}")),
-                }
-            }
-            "--source" => {
-                args.source = Some(LanguageTag::new(value()?).map_err(|e| e.to_string())?)
-            }
-            "--target" => args.target = LanguageTag::new(value()?).map_err(|e| e.to_string())?,
-            "--policy" => {
-                args.policy = match value()?.as_str() {
-                    "auto" => translator_api::TranslationPolicy::AutoLocalFirst,
-                    "local" => translator_api::TranslationPolicy::LocalOnly,
-                    "dictionary" => translator_api::TranslationPolicy::DictionaryOnly,
-                    other => return Err(format!("未知 policy：{other}")),
-                }
-            }
-            "--lookup-limit" => args.lookup_limit = value()?.parse().map_err(|e| format!("{e}"))?,
-            "--lookup-exact" => args.lookup_exact = true,
-            "--summary" => args.summary = Some(PathBuf::from(value()?)),
-            #[cfg(feature = "ort")]
-            "--ort-model-dir" => args.ort_model_dir = Some(PathBuf::from(value()?)),
-            #[cfg(feature = "ort")]
-            "--max-new-tokens" => {
-                args.max_new_tokens = Some(value()?.parse().map_err(|e| format!("{e}"))?)
-            }
-            #[cfg(feature = "ort")]
-            "--threads" => args.threads = value()?.parse().map_err(|e| format!("{e}"))?,
-            #[cfg(feature = "ort")]
-            "--beam" => args.beam_width = value()?.parse().map_err(|e| format!("{e}"))?,
-            #[cfg(feature = "ort")]
-            "--encoder-file" => args.encoder_file = Some(value()?),
-            #[cfg(feature = "ort")]
-            "--decoder-file" => args.decoder_file = Some(value()?),
-            #[cfg(feature = "ort")]
-            "--tokenizer-file" => args.tokenizer_file = Some(value()?),
-            #[cfg(feature = "ort")]
-            "--model-variant" => args.model_variant = Some(value()?),
-            other => return Err(format!("未知参数：{other}")),
-        }
+fn run() -> Result<u8, String> {
+    let args = Args::parse(std::env::args().skip(1).collect())?;
+    let cases = load_dataset(&args.dataset)?;
+    if cases.is_empty() {
+        return Err(format!("数据集为空：{}", args.dataset.display()));
     }
 
-    if args.input.is_some() && args.lookup_input.is_some() {
-        return Err("--input 与 --lookup-input 只能二选一".to_string());
-    }
-    if args.input.is_none() && args.lookup_input.is_none() {
-        return Err("需要 --input 或 --lookup-input".to_string());
-    }
-    Ok(args)
-}
-
-fn build_translator(args: &Args) -> Result<Translator, String> {
-    let mut builder = Translator::builder()
-        .translation_mode(args.mode)
-        .strict_integrity(args.strict_integrity)
-        .cache_capacity(args.cache_capacity)
-        .lemmatizer(Arc::new(EnglishLemmatizer::new()))
-        .term_policy(args.term_policy);
-
-    for dict in &args.dictionaries {
-        builder = builder.dictionary_package(dict);
-    }
-    if let Some(rules) = &args.rules {
-        builder = builder.rules_file(rules);
-    }
-    if let Some(terms) = &args.terms {
-        builder = builder.term_table_file(terms);
-    }
-    if let Some(templates) = &args.templates {
-        builder = builder.templates_file(templates);
-    }
-    if let Some(composition) = &args.composition {
-        builder = builder.composition_file(composition);
-    }
-    if let Some(semantic) = &args.semantic_composition {
-        builder = builder.semantic_composition_file(semantic);
-    }
-
-    #[cfg(feature = "ort")]
-    if let Some(dir) = &args.ort_model_dir {
-        let mut config = translator_api::nmt_ort::OrtNmtConfig::new(
-            dir,
-            LanguageTag::new("en").expect("静态标签合法"),
-            args.target.clone(),
-        );
-        config.threads = args.threads;
-        config.beam_width = args.beam_width;
-        if let Some(variant) = &args.model_variant {
-            config = config.with_variant(match variant.as_str() {
-                "int8" => translator_api::nmt_ort::ModelVariant::Int8,
-                "fp16" => translator_api::nmt_ort::ModelVariant::Fp16,
-                "fp32" => translator_api::nmt_ort::ModelVariant::Fp32,
-                other => return Err(format!("未知 model-variant：{other}")),
-            });
-        }
-        if args.encoder_file.is_some()
-            || args.decoder_file.is_some()
-            || args.tokenizer_file.is_some()
-        {
-            config = config.with_files(
-                args.encoder_file
-                    .clone()
-                    .unwrap_or_else(|| translator_api::nmt_ort::ENCODER_FILE.to_string()),
-                args.decoder_file
-                    .clone()
-                    .unwrap_or_else(|| translator_api::nmt_ort::DECODER_FILE.to_string()),
-                args.tokenizer_file
-                    .clone()
-                    .unwrap_or_else(|| translator_api::nmt_ort::TOKENIZER_FILE.to_string()),
-            );
-        }
-        if let Some(max_new) = args.max_new_tokens {
-            config.max_new_tokens = max_new;
-        }
-        builder = builder.nmt_ort(config);
-    }
-
-    builder.build().map_err(|e| e.to_string())
-}
-
-fn warning_str(warning: &TranslationWarning) -> String {
-    match warning {
-        TranslationWarning::PlaceholderRestoreFailed(detail) => {
-            format!("placeholder_restore_failed: {detail}")
-        }
-        TranslationWarning::LanguageAssumed(lang) => format!("language_assumed: {lang}"),
-        TranslationWarning::CacheHit => "cache_hit".to_string(),
-        TranslationWarning::TermMismatch(detail) => format!("term_mismatch: {detail}"),
-        TranslationWarning::PivotRoute(detail) => format!("pivot_route: {detail}"),
-        TranslationWarning::SegmentFailed(detail) => format!("segment_failed: {detail}"),
-    }
-}
-
-fn protected_kind(kind: translator_api::ProtectedKind) -> &'static str {
-    match kind {
-        translator_api::ProtectedKind::Url => "url",
-        translator_api::ProtectedKind::Email => "email",
-        translator_api::ProtectedKind::TemplateVar => "template_var",
-        translator_api::ProtectedKind::Code => "code",
-        translator_api::ProtectedKind::Number => "number",
-    }
-}
-
-fn translate_record(translator: &Translator, args: &Args, id: &str, source_text: &str) -> Value {
-    let mut req =
-        TranslateRequest::new(source_text, args.target.clone()).with_policy(args.policy.clone());
-    if let Some(source) = &args.source {
-        req = req.with_source(source.clone());
-    }
-
-    let started = std::time::Instant::now();
-    let options = translator_api::TranslateOptions {
-        mode: args.mode,
-        text_kind: args.text_kind,
-        paragraph_strategy: args.paragraph_strategy,
-        strategy: None,
-        context_id: None,
-        context_text: None,
+    let translator = if args.mock {
+        mock_translator()
+    } else {
+        let path = args
+            .config
+            .clone()
+            .ok_or_else(|| "需要 --config <translate.toml>（或用 --mock 跑通链路）".to_string())?;
+        build_translator(&path)?
     };
-    match pollster::block_on(translator.translate_with_diagnostics_options(&req, &options)) {
-        Ok(out) => {
-            let quality = out.diagnostics.quality.as_ref();
-            let mut record = Map::new();
-            record.insert("id".to_string(), json!(id));
-            record.insert("label".to_string(), json!(args.label));
-            record.insert("mode".to_string(), json!(args.mode.as_str()));
-            record.insert(
-                "text_kind".to_string(),
-                json!(out.diagnostics.text_kind.as_str()),
-            );
-            record.insert("strategy".to_string(), json!(out.diagnostics.strategy));
-            record.insert("route".to_string(), json!(out.diagnostics.route.as_str()));
-            record.insert(
-                "fallback_reason".to_string(),
-                json!(out.diagnostics.fallback_reason.map(|r| r.as_str())),
-            );
-            record.insert(
-                "model_invoked".to_string(),
-                json!(out.diagnostics.model_invoked),
-            );
-            record.insert(
-                "dictionary_hit".to_string(),
-                json!(out.diagnostics.dictionary_hit),
-            );
-            record.insert(
-                "rule_matched".to_string(),
-                json!(out.diagnostics.rule_matched),
-            );
-            record.insert("source".to_string(), json!(source_text));
-            record.insert("output".to_string(), json!(out.result.text));
-            record.insert("engine_id".to_string(), json!(out.result.engine_id));
-            record.insert("model_id".to_string(), json!(out.result.model_id));
-            record.insert("elapsed_ms".to_string(), json!(out.result.elapsed_ms));
-            record.insert("wall_ms".to_string(), json!(started.elapsed().as_millis()));
-            record.insert("cache_hit".to_string(), json!(out.diagnostics.cache_hit));
-            record.insert(
-                "warnings".to_string(),
-                json!(out
-                    .result
-                    .warnings
-                    .iter()
-                    .map(warning_str)
-                    .collect::<Vec<_>>()),
-            );
-            record.insert(
-                "quality".to_string(),
-                match quality {
-                    Some(q) => json!({
-                        "mode": q.mode.as_str(),
-                        "numbers_in_source": q.numbers_in_source,
-                        "numbers_preserved": q.numbers_preserved,
-                        "fatal": q.has_fatal(),
-                        "issues": q.issues.iter().map(|issue| json!({
-                            "kind": issue.kind.as_str(),
-                            "severity": issue.severity.as_str(),
-                            "detail": issue.detail,
-                        })).collect::<Vec<_>>(),
-                    }),
-                    None => Value::Null,
-                },
-            );
-            record.insert(
-                "diagnostics".to_string(),
-                json!({
-                    "engine_id": out.diagnostics.engine_id,
-                    "capability": out.diagnostics.capability.as_str(),
-                    "route_reason": out.diagnostics.route_reason,
-                    "rules_version": out.diagnostics.rules_version,
-                    "resource_fingerprint": out.diagnostics.resource_fingerprint,
-                    "evidence": out.diagnostics.evidence.as_ref().map(|e| e.summary()),
-                    "units": out.diagnostics.units.iter().map(|u| json!({
-                        "index": u.index,
-                        "span": [u.span.start, u.span.end],
-                        "kind": u.kind.as_str(),
-                        "route": u.route.as_str(),
-                        "engine_id": u.engine_id,
-                        "reason": u.reason,
-                        "model_invoked": u.model_invoked,
-                        "fallback_reason": u.fallback_reason.map(|r| r.as_str()),
-                    })).collect::<Vec<_>>(),
-                    "rules_applied": out.diagnostics.rules.as_ref().map(|r| r.applied.clone()),
-                    "protected_spans": out.diagnostics.protected_spans.iter().map(|s| json!({
-                        "kind": protected_kind(s.kind),
-                        "start": s.start,
-                        "end": s.end,
-                    })).collect::<Vec<_>>(),
-                    "restore_missing": out.diagnostics.restore_missing,
-                    "term": out.diagnostics.term.as_ref().map(|t| json!({
-                        "id": t.id,
-                        "version": t.version,
-                        "policy": t.policy.as_str(),
-                        "replaced": t.replaced,
-                        "violations": t.violations.iter().map(|v| v.to_string()).collect::<Vec<_>>(),
-                    })),
-                }),
-            );
-            record.insert("error".to_string(), Value::Null);
-            Value::Object(record)
-        }
-        Err(err) => json!({
-            "id": id,
-            "label": args.label,
-            "mode": args.mode.as_str(),
-            "source": source_text,
-            "output": Value::Null,
-            "engine_id": Value::Null,
-            "model_id": Value::Null,
-            "elapsed_ms": started.elapsed().as_millis(),
-            "wall_ms": started.elapsed().as_millis(),
-            "cache_hit": false,
-            "warnings": [],
-            "quality": Value::Null,
-            "diagnostics": Value::Null,
-            "error": {
-                "code": err.code.as_str(),
-                "message": err.message,
-                "suggested_packages": err.suggested_packages,
-            },
-        }),
-    }
-}
 
-fn entry_json(entry: &DictionaryEntry) -> Value {
-    json!({
-        "headword": entry.headword,
-        "normalized": entry.normalized,
-        "language": entry.language.as_str(),
-        "readings": entry.readings,
-        "pos": entry.parts_of_speech,
-        "senses": entry.senses.iter().map(|s| s.definition.clone()).collect::<Vec<_>>(),
-        "source_id": entry.source_id,
-        "source_license": entry.source_license,
-        "confidence": entry.confidence,
+    let cases = match args.limit {
+        Some(limit) => cases.into_iter().take(limit).collect(),
+        None => cases,
+    };
+
+    let mut results = Vec::new();
+    let mut passed = 0usize;
+    let mut failed = 0usize;
+    let mut latencies = Vec::new();
+
+    for case in &cases {
+        let started = std::time::Instant::now();
+        let request = TranslateRequest::new(
+            case.text.clone(),
+            LanguageTag::new(&case.target_lang).map_err(|e| e.message)?,
+        )
+        .with_source(LanguageTag::new(&case.source_lang).map_err(|e| e.message)?);
+
+        let mut options = translator.default_options().clone();
+        options.text_kind = TextKind::Sentence;
+        options.mode = args.mode;
+
+        let outcome = pollster::block_on(translator.translate_with_options(&request, &options));
+        let elapsed = started.elapsed().as_millis() as u64;
+        latencies.push(elapsed);
+
+        let record = match outcome {
+            Ok(output) => {
+                let mut failures = Vec::new();
+                for needle in &case.must_preserve {
+                    if !output.text.contains(needle) {
+                        failures.push(format!("缺少受保护内容 {needle}"));
+                    }
+                }
+                for needle in &case.must_keep_numbers {
+                    if !output.text.contains(needle) {
+                        // 数字可能被写成中文；这里只做"字面保留"的严格判定，
+                        // 语义等价由 SDK 的 quality::number 负责（已在下游执行）
+                        failures.push(format!("关键数字未字面保留 {needle}"));
+                    }
+                }
+                for term in &case.glossary {
+                    if !output.text.contains(&term.target) {
+                        failures.push(format!("术语未遵循 {} → {}", term.source, term.target));
+                    }
+                }
+                let ok = failures.is_empty();
+                CaseResult {
+                    id: case.id.clone(),
+                    category: case.category.clone(),
+                    ok,
+                    output: output.text.clone(),
+                    engine_id: output.engine_id.clone(),
+                    elapsed_ms: elapsed,
+                    failures,
+                    error: None,
+                    notes: case.notes.clone(),
+                }
+            }
+            Err(err) => CaseResult {
+                id: case.id.clone(),
+                category: case.category.clone(),
+                ok: false,
+                output: String::new(),
+                engine_id: String::new(),
+                elapsed_ms: elapsed,
+                failures: vec![format!("翻译失败：{}（{}）", err.message, err.code)],
+                error: Some(err.code.as_str().to_string()),
+                notes: case.notes.clone(),
+            },
+        };
+
+        if record.ok {
+            passed += 1;
+        } else {
+            failed += 1;
+        }
+        results.push(record);
+    }
+
+    let mut by_category: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+    for record in &results {
+        let slot = by_category.entry(record.category.clone()).or_insert((0, 0));
+        if record.ok {
+            slot.0 += 1;
+        } else {
+            slot.1 += 1;
+        }
+    }
+    latencies.sort_unstable();
+    let latency_p50 = latencies.get(latencies.len() / 2).copied().unwrap_or(0);
+    let latency_max = latencies.last().copied().unwrap_or(0);
+
+    let report = Report {
+        dataset: args.dataset.display().to_string(),
+        mode: format!("{:?}", args.mode),
+        mock: args.mock,
+        total: results.len(),
+        passed,
+        failed,
+        latency_p50_ms: latency_p50,
+        latency_max_ms: latency_max,
+        by_category: by_category
+            .into_iter()
+            .map(|(k, (ok, bad))| CategoryStat {
+                category: k,
+                passed: ok,
+                failed: bad,
+            })
+            .collect(),
+        // 人工质量测评**没有**执行；不要用自动指标替代它（§16.4）
+        human_review: "PENDING_HUMAN".to_string(),
+        cases: results,
+    };
+
+    let text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
+    std::fs::write(&args.out, text).map_err(|e| format!("写入报告失败：{e}"))?;
+
+    println!(
+        "评测完成：{} 条，通过 {}，失败 {}；报告写入 {}",
+        report.total,
+        report.passed,
+        report.failed,
+        args.out.display()
+    );
+    println!("注意：人工质量评审状态 = PENDING_HUMAN（自动指标不能替代人工验收）");
+
+    Ok(if report.failed == 0 {
+        EXIT_OK
+    } else {
+        EXIT_FAIL
     })
 }
 
-fn main() {
-    let args = match parse_args() {
-        Ok(args) => args,
-        Err(err) => {
-            eprintln!("参数错误：{err}\n\n{}", usage());
-            std::process::exit(2);
-        }
-    };
-
-    let translator = match build_translator(&args) {
-        Ok(t) => t,
-        Err(err) => {
-            eprintln!("构建 Translator 失败：{err}");
-            std::process::exit(1);
-        }
-    };
-
-    let mut success = 0usize;
-    let mut errors = 0usize;
-    let mut cache_hits = 0usize;
-    let mut total_wall_ms = 0u128;
-
-    if let Some(input) = &args.input {
-        let output_path = args.output.as_ref().expect("--input 需要 --output");
-        let text = std::fs::read_to_string(input).unwrap_or_else(|e| {
-            eprintln!("读取 {} 失败：{e}", input.display());
-            std::process::exit(1);
-        });
-        let mut records: Vec<Value> = Vec::new();
-        for (lineno, line) in text.lines().enumerate() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            let value: Value = match serde_json::from_str(line) {
-                Ok(v) => v,
-                Err(e) => {
-                    eprintln!("第 {} 行 JSON 非法：{e}", lineno + 1);
-                    errors += 1;
-                    continue;
-                }
-            };
-            let id = value
-                .get("id")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-                .unwrap_or_else(|| format!("line-{}", lineno + 1));
-            let source_text = value
-                .get("source")
-                .or_else(|| value.get("text"))
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            if source_text.trim().is_empty() {
-                eprintln!("{id}: source 为空，跳过");
-                errors += 1;
-                continue;
-            }
-            let record = translate_record(&translator, &args, &id, source_text);
-            if record.get("error").map(Value::is_null).unwrap_or(false) {
-                success += 1;
-                if record
-                    .get("cache_hit")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false)
-                {
-                    cache_hits += 1;
-                }
-                total_wall_ms += record.get("wall_ms").and_then(Value::as_u64).unwrap_or(0) as u128;
-            } else {
-                errors += 1;
-            }
-            records.push(record);
-            if let Some(limit) = args.limit {
-                if records.len() >= limit {
-                    break;
-                }
-            }
-            if records.len() % 50 == 0 {
-                eprintln!("  已完成 {} 条（错误 {errors}）", records.len());
-            }
-        }
-        write_jsonl(output_path, &records);
-        eprintln!(
-            "翻译完成：{} 条，成功 {success}，错误 {errors}，缓存命中 {cache_hits}",
-            records.len()
-        );
-    }
-
-    if let Some(input) = &args.lookup_input {
-        let output_path = args
-            .lookup_output
-            .as_ref()
-            .expect("--lookup-input 需要 --lookup-output");
-        let text = std::fs::read_to_string(input).unwrap_or_else(|e| {
-            eprintln!("读取 {} 失败：{e}", input.display());
-            std::process::exit(1);
-        });
-        let mut records: Vec<Value> = Vec::new();
-        // 覆盖统计必须用 exact：`lookup()` 会做前缀补全，不能拿前缀结果
-        // 冒充完整短语命中（docs/70 §4.4）。
-        let exact_packages = if args.lookup_exact {
-            let mut pkgs = Vec::new();
-            for dir in &args.dictionaries {
-                match translator_api::dictionary::DictionaryPackage::open(dir, true) {
-                    Ok(pkg) => pkgs.push(pkg),
-                    Err(err) => {
-                        eprintln!("打开词典 {} 失败：{err}", dir.display());
-                        std::process::exit(1);
-                    }
-                }
-            }
-            Some(pkgs)
-        } else {
-            None
-        };
-        let lemmatizer = EnglishLemmatizer::new();
-        for (lineno, line) in text.lines().enumerate() {
-            let word = line.trim();
-            if word.is_empty() || word.starts_with('#') {
-                continue;
-            }
-            let started = std::time::Instant::now();
-            if let Some(packages) = &exact_packages {
-                let mut entries = Vec::new();
-                let mut candidates = vec![word.to_string()];
-                candidates.extend(lemmatizer.lemmas(word).into_iter().take(5));
-                let mut exact = false;
-                let mut lemma_hit = false;
-                for candidate in &candidates {
-                    for package in packages {
-                        match package.lookup_exact_all(candidate) {
-                            Ok(found) => {
-                                for entry in found {
-                                    if entry.headword.eq_ignore_ascii_case(word) {
-                                        exact = true;
-                                    } else if !candidate.eq_ignore_ascii_case(word) {
-                                        lemma_hit = true;
-                                    }
-                                    if !entries.iter().any(|e: &DictionaryEntry| {
-                                        e.headword == entry.headword
-                                            && e.source_id == entry.source_id
-                                    }) {
-                                        entries.push(entry);
-                                    }
-                                }
-                            }
-                            Err(err) => {
-                                errors += 1;
-                                eprintln!("{word}: exact lookup 失败：{err}");
-                            }
-                        }
-                    }
-                    if !entries.is_empty() {
-                        break;
-                    }
-                }
-                let found = !entries.is_empty();
-                if found {
-                    success += 1;
-                } else {
-                    errors += 1;
-                }
-                records.push(json!({
-                    "word": word,
-                    "line": lineno + 1,
-                    "found": found,
-                    "exact": exact,
-                    "lemma_hit": lemma_hit,
-                    "entries": entries.iter().map(entry_json).collect::<Vec<_>>(),
-                    "wall_ms": started.elapsed().as_millis(),
-                    "error": Value::Null,
-                }));
-            } else {
-                let req = LookupRequest::new(word)
-                    .with_language(LanguageTag::new("en").expect("静态标签合法"))
-                    .with_limit(args.lookup_limit);
-                match pollster::block_on(translator.lookup(&req)) {
-                    Ok(entries) => {
-                        success += 1;
-                        records.push(json!({
-                            "word": word,
-                            "line": lineno + 1,
-                            "found": !entries.is_empty(),
-                            "entries": entries.iter().map(entry_json).collect::<Vec<_>>(),
-                            "wall_ms": started.elapsed().as_millis(),
-                            "error": Value::Null,
-                        }));
-                    }
-                    Err(err) => {
-                        errors += 1;
-                        records.push(json!({
-                            "word": word,
-                            "line": lineno + 1,
-                            "found": false,
-                            "entries": [],
-                            "wall_ms": started.elapsed().as_millis(),
-                            "error": { "code": err.code.as_str(), "message": err.message },
-                        }));
-                    }
-                }
-            }
-            if let Some(limit) = args.limit {
-                if records.len() >= limit {
-                    break;
-                }
-            }
-        }
-        write_jsonl(output_path, &records);
-        eprintln!(
-            "查词完成：{} 条，命中 {success}，错误 {errors}",
-            records.len()
-        );
-    }
-
-    let route_stats = translator.route_stats();
-    let reliable_units = route_stats
-        .dictionary_hits
-        .saturating_add(route_stats.rule_matches);
-    let model_units = route_stats
-        .nmt_calls
-        .saturating_add(route_stats.remote_calls);
-    let total_units = route_stats.executions.max(1);
-    let summary = json!({
-        "label": args.label,
-        "mode": args.mode.as_str(),
-        "success": success,
-        "errors": errors,
-        "cache_hits": cache_hits,
-        "total_wall_ms": total_wall_ms,
-        "resource_fingerprint": translator.resource_fingerprint(),
-        "route_stats": {
-            "executions": route_stats.executions,
-            "dictionary_hits": route_stats.dictionary_hits,
-            "rule_matches": route_stats.rule_matches,
-            "nmt_calls": route_stats.nmt_calls,
-            "remote_calls": route_stats.remote_calls,
-            "nmt_fallbacks": route_stats.nmt_fallbacks,
-            "remote_fallbacks": route_stats.remote_fallbacks,
-            "cache_hits": route_stats.cache_hits,
-            "best_candidates": route_stats.best_candidates,
-            "failures": route_stats.failures,
-        },
-        "coverage": {
-            "reliable_units": reliable_units,
-            "model_units": model_units,
-            "reliable_coverage": reliable_units as f64 / total_units as f64,
-            "model_ratio": model_units as f64 / total_units as f64,
-        },
-    });
-    if let Some(path) = &args.summary {
-        std::fs::write(path, serde_json::to_string_pretty(&summary).unwrap()).ok();
-    }
-    println!("{}", summary);
+fn mock_translator() -> Translator {
+    let builder = Translator::builder()
+        .engine(translator_plugin_api::mocks::MockNmtEngine::new())
+        .expect("注册 mock 引擎失败");
+    let builder = builder.cache_capacity(0);
+    builder.build().expect("构建 mock translator 失败")
 }
 
-fn write_jsonl(path: &PathBuf, records: &[Value]) {
-    let body = records
-        .iter()
-        .map(|v| serde_json::to_string(v).unwrap())
-        .collect::<Vec<_>>()
-        .join("\n");
-    std::fs::write(path, format!("{body}\n")).unwrap_or_else(|e| {
-        eprintln!("写入 {} 失败：{e}", path.display());
-        std::process::exit(1);
-    });
+fn build_translator(path: &PathBuf) -> Result<Translator, String> {
+    let text = std::fs::read_to_string(path).map_err(|e| format!("读取配置失败：{e}"))?;
+    let file: RunnerConfig = toml::from_str(&text).map_err(|e| format!("配置解析失败：{e}"))?;
+    let mut builder = Translator::builder();
+    let backends = BackendsFile {
+        http: file.http,
+        backend: file.backend,
+    };
+    builder = builder
+        .http_backends(&backends)
+        .map_err(|e| format!("后端配置非法：{}", e.message))?;
+    if let Some(glossary) = &file.glossary {
+        builder = builder.glossary_file(glossary).map_err(|e| e.message)?;
+    }
+    if let Some(templates) = &file.templates {
+        builder = builder.templates_file(templates).map_err(|e| e.message)?;
+    }
+    builder.build().map_err(|e| e.message)
+}
+
+// ============================================================
+// 数据与报告
+// ============================================================
+
+#[derive(Debug, Deserialize)]
+struct EvalCase {
+    id: String,
+    #[serde(default)]
+    category: String,
+    text: String,
+    #[serde(default = "default_source")]
+    source_lang: String,
+    #[serde(default = "default_target")]
+    target_lang: String,
+    #[serde(default)]
+    must_preserve: Vec<String>,
+    #[serde(default)]
+    must_keep_numbers: Vec<String>,
+    #[serde(default)]
+    glossary: Vec<GlossaryPair>,
+    #[serde(default)]
+    notes: String,
+}
+
+fn default_source() -> String {
+    "en".to_string()
+}
+fn default_target() -> String {
+    "zh-CN".to_string()
+}
+
+#[derive(Debug, Deserialize)]
+struct GlossaryPair {
+    source: String,
+    target: String,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+#[allow(dead_code)] // 与 CLI 共用同一份配置格式，未用到的段落允许存在
+struct RunnerConfig {
+    #[serde(default)]
+    http: HttpSettings,
+    #[serde(default)]
+    backend: BTreeMap<String, BackendConfig>,
+    #[serde(default)]
+    glossary: Option<PathBuf>,
+    #[serde(default)]
+    templates: Option<PathBuf>,
+    /// 允许出现但本工具不用的段落（避免复制 CLI 配置时解析失败）
+    #[serde(default)]
+    translation: Option<toml::Value>,
+    #[serde(default)]
+    cache: Option<toml::Value>,
+    #[serde(default)]
+    dictionary: Option<PathBuf>,
+    #[serde(default)]
+    rules: Option<PathBuf>,
+    #[serde(default)]
+    app: Option<String>,
+    #[serde(default)]
+    page: Option<String>,
+}
+
+fn load_dataset(path: &PathBuf) -> Result<Vec<EvalCase>, String> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| format!("读取数据集 {} 失败：{e}", path.display()))?;
+    let mut out = Vec::new();
+    for (idx, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let case: EvalCase = serde_json::from_str(line)
+            .map_err(|e| format!("第 {} 行不是合法 JSON：{e}", idx + 1))?;
+        out.push(case);
+    }
+    Ok(out)
+}
+
+#[derive(Debug, Serialize)]
+struct Report {
+    dataset: String,
+    mode: String,
+    mock: bool,
+    total: usize,
+    passed: usize,
+    failed: usize,
+    latency_p50_ms: u64,
+    latency_max_ms: u64,
+    by_category: Vec<CategoryStat>,
+    /// 人工质量评审状态。自动指标通过不等于质量验收通过。
+    human_review: String,
+    cases: Vec<CaseResult>,
+}
+
+#[derive(Debug, Serialize)]
+struct CategoryStat {
+    category: String,
+    passed: usize,
+    failed: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct CaseResult {
+    id: String,
+    category: String,
+    ok: bool,
+    output: String,
+    engine_id: String,
+    elapsed_ms: u64,
+    failures: Vec<String>,
+    error: Option<String>,
+    notes: String,
+}
+
+// ============================================================
+// 参数
+// ============================================================
+
+struct Args {
+    dataset: PathBuf,
+    out: PathBuf,
+    config: Option<PathBuf>,
+    mock: bool,
+    mode: TranslationMode,
+    limit: Option<usize>,
+}
+
+impl Args {
+    fn parse(args: Vec<String>) -> Result<Self, String> {
+        let mut dataset = None;
+        let mut out = None;
+        let mut config = None;
+        let mut mock = false;
+        let mut mode = TranslationMode::Precise;
+        let mut limit = None;
+
+        let mut i = 0;
+        while i < args.len() {
+            let arg = args[i].as_str();
+            let next = |name: &str| -> Result<String, String> {
+                let value = args.get(i + 1).ok_or_else(|| format!("{name} 需要值"))?;
+                Ok(value.clone())
+            };
+            match arg {
+                "--dataset" | "-d" => {
+                    dataset = Some(PathBuf::from(next("--dataset")?));
+                    i += 2;
+                }
+                "--out" | "-o" => {
+                    out = Some(PathBuf::from(next("--out")?));
+                    i += 2;
+                }
+                "--config" | "-c" => {
+                    config = Some(PathBuf::from(next("--config")?));
+                    i += 2;
+                }
+                "--limit" => {
+                    limit = Some(
+                        next("--limit")?
+                            .parse()
+                            .map_err(|_| "--limit 必须是整数".to_string())?,
+                    );
+                    i += 2;
+                }
+                "--mode" => {
+                    let value = next("--mode")?;
+                    mode = match value.as_str() {
+                        "precise" => TranslationMode::Precise,
+                        "fast" => TranslationMode::Fast,
+                        _ => return Err("--mode 只能是 precise 或 fast".to_string()),
+                    };
+                    i += 2;
+                }
+                "--mock" => {
+                    mock = true;
+                    i += 1;
+                }
+                "--help" | "-h" => {
+                    println!(
+                        "quality-runner --dataset <jsonl> --out <report.json> \
+                         [--config <translate.toml>] [--mode precise|fast] [--limit N] [--mock]"
+                    );
+                    std::process::exit(0);
+                }
+                other => return Err(format!("未知参数：{other}")),
+            }
+        }
+
+        Ok(Self {
+            dataset: dataset.ok_or("缺少 --dataset")?,
+            out: out.ok_or("缺少 --out")?,
+            config,
+            mock,
+            mode,
+            limit,
+        })
+    }
 }

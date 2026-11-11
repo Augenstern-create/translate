@@ -55,7 +55,6 @@ pub struct PromptTemplate {
     mode: TranslationMode,
     system: String,
     source_lang: String,
-    target_lang: String,
 }
 
 impl PromptTemplate {
@@ -75,7 +74,12 @@ impl PromptTemplate {
     /// 为指定模式构造提示词。
     pub fn for_mode(cfg: &BackendConfig, mode: TranslationMode) -> Result<Self, HttpError> {
         let version = cfg.prompt_id(!mode.is_precise());
-        Self::resolve(cfg.prompt_dir.as_deref(), &cfg.prompt_lang_pair, &version, mode)
+        Self::resolve(
+            cfg.prompt_dir.as_deref(),
+            &cfg.prompt_lang_pair,
+            &version,
+            mode,
+        )
     }
 
     fn resolve(
@@ -136,7 +140,6 @@ impl PromptTemplate {
             mode,
             system,
             source_lang: "en".to_string(),
-            target_lang: "zh-CN".to_string(),
         })
     }
 
@@ -148,7 +151,6 @@ impl PromptTemplate {
             mode: TranslationMode::Precise,
             system: EMBEDDED_PRECISE_V1.to_string(),
             source_lang: "en".to_string(),
-            target_lang: "zh-CN".to_string(),
         }
     }
 
@@ -160,7 +162,6 @@ impl PromptTemplate {
             mode: TranslationMode::Fast,
             system: EMBEDDED_FAST_V1.to_string(),
             source_lang: "en".to_string(),
-            target_lang: "zh-CN".to_string(),
         }
     }
 
@@ -219,7 +220,11 @@ impl PromptTemplate {
                  render it exactly as the Chinese wording given):\n",
             );
             for term in input.glossary {
-                let marker = if term.strict { "[required]" } else { "[preferred]" };
+                let marker = if term.strict {
+                    "[required]"
+                } else {
+                    "[preferred]"
+                };
                 system.push_str(&format!(
                     "  {} \"{}\" -> \"{}\"\n",
                     marker, term.source, term.target
@@ -359,15 +364,17 @@ mod tests {
 
     #[test]
     fn 未知版本在没有内置副本时报配置错误() {
-        let err = PromptTemplate::resolve(None, "en_zh", "en_zh/precise_v99", TranslationMode::Precise)
-            .unwrap_err();
+        let err =
+            PromptTemplate::resolve(None, "en_zh", "en_zh/precise_v99", TranslationMode::Precise)
+                .unwrap_err();
         assert_eq!(err.kind, crate::errors::HttpErrorKind::Config);
     }
 
     #[test]
     fn 语言对不一致时报配置错误() {
-        let err = PromptTemplate::resolve(None, "ja_zh", "en_zh/precise_v1", TranslationMode::Precise)
-            .unwrap_err();
+        let err =
+            PromptTemplate::resolve(None, "ja_zh", "en_zh/precise_v1", TranslationMode::Precise)
+                .unwrap_err();
         assert!(err.message.contains("不一致"), "{err}");
     }
 }

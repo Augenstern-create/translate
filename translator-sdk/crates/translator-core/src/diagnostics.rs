@@ -1,30 +1,28 @@
-//! 结构化诊断（P2.4）。
+//! 结构化诊断。
 //!
 //! # 为什么不扩展 `TranslationResult`
 //!
-//! `TranslationResult` 是 P0 就固定下来的结构，字段全是"最终结果"该有的东西。
-//! 诊断信息（用了哪条规则、保护了哪些跨度、术语改了哪里）有三个特点：
+//! `TranslationResult` 是"最终结果"该有的东西。诊断信息有三个特点：
 //!
-//! - **体积大**：一次翻译可能有几十条违规与跨度；
-//! - **会被日志/埋点带上**：其中含用户原文片段（URL、模板变量），
-//!   塞进主结果会让人在不知情的情况下把原文写进日志；
+//! - **体积大**：一次翻译可能有几十条问题与跨度；
+//! - **会被日志/埋点带上**：其中含用户原文片段（URL、模板变量）；
 //! - **并非所有人都要**：绝大多数宿主只读 `result.text`。
 //!
-//! 于是把它做成**单独入口** [`crate::coordinator::Coordinator::translate_with_diagnostics`]，
-//! 主路径 `translate()` 的返回类型一动不动（ADR-008 的落法）。
+//! 于是单独走 [`crate::coordinator::Coordinator::translate_with_diagnostics`]，
+//! 主路径的返回类型保持不变。
 //!
 //! # 隐私提醒
 //!
-//! `protected_spans` 与 `restore_missing` 里带的是**用户原文片段**
-//! （URL、邮箱、`{变量}`）。诊断对象只应回给发起请求的调用方，
-//! 不要原样写进集中式日志——设计文档 §4.1 明确禁止把用户原文写进日志。
+//! `protected_spans` 与术语违规里带的是**用户原文片段**。诊断对象只应回给
+//! 发起请求的调用方，不要原样写进集中式日志（设计文档 §4.1）。
 
-use translator_types::{Capability, FallbackReason, TextKind, TranslationMode, TranslationRoute};
+use translator_types::{
+    TextKind, TokenUsage, TranslationMode, TranslationResult, TranslationRoute,
+};
 
-use crate::evidence::{LanguageEvidence, TextSpan, UnitKind};
+use crate::protection::ProtectedSpan;
 use crate::quality::QualityReport;
 use crate::terms::{TermPolicy, TermViolation};
-use crate::text::ProtectedSpan;
 
 /// 规则命中记录。
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -41,158 +39,129 @@ pub struct TermTrace {
     pub id: String,
     pub version: u32,
     pub policy: TermPolicy,
-    /// 实际替换处数（`Warn` 策略下恒为 0）。
-    pub replaced: usize,
+    /// 源文命中的术语条数。
+    pub hits: usize,
+    /// 满足约束的条数。
+    pub satisfied: usize,
     pub violations: Vec<TermViolation>,
-}
-
-/// 一个执行单元的决策轨迹（P17-A / AR-10）。
-///
-/// 聚合译文只有一个 `engine_id`，但段落/文章里不同单元可能分别走词典、规则、
-/// 本地模型或远程模型。这个结构让“到底哪一段用了什么”可解释，同时不把
-/// 用户原文写进诊断。
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct UnitExecutionTrace {
-    /// 在计划中的序号（0 起）。
-    pub index: usize,
-    pub span: TextSpan,
-    pub kind: UnitKind,
-    pub route: TranslationRoute,
-    pub engine_id: String,
-    pub capability: Capability,
-    /// 路由理由（不含原文）。
-    pub reason: String,
-    pub model_invoked: bool,
-    pub cache_hit: bool,
-    pub fallback_reason: Option<FallbackReason>,
 }
 
 /// 一次翻译的完整诊断。
 #[derive(Clone, Debug)]
 pub struct TranslationDiagnostics {
-    /// 实际执行翻译的引擎。
     pub engine_id: String,
-    pub capability: Capability,
-    /// 路由理由（不含原文）。
-    pub route_reason: String,
+    pub route: TranslationRoute,
+    pub mode: TranslationMode,
+    pub text_kind: TextKind,
     pub cache_hit: bool,
-    /// 源语言是猜出来的而不是调用方指定的。
+    /// 是否真的调用了模型（模板/缓存命中时为 `false`）。
+    pub model_invoked: bool,
+    /// 源语言是猜出来的（而非用户指定）。
     pub source_assumed: bool,
     pub rules_version: u32,
     pub resource_fingerprint: String,
-    /// 实际使用的翻译模式（Precise / Fast）。
-    pub mode: TranslationMode,
-    /// 文本类型（Word / Sentence / Paragraph / Document / Auto）。
-    pub text_kind: TextKind,
-    /// 实际执行路由（Dictionary / Rule / LocalNmt / Mixed）。
-    pub route: TranslationRoute,
-    /// 是否真的调用了模型推理（缓存命中/模板/词典为 false）。
-    /// 本地 NMT 与已授权远程 API 都算模型。
-    pub model_invoked: bool,
-    /// 是否由词典命中。
-    pub dictionary_hit: bool,
-    /// 是否由规则/模板完整匹配。
-    pub rule_matched: bool,
-    /// 为什么没有由词典/规则直接完成；`None` 表示不是兜底路径。
-    pub fallback_reason: Option<FallbackReason>,
-    /// 本次（单单元）共享语言证据；聚合计划可为空，逐单元证据见 `units`。
-    pub evidence: Option<LanguageEvidence>,
-    /// 各执行单元的决策轨迹。单单元至少一条。
-    pub units: Vec<UnitExecutionTrace>,
-    /// 分段/组织策略名（进入缓存身份）。
-    pub strategy: String,
-    /// 上下文身份（可选）。
-    pub context_id: Option<String>,
-    /// 译后完整性检查结果；每次翻译都会跑（Fast 只跑数字/占位符）。
-    pub quality: Option<QualityReport>,
-    /// 规则包存在时才有。
-    pub rules: Option<RuleTrace>,
-    /// 进入引擎前被保护的跨度（偏移基于**发送给引擎的文本**）。
+    /// 人类可读的路由理由（不含原文）。
+    pub route_reason: String,
+    /// 实际使用的保护策略（`marker` / `segment`）。
+    pub protection_strategy: String,
+    /// 受保护跨度（含用户原文片段，注意隐私）。
     pub protected_spans: Vec<ProtectedSpan>,
-    /// 引擎没能保留的受保护片段原文。非空即意味着还原不完整。
-    pub restore_missing: Vec<String>,
-    /// 术语表存在且策略不是 `Off` 时才有。
-    pub term: Option<TermTrace>,
+    pub glossary: Option<TermTrace>,
+    pub quality: Option<QualityReport>,
+    /// 总尝试次数（1 = 一次成功，>1 表示发生过重试）。
+    pub attempts: u32,
+    pub elapsed_ms: u64,
+    pub prompt_version: String,
+    pub model_revision: Option<String>,
+    pub usage: Option<TokenUsage>,
+    pub rules: Option<RuleTrace>,
 }
 
 impl TranslationDiagnostics {
-    /// 人类可读摘要，一行。
+    /// 最小诊断（测试与词典路径用）。
+    pub fn minimal(engine_id: impl Into<String>) -> Self {
+        Self {
+            engine_id: engine_id.into(),
+            route: TranslationRoute::Remote,
+            mode: TranslationMode::Precise,
+            text_kind: TextKind::Auto,
+            cache_hit: false,
+            model_invoked: false,
+            source_assumed: false,
+            rules_version: 0,
+            resource_fingerprint: String::new(),
+            route_reason: String::new(),
+            protection_strategy: "none".to_string(),
+            protected_spans: Vec::new(),
+            glossary: None,
+            quality: None,
+            attempts: 1,
+            elapsed_ms: 0,
+            prompt_version: String::new(),
+            model_revision: None,
+            usage: None,
+            rules: None,
+        }
+    }
+
+    /// 一行摘要（不含原文）。
     pub fn summary(&self) -> String {
         let mut parts = vec![
-            format!("引擎={} 能力={}", self.engine_id, self.capability.as_str()),
-            format!("模式={}", self.mode),
-            format!("类型={} 策略={}", self.text_kind, self.strategy),
+            format!("引擎={}", self.engine_id),
             format!("路由={}", self.route),
+            format!("模式={}", self.mode),
         ];
         if self.cache_hit {
-            parts.push("缓存命中".to_string());
-        }
-        if self.source_assumed {
-            parts.push("源语言为猜测".to_string());
-        }
-        if let Some(rules) = &self.rules {
-            if rules.applied.is_empty() {
-                parts.push(format!("规则={}@{}（未命中）", rules.id, rules.version));
-            } else {
-                parts.push(format!(
-                    "规则={}@{} 命中 {} 条",
-                    rules.id,
-                    rules.version,
-                    rules.applied.len()
-                ));
-            }
+            parts.push("命中缓存".to_string());
         }
         if !self.protected_spans.is_empty() {
-            parts.push(format!("受保护片段 {} 个", self.protected_spans.len()));
+            parts.push(format!("保护片段={}", self.protected_spans.len()));
         }
-        if !self.restore_missing.is_empty() {
-            parts.push(format!("还原失败 {} 处", self.restore_missing.len()));
-        }
-        if let Some(reason) = self.fallback_reason {
-            parts.push(format!("兜底原因={reason}"));
-        }
-        if self.units.len() > 1 {
-            parts.push(format!("执行单元={}", self.units.len()));
+        if let Some(term) = &self.glossary {
+            parts.push(format!("术语 {}/{}", term.satisfied, term.hits));
         }
         if let Some(quality) = &self.quality {
-            if !quality.issues.is_empty() {
-                parts.push(format!(
-                    "译后检查={} 条（critical {}）",
-                    quality.issues.len(),
-                    quality.count(crate::quality::QualitySeverity::Critical)
-                ));
-            }
+            parts.push(quality.summary());
         }
-        if let Some(term) = &self.term {
-            if term.violations.is_empty() {
-                parts.push(format!("术语={}@{}（无违规）", term.id, term.version));
-            } else {
-                parts.push(format!(
-                    "术语={}@{} 违规 {} 处，替换 {} 处",
-                    term.id,
-                    term.version,
-                    term.violations.len(),
-                    term.replaced
-                ));
-            }
+        if self.attempts > 1 {
+            parts.push(format!("尝试={}", self.attempts));
         }
         parts.join("；")
     }
 }
 
-/// 带诊断的翻译结果。
-///
-/// 字段公开、可解构：`let TranslateOutput { result, diagnostics } = ...`。
+/// 译文 + 诊断。
 #[derive(Clone, Debug)]
 pub struct TranslateOutput {
-    pub result: translator_types::TranslationResult,
+    pub result: TranslationResult,
     pub diagnostics: TranslationDiagnostics,
 }
 
-/// 空诊断（缓存与测试用）。
-impl TranslationDiagnostics {
-    /// 用于缓存写回时替换掉易变字段。
-    pub(crate) fn mark_cached(&mut self) {
-        self.cache_hit = true;
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn 最小诊断可以构造() {
+        let d = TranslationDiagnostics::minimal("http.test");
+        assert_eq!(d.engine_id, "http.test");
+        assert!(!d.model_invoked);
+        assert_eq!(d.attempts, 1);
+        assert!(!d.summary().is_empty());
+    }
+
+    #[test]
+    fn 摘要不含原文片段() {
+        let mut d = TranslationDiagnostics::minimal("http.test");
+        d.protected_spans.push(ProtectedSpan {
+            id: 1,
+            kind: crate::text::ProtectedKind::Url,
+            start: 0,
+            end: 5,
+            original: "https://secret.example/x".to_string(),
+        });
+        let summary = d.summary();
+        assert!(!summary.contains("secret"), "{summary}");
+        assert!(summary.contains("保护片段=1"));
     }
 }

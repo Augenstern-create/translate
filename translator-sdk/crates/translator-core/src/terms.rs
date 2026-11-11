@@ -1,88 +1,448 @@
-//! 输出侧术语约束（P2.4）。
+//! 术语表：**生成前约束 + 生成后校验**，而不是译后字符串替换。
 //!
-//! # 为什么必须在**输出侧**再做一次
+//! # 为什么改
 //!
-//! 输入侧规则（`TextRules`）只能改"送进引擎的文本"。但译文里的术语是**引擎写出来的**：
-//! 它可能把 `AI` 写成 `人工智能`、把 `large language model` 写成 `LLM`，
-//! 也可能保留英文缩写而术语表要求中文全称。想约束"最终交给用户的字符串"，
-//! 只能在引擎产出之后、返回之前做一次检查。
+//! 旧实现是"输出侧守卫"：翻译完成后扫一遍译文，发现某个变体就（在 `Enforce`
+//! 下）替换掉。这在下面三种情况下会直接把译文改坏（§6.1 / §6.3）：
 //!
-//! 这与 ADR-003（词典 vs 句子分开建模）不冲突：这里约束的是**译文用词**，
-//! 不是"这句话该不该由词典来译"。
+//! 1. 一个英文术语有多个中文对应（`model` → 模型/型号/模特）；
+//! 2. 译文里的那个词并不对应源文里的术语（`planet earth` → `world`）；
+//! 3. 替换会破坏受保护跨度（代码、URL、模板变量）。
 //!
-//! # 默认不改写（P2-S / S-03）
+//! 新流程：
 //!
-//! 默认策略是 [`TermPolicy::Warn`]——**只报告，不改文本**。
+//! ```text
+//! 源文命中术语 → 只把这些约束送进提示词（§6.5 控制长度）
+//!              → 模型在生成时就照着写
+//!              → 译后再校验是否满足（Warn 只报告，Enforce 才拒绝）
+//! ```
 //!
-//! 原因是"目标侧出现某个变体"并不等于"这里就该用规范术语"：把 `planet earth`
-//! 换成 `world` 在某个句子里可能正确，在另一个句子里会毁掉原意。自动改写未知语境
-//! 的译文，风险大于收益。要改写必须显式 `Enforce`，并且术语条目应带上
-//! **源文触发条件**（`source_variants`），否则等于"只要译文里出现这个词就改"。
+//! `TermPolicy::Enforce` 的语义因此变为"**严格的术语必须满足，否则本次翻译失败**"，
+//! 而不是"把译文里的词替换成标准词"。这样术语约束仍然可被审计，但不会静默改坏句子。
 //!
-//! # 契约
+//! # 冲突规则（§6.4）
 //!
-//! [`TargetTermGuard`] 的实现者必须做到三件事，缺一不可：
-//!
-//! 1. **不碰受保护跨度**：URL / 邮箱 / `{模板变量}` / 反引号代码里的内容一律不得改写。
-//!    实现方自己调用 [`crate::text::split_protected`] 重新切分即可（还原后的文本
-//!    仍然能被同一套扫描器认出来，因为还原就是把原字符串原样插回去）。
-//! 2. **匹配必须确定**：同一输入在任何平台、任何次数下产出同样的结果，
-//!    不允许依赖 `HashMap` 迭代顺序。
-//! 3. **改写必须可解释**：每个被替换的地方都要作为 [`TermViolation`] 报出来，
-//!    让宿主能说清"我改了哪里、为什么"。
-//!
-//! # 与 `TranslationWarning` 的关系
-//!
-//! **不新增枚举变体**。`TranslationWarning::TermMismatch` 在 P0 就存在，
-//! 但它只能携带一个字符串，装不下"位置 + 期望值 + 实际值"。
-//! 给公开枚举加变体会破坏宿主的穷尽匹配（ADR-008），因此
-//! 结构化信息走 [`crate::diagnostics::TranslationDiagnostics`]，
-//! 警告只保留"有术语不一致"这一个事实。
+//! 1. 更长的源短语优先（`large language model` 优于 `language model`）；
+//! 2. 领域规则优先于通用规则；
+//! 3. 用户自定义优先于内置；
+//! 4. 同级且目标词冲突 → **加载期报配置错误**，不随机选择。
 
-use translator_types::LanguageTag;
+use std::collections::BTreeMap;
+use std::path::Path;
+
+use serde::Deserialize;
+use translator_types::{LanguageTag, TermConstraint};
+
+/// 术语匹配方式。
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MatchType {
+    /// 源文出现该短语即命中（默认）。
+    #[default]
+    Phrase,
+    /// 必须作为完整词出现（前后不是字母数字）。
+    Word,
+}
+
+/// 术语来源。
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TermOrigin {
+    /// 系统内置（产品/领域通用）。
+    #[default]
+    Builtin,
+    /// 用户或项目自定义。
+    User,
+}
+
+/// 一条术语。
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct TermEntry {
+    pub id: String,
+    pub source: String,
+    pub target: String,
+    #[serde(default = "default_lang")]
+    pub source_language: String,
+    #[serde(default = "default_target_lang")]
+    pub target_language: String,
+    #[serde(default)]
+    pub case_sensitive: bool,
+    #[serde(default)]
+    pub match_type: MatchType,
+    #[serde(default)]
+    pub domain: Option<String>,
+    #[serde(default)]
+    pub priority: i32,
+    /// `true` = 明确的业务术语约束，译后必须满足（`Enforce` 下不满足即失败）。
+    #[serde(default)]
+    pub strict: bool,
+    #[serde(default)]
+    pub origin: TermOrigin,
+}
+
+fn default_lang() -> String {
+    "en".to_string()
+}
+fn default_target_lang() -> String {
+    "zh-CN".to_string()
+}
 
 /// 一处术语违规。
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TermViolation {
-    /// 期望的术语（术语表里的 `preferred`）。
+    /// 术语 id。
+    pub term_id: String,
+    /// 期望的目标写法。
     pub preferred: String,
-    /// 实际出现的非期望写法。
+    /// 源文里的术语。
     pub found: String,
-    /// 在**输出文本**里的字节偏移（UTF-8，`text[offset..]` 处开始）。
-    pub offset: usize,
+    /// 是否硬约束。
+    pub strict: bool,
 }
 
 impl TermViolation {
-    pub fn new(preferred: impl Into<String>, found: impl Into<String>, offset: usize) -> Self {
-        Self {
-            preferred: preferred.into(),
-            found: found.into(),
-            offset,
-        }
-    }
-}
-
-impl std::fmt::Display for TermViolation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "「{}」应为「{}」（偏移 {}）",
-            self.found, self.preferred, self.offset
+    pub fn detail(&self) -> String {
+        format!(
+            "术语 {}：「{}」应译为「{}」",
+            self.term_id, self.found, self.preferred
         )
     }
 }
 
-/// 术语检查结果。
+/// 一条术语的命中情况。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TermHit {
+    pub term_id: String,
+    pub source: String,
+    pub target: String,
+    pub occurrences: usize,
+    pub satisfied: bool,
+    pub strict: bool,
+}
+
+/// 术语校验结果。
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TermVerification {
+    pub hits: Vec<TermHit>,
+    pub violations: Vec<TermViolation>,
+}
+
+impl TermVerification {
+    pub fn satisfied_count(&self) -> usize {
+        self.hits.iter().filter(|h| h.satisfied).count()
+    }
+
+    /// 硬约束是否全部满足。
+    pub fn strict_satisfied(&self) -> bool {
+        !self.violations.iter().any(|v| v.strict)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.hits.is_empty()
+    }
+}
+
+/// 术语表加载错误。
+#[derive(Debug)]
+pub enum GlossaryError {
+    Io(std::io::Error),
+    Json(serde_json::Error),
+    Invalid(String),
+    /// 两条同级术语对同一源术语给出不同目标写法。
+    Conflict(String),
+}
+
+impl std::fmt::Display for GlossaryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(e) => write!(f, "读取术语表失败：{e}"),
+            Self::Json(e) => write!(f, "术语表 JSON 非法：{e}"),
+            Self::Invalid(msg) => write!(f, "术语表不合法：{msg}"),
+            Self::Conflict(msg) => write!(f, "术语表冲突：{msg}"),
+        }
+    }
+}
+
+impl std::error::Error for GlossaryError {}
+impl From<std::io::Error> for GlossaryError {
+    fn from(e: std::io::Error) -> Self {
+        Self::Io(e)
+    }
+}
+impl From<serde_json::Error> for GlossaryError {
+    fn from(e: serde_json::Error) -> Self {
+        Self::Json(e)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Spec {
+    schema_version: u16,
+    id: String,
+    version: u32,
+    #[serde(default)]
+    domain: Option<String>,
+    entries: Vec<TermEntry>,
+}
+
+/// 编译后的只读术语表。
+#[derive(Clone, Debug)]
+pub struct Glossary {
+    id: String,
+    version: u32,
+    /// 默认领域（条目未显式声明时使用）。
+    domain: Option<String>,
+    /// 已按优先级排序的条目。
+    entries: Vec<TermEntry>,
+}
+
+impl Glossary {
+    pub fn from_file(path: impl AsRef<Path>) -> Result<Self, GlossaryError> {
+        let text = std::fs::read_to_string(path)?;
+        Self::from_json(&text)
+    }
+
+    pub fn from_json(json: &str) -> Result<Self, GlossaryError> {
+        let spec: Spec = serde_json::from_str(json)?;
+        if spec.schema_version != 1 {
+            return Err(GlossaryError::Invalid(format!(
+                "不支持的 schema_version={}",
+                spec.schema_version
+            )));
+        }
+        if spec.id.trim().is_empty() {
+            return Err(GlossaryError::Invalid("id 不能为空".to_string()));
+        }
+        Self::new(spec.id, spec.version, spec.domain, spec.entries)
+    }
+
+    pub fn new(
+        id: impl Into<String>,
+        version: u32,
+        domain: Option<String>,
+        mut entries: Vec<TermEntry>,
+    ) -> Result<Self, GlossaryError> {
+        for entry in &entries {
+            if entry.id.trim().is_empty() {
+                return Err(GlossaryError::Invalid("条目 id 不能为空".to_string()));
+            }
+            if entry.source.trim().is_empty() || entry.target.trim().is_empty() {
+                return Err(GlossaryError::Invalid(format!(
+                    "条目 {} 的 source/target 不能为空",
+                    entry.id
+                )));
+            }
+        }
+
+        // §6.4 第 4 条：同级 + 同作用域 + 不同目标 → 配置错误
+        let mut seen: BTreeMap<(String, Option<String>), (&str, &str)> = BTreeMap::new();
+        for entry in &entries {
+            let key = (
+                normalize_term(&entry.source, entry.case_sensitive),
+                entry.domain.clone(),
+            );
+            if let Some((other_id, other_target)) = seen.get(&key) {
+                if *other_target != entry.target {
+                    return Err(GlossaryError::Conflict(format!(
+                        "「{}」同时被 {} 译为「{}」、被 {} 译为「{}」；请合并或改用不同 domain",
+                        entry.source, other_id, other_target, entry.id, entry.target
+                    )));
+                }
+            } else {
+                seen.insert(key, (&entry.id, &entry.target));
+            }
+        }
+
+        // 排序：长源短语优先 → 领域优先 → 用户优先 → priority 降序 → id 升序
+        entries.sort_by(|a, b| {
+            b.source
+                .chars()
+                .count()
+                .cmp(&a.source.chars().count())
+                .then_with(|| b.domain.is_some().cmp(&a.domain.is_some()))
+                .then_with(|| {
+                    let rank = |o: TermOrigin| if o == TermOrigin::User { 0 } else { 1 };
+                    rank(a.origin).cmp(&rank(b.origin))
+                })
+                .then_with(|| b.priority.cmp(&a.priority))
+                .then_with(|| a.id.cmp(&b.id))
+        });
+
+        Ok(Self {
+            id: id.into(),
+            version,
+            domain,
+            entries,
+        })
+    }
+
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+
+    pub fn entries(&self) -> &[TermEntry] {
+        &self.entries
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// 源文实际命中的条目（按优先级排序）。
+    ///
+    /// `domain` 为 `Some` 时，只返回该领域与通用条目。
+    pub fn applicable(
+        &self,
+        source: &str,
+        source_lang: &str,
+        target_lang: &str,
+        domain: Option<&str>,
+    ) -> Vec<&TermEntry> {
+        let domain = domain.or(self.domain.as_deref());
+        self.entries
+            .iter()
+            .filter(|entry| {
+                entry.source_language.eq_ignore_ascii_case(source_lang)
+                    && entry.target_language.eq_ignore_ascii_case(target_lang)
+            })
+            .filter(|entry| match (&entry.domain, domain) {
+                (None, _) => true,
+                (Some(d), Some(wanted)) => d == wanted,
+                (Some(_), None) => false,
+            })
+            .filter(|entry| count_matches(source, entry) > 0)
+            .collect()
+    }
+
+    /// 生成本次翻译的术语约束（送进提示词）。
+    pub fn constraints(
+        &self,
+        source: &str,
+        source_lang: &str,
+        target_lang: &str,
+        domain: Option<&str>,
+    ) -> Vec<TermConstraint> {
+        self.applicable(source, source_lang, target_lang, domain)
+            .into_iter()
+            .map(|entry| TermConstraint {
+                source: entry.source.clone(),
+                target: entry.target.clone(),
+                strict: entry.strict,
+                matched: match entry.match_type {
+                    MatchType::Phrase => "phrase".to_string(),
+                    MatchType::Word => "word".to_string(),
+                },
+            })
+            .collect()
+    }
+
+    /// 译后校验。
+    pub fn verify(
+        &self,
+        source: &str,
+        output: &str,
+        source_lang: &str,
+        target_lang: &str,
+        domain: Option<&str>,
+    ) -> TermVerification {
+        let mut verification = TermVerification::default();
+        for entry in self.applicable(source, source_lang, target_lang, domain) {
+            let occurrences = count_matches(source, entry);
+            let satisfied = output.contains(&entry.target);
+            verification.hits.push(TermHit {
+                term_id: entry.id.clone(),
+                source: entry.source.clone(),
+                target: entry.target.clone(),
+                occurrences,
+                satisfied,
+                strict: entry.strict,
+            });
+            if !satisfied {
+                verification.violations.push(TermViolation {
+                    term_id: entry.id.clone(),
+                    preferred: entry.target.clone(),
+                    found: entry.source.clone(),
+                    strict: entry.strict,
+                });
+            }
+        }
+        verification
+    }
+}
+
+fn normalize_term(term: &str, case_sensitive: bool) -> String {
+    let trimmed = term.trim();
+    if case_sensitive {
+        trimmed.to_string()
+    } else {
+        trimmed.to_lowercase()
+    }
+}
+
+/// 统计源文里某个术语出现的次数。
+fn count_matches(source: &str, entry: &TermEntry) -> usize {
+    let (haystack, needle) = if entry.case_sensitive {
+        (source.to_string(), entry.source.clone())
+    } else {
+        (source.to_lowercase(), entry.source.to_lowercase())
+    };
+
+    match entry.match_type {
+        MatchType::Phrase => haystack.matches(&needle).count(),
+        MatchType::Word => {
+            let mut count = 0usize;
+            let mut from = 0usize;
+            while let Some(pos) = haystack[from..].find(&needle) {
+                let at = from + pos;
+                let end = at + needle.len();
+                let left_ok = at == 0
+                    || !haystack[..at]
+                        .chars()
+                        .next_back()
+                        .is_some_and(|c| c.is_alphanumeric() || c == '_');
+                let right_ok = end >= haystack.len()
+                    || !haystack[end..]
+                        .chars()
+                        .next()
+                        .is_some_and(|c| c.is_alphanumeric() || c == '_');
+                if left_ok && right_ok {
+                    count += 1;
+                }
+                from = end;
+            }
+            count
+        }
+    }
+}
+
+// ============================================================
+// 兼容层：旧的"输出侧术语守卫"接口
+// ============================================================
+
+/// 术语检查的完整上下文。
+#[derive(Clone, Copy, Debug)]
+pub struct TermContext<'a> {
+    pub source_text: &'a str,
+    pub target_text: &'a str,
+    pub source: &'a LanguageTag,
+    pub target: &'a LanguageTag,
+}
+
+/// 术语检查结果（旧接口）。
 #[derive(Clone, Debug, Default)]
 pub struct TermOutcome {
-    /// 处理后的文本。`Warn` 策略下调用方应忽略它，`Enforce` 下才采用。
+    /// 处理后的文本。**重构后不再改写文本**，永远等于输入。
     pub text: String,
-    /// 发现的违规，按偏移升序（确定性要求）。
     pub violations: Vec<TermViolation>,
 }
 
 impl TermOutcome {
-    /// 无违规、文本不变。
     pub fn unchanged(text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
@@ -91,43 +451,54 @@ impl TermOutcome {
     }
 }
 
-/// 术语检查的完整上下文。
-///
-/// `source_text` 是**送进引擎之前**的源文（已规范化、已过规则），
-/// 它让实现者能区分"源文确实提到了这个术语"与"译文里恰好有这个写法"。
-#[derive(Clone, Copy, Debug)]
-pub struct TermContext<'a> {
-    /// 源文（规范化、规则处理后）。
-    pub source_text: &'a str,
-    /// 译文（占位符已还原）。
-    pub target_text: &'a str,
-    pub source: &'a LanguageTag,
-    pub target: &'a LanguageTag,
-}
-
 /// 输出侧术语约束契约。
 ///
-/// `Send + Sync`：协调器会被多线程共享（`Translator` 是 `Sync`）。
+/// 保留它是为了让宿主仍能"预览术语会怎么判"，但**不再**用来改写译文。
 pub trait TargetTermGuard: Send + Sync {
-    /// 术语表 id，进诊断与缓存键。
     fn id(&self) -> &str;
-    /// 术语表版本，进诊断与缓存键。
     fn version(&self) -> u32;
-    /// 只凭译文做检查（没有源文）。
-    ///
-    /// 实现方应把"需要源文才能判定"的规则**跳过**：没有源文时无法确认触发条件。
     fn apply(&self, text: &str, source: &LanguageTag, target: &LanguageTag) -> TermOutcome;
 
-    /// 带源文的完整检查。协调器走这条路径。
-    ///
-    /// 默认实现退化为 [`Self::apply`]，因此**加到已有实现上是非破坏的**；
-    /// 需要源触发语义的实现（如 `TargetTermTable`）覆盖它即可。
     fn apply_with_context(&self, ctx: &TermContext<'_>) -> TermOutcome {
         self.apply(ctx.target_text, ctx.source, ctx.target)
     }
 }
 
-/// 空实现：什么都不做。用于"没配术语表"的默认路径。
+impl TargetTermGuard for Glossary {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn version(&self) -> u32 {
+        self.version
+    }
+
+    fn apply(&self, text: &str, source: &LanguageTag, target: &LanguageTag) -> TermOutcome {
+        // 没有源文时无法判断"这个术语是否真的出现"，因此按"源文 = 译文"处理会误报。
+        // 这里只做纯文本层面的目标词缺失检查，并明确标注这是简化预览。
+        let verification = self.verify(text, text, source.as_str(), target.as_str(), None);
+        TermOutcome {
+            text: text.to_string(),
+            violations: verification.violations,
+        }
+    }
+
+    fn apply_with_context(&self, ctx: &TermContext<'_>) -> TermOutcome {
+        let verification = self.verify(
+            ctx.source_text,
+            ctx.target_text,
+            ctx.source.as_str(),
+            ctx.target.as_str(),
+            None,
+        );
+        TermOutcome {
+            text: ctx.target_text.to_string(),
+            violations: verification.violations,
+        }
+    }
+}
+
+/// 空实现：没配术语表时的默认路径。
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NoTermGuard;
 
@@ -135,11 +506,9 @@ impl TargetTermGuard for NoTermGuard {
     fn id(&self) -> &str {
         "terms.none"
     }
-
     fn version(&self) -> u32 {
         0
     }
-
     fn apply(&self, text: &str, _source: &LanguageTag, _target: &LanguageTag) -> TermOutcome {
         TermOutcome::unchanged(text)
     }
@@ -148,17 +517,14 @@ impl TargetTermGuard for NoTermGuard {
 /// 术语约束策略。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum TermPolicy {
-    /// 完全不检查（性能优先，或术语表只用于别处）。
+    /// 完全不检查。
     Off,
-    /// 只报告违规、**不改文本**。审计、灰度期、以及**默认**都用这个。
-    ///
-    /// 默认不改写是刻意的（P2-S / S-03）：仅凭"译文里出现了某个变体"
-    /// 无法判断这里是否真的该用规范术语。
+    /// 只报告违规、**不改文本**（默认）。
     #[default]
     Warn,
-    /// 按术语表改写文本（不碰受保护跨度），并报告每处替换。
+    /// 硬约束（`strict = true`）不满足时，本次翻译**失败**。
     ///
-    /// 只能在显式启用后使用；术语条目最好带 `source_variants` 限定触发条件。
+    /// 注意：它不是"把译文里的词替换成标准词"——那会破坏语义（§6.3）。
     Enforce,
 }
 
@@ -171,14 +537,19 @@ impl TermPolicy {
         }
     }
 
-    /// 是否要把守卫改过的文本用起来。
-    pub const fn applies_text(self) -> bool {
+    /// 是否要跑术语校验。
+    pub const fn runs(self) -> bool {
+        !matches!(self, Self::Off)
+    }
+
+    /// 是否把"硬约束未满足"当成失败。
+    pub const fn rejects_unmet_strict(self) -> bool {
         matches!(self, Self::Enforce)
     }
 
-    /// 是否要跑守卫（`Off` 时连扫描都省掉）。
-    pub const fn runs(self) -> bool {
-        !matches!(self, Self::Off)
+    /// 兼容旧名字：旧语义是"用守卫改过的文本"，现在是 `false`。
+    pub const fn applies_text(self) -> bool {
+        false
     }
 }
 
@@ -186,53 +557,197 @@ impl TermPolicy {
 mod tests {
     use super::*;
 
-    fn lang(tag: &str) -> LanguageTag {
-        LanguageTag::new(tag).unwrap()
+    fn glossary(json: &str) -> Glossary {
+        Glossary::from_json(json).unwrap()
     }
 
-    #[test]
-    fn 空守卫不改文本() {
-        let outcome = NoTermGuard.apply("hello world", &lang("en"), &lang("zh-Hans"));
-        assert_eq!(outcome.text, "hello world");
-        assert!(outcome.violations.is_empty());
-        assert_eq!(NoTermGuard.version(), 0);
-    }
+    const SAMPLE: &str = r#"{
+      "schema_version": 1,
+      "id": "glossary.software",
+      "version": 3,
+      "domain": "software",
+      "entries": [
+        {"id":"term_001","source":"large language model","target":"大语言模型",
+         "case_sensitive":false,"match_type":"phrase","priority":100,"strict":true},
+        {"id":"term_002","source":"language model","target":"语言模型","priority":10},
+        {"id":"term_003","source":"model","target":"模型","priority":1},
+        {"id":"term_004","source":"pull request","target":"拉取请求","strict":true,"origin":"user"}
+      ]
+    }"#;
 
     #[test]
-    fn 策略语义() {
-        assert!(TermPolicy::Enforce.applies_text());
-        assert!(!TermPolicy::Warn.applies_text());
-        assert!(TermPolicy::Warn.runs());
-        assert!(!TermPolicy::Off.runs());
-    }
-
-    #[test]
-    fn 默认策略不改写译文() {
-        // P2-S / S-03：默认必须只报告不改写
-        assert_eq!(TermPolicy::default(), TermPolicy::Warn);
-        assert!(
-            !TermPolicy::default().applies_text(),
-            "默认策略不得改写用户译文"
+    fn 加载并按长度优先排序() {
+        let g = glossary(SAMPLE);
+        assert_eq!(g.version(), 3);
+        let sources: Vec<&str> = g.entries().iter().map(|e| e.source.as_str()).collect();
+        assert_eq!(
+            sources,
+            vec![
+                "large language model",
+                "language model",
+                "pull request",
+                "model"
+            ]
         );
     }
 
     #[test]
-    fn 无上下文时退化为仅凭译文() {
-        let outcome = NoTermGuard.apply_with_context(&TermContext {
-            source_text: "源文",
-            target_text: "hello",
-            source: &lang("en"),
-            target: &lang("zh-Hans"),
-        });
-        assert_eq!(outcome.text, "hello");
+    fn 只发送源文实际命中的术语() {
+        let g = glossary(SAMPLE);
+        let constraints = g.constraints(
+            "This large language model beats a small model.",
+            "en",
+            "zh-CN",
+            None,
+        );
+        let sources: Vec<&str> = constraints.iter().map(|c| c.source.as_str()).collect();
+        assert!(sources.contains(&"large language model"));
+        assert!(sources.contains(&"model"));
+        assert!(!sources.contains(&"pull request"), "未命中的术语不得发送");
     }
 
     #[test]
-    fn 违规展示包含期望与实际() {
-        let v = TermViolation::new("large language model", "LLM", 7);
-        let text = v.to_string();
-        assert!(text.contains("LLM"));
-        assert!(text.contains("large language model"));
-        assert!(text.contains('7'));
+    fn 校验发现未满足的硬约束() {
+        let g = glossary(SAMPLE);
+        let v = g.verify(
+            "Open a pull request with the new model.",
+            "用新模型开一个 PR。",
+            "en",
+            "zh-CN",
+            None,
+        );
+        assert!(!v.strict_satisfied());
+        assert!(v
+            .violations
+            .iter()
+            .any(|x| x.term_id == "term_004" && x.strict));
+    }
+
+    #[test]
+    fn 校验通过时不报违规() {
+        let g = glossary(SAMPLE);
+        let v = g.verify(
+            "Open a pull request.",
+            "请提交拉取请求。",
+            "en",
+            "zh-CN",
+            None,
+        );
+        assert!(v.strict_satisfied());
+        assert!(v.violations.is_empty(), "{v:?}");
+        assert_eq!(v.satisfied_count(), 1);
+    }
+
+    #[test]
+    fn 领域限制生效() {
+        let g = glossary(
+            r#"{"schema_version":1,"id":"g","version":1,"entries":[
+                {"id":"a","source":"bank","target":"银行","domain":"finance"},
+                {"id":"b","source":"bank","target":"河岸","domain":"geography"}
+            ]}"#,
+        );
+        let finance = g.applicable(
+            "river bank and bank account",
+            "en",
+            "zh-CN",
+            Some("finance"),
+        );
+        assert_eq!(finance.len(), 1);
+        assert_eq!(finance[0].target, "银行");
+
+        let geography = g.applicable("river bank", "en", "zh-CN", Some("geography"));
+        assert_eq!(geography[0].target, "河岸");
+
+        // 没指定领域时不返回领域条目（避免猜）
+        assert!(g.applicable("river bank", "en", "zh-CN", None).is_empty());
+    }
+
+    #[test]
+    fn 同级冲突在加载期报错() {
+        let err = Glossary::from_json(
+            r#"{"schema_version":1,"id":"g","version":1,"entries":[
+                {"id":"a","source":"model","target":"模型"},
+                {"id":"b","source":"model","target":"型号"}
+            ]}"#,
+        )
+        .unwrap_err();
+        assert!(matches!(err, GlossaryError::Conflict(_)), "{err}");
+    }
+
+    #[test]
+    fn 单词匹配不会命中词内片段() {
+        let g = glossary(
+            r#"{"schema_version":1,"id":"g","version":1,"entries":[
+                {"id":"a","source":"cat","target":"猫","match_type":"word"}
+            ]}"#,
+        );
+        assert!(g.applicable("the cat sat", "en", "zh-CN", None).len() == 1);
+        assert!(g.applicable("concatenate", "en", "zh-CN", None).is_empty());
+    }
+
+    #[test]
+    fn 大小写敏感可配置() {
+        let insensitive = glossary(
+            r#"{"schema_version":1,"id":"g","version":1,"entries":[
+                {"id":"a","source":"API","target":"接口"}]}"#,
+        );
+        assert_eq!(
+            insensitive.applicable("the api", "en", "zh-CN", None).len(),
+            1
+        );
+
+        let sensitive = glossary(
+            r#"{"schema_version":1,"id":"g","version":1,"entries":[
+                {"id":"a","source":"API","target":"接口","case_sensitive":true}]}"#,
+        );
+        assert!(sensitive
+            .applicable("the api", "en", "zh-CN", None)
+            .is_empty());
+        assert_eq!(
+            sensitive.applicable("the API", "en", "zh-CN", None).len(),
+            1
+        );
+    }
+
+    #[test]
+    fn 用户规则优先于内置() {
+        let g = glossary(
+            r#"{"schema_version":1,"id":"g","version":1,"entries":[
+                {"id":"builtin","source":"llm","target":"大语言模型","domain":"a"},
+                {"id":"user","source":"llm","target":"大型语言模型","domain":"b","origin":"user"}
+            ]}"#,
+        );
+        // 两个条目属于不同 domain，因此不冲突；排序时用户规则在前
+        assert_eq!(g.entries()[0].id, "user");
+    }
+
+    #[test]
+    fn 默认策略只报告不改写() {
+        assert_eq!(TermPolicy::default(), TermPolicy::Warn);
+        assert!(!TermPolicy::default().applies_text());
+        assert!(!TermPolicy::Warn.rejects_unmet_strict());
+        assert!(TermPolicy::Enforce.rejects_unmet_strict());
+    }
+
+    #[test]
+    fn 守卫接口不再改写文本() {
+        let g = glossary(SAMPLE);
+        let en = LanguageTag::new("en").unwrap();
+        let zh = LanguageTag::new("zh-CN").unwrap();
+        let outcome = g.apply_with_context(&TermContext {
+            source_text: "Open a pull request.",
+            target_text: "请开一个 PR。",
+            source: &en,
+            target: &zh,
+        });
+        assert_eq!(outcome.text, "请开一个 PR。", "不得替换用户译文");
+        assert_eq!(outcome.violations.len(), 1);
+    }
+
+    #[test]
+    fn 空术语表不产生约束() {
+        let g = glossary(r#"{"schema_version":1,"id":"g","version":1,"entries":[]}"#);
+        assert!(g.is_empty());
+        assert!(g.constraints("anything", "en", "zh-CN", None).is_empty());
     }
 }

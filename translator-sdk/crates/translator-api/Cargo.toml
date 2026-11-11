@@ -5,52 +5,27 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "面向宿主程序的翻译 SDK：装配后端、术语表、模板与缓存"
 
 [features]
 default = []
-# 把 Mock 插件透传给下游（CLI / 测试用）
+# 把 Mock 插件透传给下游（测试/示例用）
 mocks = ["translator-plugin-api/mocks"]
-# 离线词典包（P1）。默认关闭，保持 API 的默认依赖树极简。
-dictionary = ["dep:translator-dictionary"]
-# 声明式规则包（P1）。开启后可加载 JSON / 二进制规则文件。
-rules = ["dep:translator-rules"]
-# 资源仓库集成（P2.3）：可从仓库按 id 挂载激活版本并持有租约。
-# 默认关闭：多数宿主自己决定资源放在哪，不需要仓库。
-resource = ["dep:translator-resource"]
-# 真实本地 NMT（P3.1-E）：启用后可通过 `nmt_bergamot()` 挂载 Bergamot 引擎。
-# 默认关闭：默认依赖树里不出现任何 native runtime / 进程管理代码。
-nmt-bergamot = ["dep:translator-nmt-bergamot"]
-# 第二本地 NMT（P4）：启用后可通过 `nmt_ort()` 挂载 ONNX Runtime 引擎。
-# 默认关闭，且需要 translator-nmt-ort 自己的 `ort-runtime` feature 才真正链接 ORT。
-nmt-ort = ["dep:translator-nmt-ort"]
-# 连 ORT 运行时一起编进来（会链接 onnxruntime 动态库，显著增加体积与内存）。
-# 分两层是为了让 CI 能在**没有运行时的机器**上先检查上层契约编译通过。
-nmt-ort-runtime = ["nmt-ort", "translator-nmt-ort/ort-runtime"]
-# 持续学习链（P17-A / P20-K 基础）。默认关闭：不写学习记录、不引入 SQLite 学习库。
-learning = ["dep:translator-learning"]
 
 [dependencies]
-sha2.workspace = true
 translator-types.workspace = true
 translator-plugin-api.workspace = true
 translator-core.workspace = true
-translator-dictionary = { workspace = true, optional = true }
-translator-rules = { workspace = true, optional = true }
-translator-resource = { workspace = true, optional = true }
-translator-nmt-bergamot = { workspace = true, optional = true }
-translator-nmt-ort = { workspace = true, optional = true }
-translator-learning = { workspace = true, optional = true }
+translator-http.workspace = true
+translator-dictionary.workspace = true
+translator-rules.workspace = true
 
 [dev-dependencies]
-translator-analysis.workspace = true
-translator-nmt-bergamot.workspace = true
-translator-nmt-ort.workspace = true
-# 测试通过 `--all-features` 启用 mocks，解析出的特性对本 crate 同样生效
 translator-plugin-api = { workspace = true, features = ["mocks"] }
+# 测试要造真实词典包
+pack-dictionary.workspace = true
 pollster.workspace = true
 serde_json.workspace = true
-tempfile = "3"
-# P2.3 集成测试需要造一个真实词典包 + 一个资源仓库
-pack-dictionary.workspace = true
-translator-resource.workspace = true
-rusqlite.workspace = true
+tempfile.workspace = true

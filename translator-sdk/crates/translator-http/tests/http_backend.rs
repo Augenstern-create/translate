@@ -12,7 +12,9 @@ use std::time::{Duration, Instant};
 use translator_http::client::HttpTransport;
 use translator_http::config::HttpSettings;
 use translator_http::usage::UsageMeter;
-use translator_http::{BackendsFile, HttpErrorKind, HttpTranslationEngine, PromptInput, PromptTemplate};
+use translator_http::{
+    BackendsFile, HttpErrorKind, HttpTranslationEngine, PromptInput, PromptTemplate,
+};
 use translator_plugin_api::{TranslationEngine, TranslationJob};
 use translator_types::{
     CancelToken, LanguageTag, TermConstraint, TextKind, TranslateRequest, TranslationErrorCode,
@@ -23,6 +25,12 @@ use translator_types::{
 mod mock_server;
 
 use mock_server::{chat_completion_body, MockRequest, MockResponse, MockServer};
+
+/// 测试共享同一进程环境变量：读取/写入必须串行，否则会互相覆盖。
+fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 fn en() -> LanguageTag {
     LanguageTag::new("en").unwrap()
@@ -139,6 +147,7 @@ fn run_engine(
 
 #[test]
 fn 成功翻译并发送正确报文() {
+    let _env = env_lock();
     std::env::set_var("TRANSLATOR_HTTP_TEST_KEY", "test-key-not-a-real-secret");
     let seen: Arc<Mutex<Vec<MockRequest>>> = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::clone(&seen);
@@ -199,6 +208,7 @@ max_retries = 0
 
 #[test]
 fn 限流会被有限重试后成功() {
+    let _env = env_lock();
     std::env::set_var("TRANSLATOR_HTTP_TEST_KEY", "k");
     let counter = Arc::new(AtomicUsize::new(0));
     let hits = Arc::clone(&counter);
@@ -232,6 +242,7 @@ max_retries = 1
 
 #[test]
 fn 鉴权失败不重试() {
+    let _env = env_lock();
     std::env::set_var("TRANSLATOR_HTTP_TEST_KEY", "k");
     let counter = Arc::new(AtomicUsize::new(0));
     let hits = Arc::clone(&counter);
@@ -260,6 +271,7 @@ max_retries = 3
 
 #[test]
 fn 服务端故障重试耗尽后报不可用() {
+    let _env = env_lock();
     std::env::set_var("TRANSLATOR_HTTP_TEST_KEY", "k");
     let counter = Arc::new(AtomicUsize::new(0));
     let hits = Arc::clone(&counter);
@@ -288,6 +300,7 @@ max_retries = 2
 
 #[test]
 fn 截断输出不会被当成成功() {
+    let _env = env_lock();
     std::env::set_var("TRANSLATOR_HTTP_TEST_KEY", "k");
     let server = MockServer::start(|_| {
         MockResponse::json(
@@ -302,6 +315,7 @@ fn 截断输出不会被当成成功() {
 
 #[test]
 fn 超时映射为后端超时() {
+    let _env = env_lock();
     std::env::set_var("TRANSLATOR_HTTP_TEST_KEY", "k");
     let server = MockServer::start(|_| {
         MockResponse::completion("太慢了").with_delay(Duration::from_millis(600))
@@ -326,6 +340,7 @@ timeout_ms = 120
 
 #[test]
 fn 取消后立即返回而不是等后端() {
+    let _env = env_lock();
     std::env::set_var("TRANSLATOR_HTTP_TEST_KEY", "k");
     let server = MockServer::start(|_| {
         MockResponse::completion("迟到").with_delay(Duration::from_millis(800))
@@ -353,6 +368,7 @@ fn 取消后立即返回而不是等后端() {
 
 #[test]
 fn 并发上限生效() {
+    let _env = env_lock();
     std::env::set_var("TRANSLATOR_HTTP_TEST_KEY", "k");
     let current = Arc::new(AtomicUsize::new(0));
     let peak = Arc::new(AtomicUsize::new(0));
@@ -396,6 +412,7 @@ max_concurrent_requests = 1
 
 #[test]
 fn 术语与占位符进入系统消息而原文只出现一次() {
+    let _env = env_lock();
     std::env::set_var("TRANSLATOR_HTTP_TEST_KEY", "k");
     let seen: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
     let sink = Arc::clone(&seen);
@@ -499,6 +516,7 @@ fn 提示词模板可以注入自定义内容() {
 
 #[test]
 fn 简单请求走_translate_也能工作() {
+    let _env = env_lock();
     std::env::set_var("TRANSLATOR_HTTP_TEST_KEY", "k");
     let server = MockServer::start(|_| MockResponse::completion("你好。"));
     let engine = engine_for(&server.base_url(), "");

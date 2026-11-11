@@ -9,14 +9,12 @@ use std::time::Instant;
 
 use translator_types::{
     BackendDescriptor, Capability, CompatibilityReport, DictionaryEntry, EngineDescriptor,
-    LanguageTag, LookupRequest, ModelManifest, NmtInput, NmtOutput, PluginApiVersion,
-    ProviderDescriptor, ResourceLimits, Sense, TranslateRequest, TranslationError,
-    TranslationErrorCode, TranslationResult, TranslationWarning,
+    LanguageTag, LookupRequest, ModelManifest, NmtInput, NmtOutput, ProviderDescriptor,
+    ResourceLimits, Sense, TranslateRequest, TranslationError, TranslationErrorCode,
+    TranslationResult, TranslationWarning,
 };
 
 use crate::{BoxFuture, DictionaryProvider, InferenceBackend, LoadedModel, TranslationEngine};
-
-const API: PluginApiVersion = PluginApiVersion::CURRENT;
 
 // ============================================================
 // 内置词表（仅用于演示与测试）
@@ -58,7 +56,7 @@ impl MockDictionaryEngine {
 
 impl TranslationEngine for MockDictionaryEngine {
     fn descriptor(&self) -> EngineDescriptor {
-        EngineDescriptor::new("mock.dictionary", &[Capability::Dictionary], 100, "MIT")
+        EngineDescriptor::new("mock.dictionary", [Capability::Dictionary], 100, "MIT")
     }
 
     fn supports(&self, source: &LanguageTag, target: &LanguageTag) -> bool {
@@ -130,7 +128,7 @@ impl MockNmtEngine {
 
 impl TranslationEngine for MockNmtEngine {
     fn descriptor(&self) -> EngineDescriptor {
-        EngineDescriptor::new("mock.nmt", &[Capability::Nmt], self.priority, "MIT")
+        EngineDescriptor::new("mock.nmt", [Capability::Nmt], self.priority, "MIT")
     }
 
     fn supports(&self, _source: &LanguageTag, _target: &LanguageTag) -> bool {
@@ -180,7 +178,7 @@ impl MockRemoteEngine {
 
 impl TranslationEngine for MockRemoteEngine {
     fn descriptor(&self) -> EngineDescriptor {
-        EngineDescriptor::new("mock.remote", &[Capability::Remote], 10, "MIT")
+        EngineDescriptor::new("mock.remote", [Capability::Remote], 10, "MIT")
     }
 
     fn supports(&self, _source: &LanguageTag, _target: &LanguageTag) -> bool {
@@ -367,7 +365,7 @@ mod contract_tests {
                 d.id
             );
             assert!(
-                d.plugin_api.accepts(PluginApiVersion::CURRENT),
+                d.plugin_api.accepts(crate::PluginApiVersion::CURRENT),
                 "引擎 {} 的 API 版本必须兼容当前 SDK",
                 d.id
             );

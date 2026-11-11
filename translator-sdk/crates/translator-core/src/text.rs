@@ -1,9 +1,18 @@
-//! 文本预处理：规范化、语言识别启发式、占位符保护与还原。
+//! 文本预处理：规范化、语言识别启发式、受保护跨度扫描。
 //!
-//! 对应设计文档 §6「流水线」与 §7.3「安全规则示例」。
+//! 本模块只做**扫描**（哪里必须原样保留）与**规范化**（折叠空白）。
+//! "怎么保护、怎么严格还原"在 [`crate::protection`]；"数字语义对不对"在
+//! `crate::quality::number`。三条职责不混在一起，避免再次出现两套保护路径
+//! （§2.2）。
 //!
-//! ⚠️ 这里刻意只做**低成本、可测试**的处理。完整的规则 DSL 属于 P1，
-//! 但"保护占位符并在失败时报警"必须从 P0 就建立。
+//! # 扫描顺序（重要）
+//!
+//! 同一位置可能有多种解释（`https://x/` 里的 `/` 不是路径起点）。因此按
+//! **更具体优先**的顺序尝试：代码 > URL > 邮箱 > 标签/模板标签 > 模板变量 >
+//! 格式占位符 > 路径 > 数字/编号 > 标识符。
+//!
+//! 一旦某个匹配成功，扫描位置直接跳到它的结尾，内部不再重复保护
+//! （`` `curl https://x/{id}` `` 整体是一个代码片段）。
 
 use translator_types::LanguageTag;
 
@@ -29,28 +38,18 @@ pub fn normalize(input: &str) -> String {
 
 /// 判断是否"像单个词条"。
 ///
-/// 用于 `AutoLocalFirst` 策略：只有单词/极短语才优先查词典，
-/// 完整句子一律交给 NMT（设计文档 §6 第 1、2 条）。
-///
-/// # 为什么按文字系统区分阈值
-///
-/// 空格分隔语言（英、法等）用空白就能切词，长度上限可以放宽。
-/// 但**中日韩不用空格**，`我喜欢计算机` 这种完整句子在字节层面
-/// 与单词无异。实测中它会被误判为单词、白跑一次词典查询。
-/// 因此 CJK 文本改用**字符数上限 4**（常见中文词为 1–4 字），
-/// 超过即视为句子。
+/// 只用于**提示**（例如宿主想决定默认按钮文字），不用于自动切换 API：
+/// `Run!` 很短但是祈使句，`light` 是单词但可能出现在句子里（§7.2）。
 pub fn looks_like_single_word(text: &str) -> bool {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return false;
     }
 
-    // 含空白 → 更像短语或句子（空格分隔语言的主要判据）
     if trimmed.chars().any(char::is_whitespace) {
         return false;
     }
 
-    // 含句末标点 → 句子
     if trimmed
         .chars()
         .last()
@@ -61,76 +60,62 @@ pub fn looks_like_single_word(text: &str) -> bool {
     }
 
     let cjk = trimmed.chars().any(|c| {
-        ('\u{3040}'..='\u{30FF}').contains(&c)      // 假名
-            || ('\u{4E00}'..='\u{9FFF}').contains(&c) // 汉字
-            || ('\u{AC00}'..='\u{D7AF}').contains(&c) // 谚文
+        ('\u{3040}'..='\u{30FF}').contains(&c)
+            || ('\u{4E00}'..='\u{9FFF}').contains(&c)
+            || ('\u{AC00}'..='\u{D7AF}').contains(&c)
     });
 
     let max_chars = if cjk { 4 } else { 32 };
     trimmed.chars().count() <= max_chars
 }
 
-/// 语言识别：委托给 `translator-analysis` 的 [`LanguageIdentifier`] 实现。
-///
-/// 当前为启发式实现（零模型）。接入 fastText 后只需替换注入的识别器，
-/// 调用方无需改动。
-///
-/// [`LanguageIdentifier`]: translator_analysis::LanguageIdentifier
+/// 语言识别启发式（零模型）。
 pub fn guess_language(text: &str) -> Option<LanguageTag> {
-    translator_analysis::guess(text)
-}
-
-/// 保护后的文本。
-#[derive(Clone, Debug)]
-pub struct ProtectedText {
-    /// 占位符替换后的文本。
-    pub text: String,
-    /// 原始片段，下标与占位符编号对应。
-    pub segments: Vec<String>,
-}
-
-impl ProtectedText {
-    pub fn is_empty(&self) -> bool {
-        self.segments.is_empty()
-    }
-
-    fn marker(index: usize) -> String {
-        format!("\u{27E6}P{index}\u{27E7}")
-    }
+    crate::language::guess(text)
 }
 
 /// 受保护内容的种类。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ProtectedKind {
     Url,
     Email,
-    /// `{name}` 形式的模板变量。
+    /// `{name}` / `{{ user.name }}` / `${var}` 形式的模板变量。
     TemplateVar,
-    /// 反引号代码片段。
+    /// `%s` / `%d` / `%1$s` / `%.2f` 形式的格式化占位符。
+    FormatSpec,
+    /// 反引号代码片段（含反引号本身）。
     Code,
-    /// 关键数字格式：百分比、十六进制、时间、日期、版本号（T2/W2）。
-    ///
-    /// 只保护这些“丢失即错”的格式，不保护所有数字：把普通数量词全部摘出来
-    /// 会把句子切碎，反而破坏语序与自然度。
+    /// 关键数字格式：百分比、十六进制、日期、版本号、`#10248` 编号。
     Number,
+    /// 文件路径（可配置保护）。
+    Path,
+    /// HTML / 模板标签（`<b>`、`</p>`、`{% if %}`）。
+    Tag,
+    /// 技术标识符（`API_KEY`、`user_id`）；可配置保护。
+    Identifier,
 }
 
-/// 原文里的一段受保护区间。
+impl ProtectedKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Url => "url",
+            Self::Email => "email",
+            Self::TemplateVar => "template_var",
+            Self::FormatSpec => "format_spec",
+            Self::Code => "code",
+            Self::Number => "number",
+            Self::Path => "path",
+            Self::Tag => "tag",
+            Self::Identifier => "identifier",
+        }
+    }
+}
+
+/// 原文里的一段受保护区间（字节偏移）。
 ///
-/// `start` / `end` 是**字节偏移**，作用域是**传入 `protected_spans()` 的那份文本**。
-///
-/// # 偏移作用域（重要）
-///
-/// 流水线里先做 `normalize()`（折叠空白）再切分跨度，因此偏移是相对**规范化之后**的文本，
-/// 不能直接用于用户原始输入。目前**不提供**回到原文的偏移映射：
-/// 该映射需要规范化保留字符级对应关系（`normalize_with_map`），只有"高亮用户原文"这类需求才需要它。
-/// 如果将来要加，规则是：先 `normalize_with_map()` 得到映射表，再把跨度换算回原文；
-/// 不允许在未映射的情况下把规范化偏移当作原文偏移使用。
-///
-/// # 不暴露给 NMT 插件
-///
-/// 这个类型只在 SDK 内部使用。P3 接入真实 Marain/Bergamot 时，才根据 tokenizer 行为
-/// 决定用文本标记、分段翻译还是别的机制跨过模型边界（ADR-009）。
+/// `start` / `end` 的作用域是**传入 `protected_spans_with()` 的那份文本**。
+/// 流水线里先 `normalize()` 再扫描，因此偏移基于规范化后的文本；
+/// 不要拿它去切用户原始输入。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProtectedSpan {
     pub start: usize,
@@ -138,24 +123,192 @@ pub struct ProtectedSpan {
     pub kind: ProtectedKind,
 }
 
-/// 文本片段。
+/// 扫描策略：**确定性保护**默认全开，**可配置保护**默认关闭。
 ///
-/// 规则引擎**只能**改写 `Plain` 片段：URL、邮箱、模板变量、代码里的内容
-/// 必须字节级保持不变（设计文档 §6/§7.3，ADR-009）。
+/// 路径与标识符默认关闭的原因：`/ usr` 这种排版、`foo_bar` 这种人写的词
+/// 一旦被当成"必须原样保留"，译文会突然冒出一串英文，反而更差（§4.1）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpanPolicy {
+    pub url: bool,
+    pub email: bool,
+    pub template_var: bool,
+    pub format_spec: bool,
+    pub code: bool,
+    pub number: bool,
+    pub path: bool,
+    pub tag: bool,
+    pub identifier: bool,
+}
+
+impl Default for SpanPolicy {
+    fn default() -> Self {
+        Self {
+            url: true,
+            email: true,
+            template_var: true,
+            format_spec: true,
+            code: true,
+            number: true,
+            path: false,
+            tag: true,
+            identifier: false,
+        }
+    }
+}
+
+impl SpanPolicy {
+    /// 全部打开（文档/代码场景）。
+    pub fn everything() -> Self {
+        Self {
+            path: true,
+            identifier: true,
+            ..Self::default()
+        }
+    }
+
+    /// 只保留最关键的四类（URL/邮箱/变量/代码）。
+    pub fn minimal() -> Self {
+        Self {
+            url: true,
+            email: true,
+            template_var: true,
+            format_spec: false,
+            code: true,
+            number: false,
+            path: false,
+            tag: false,
+            identifier: false,
+        }
+    }
+}
+
+/// 用默认策略扫描受保护区间。
+pub fn protected_spans(input: &str) -> Vec<ProtectedSpan> {
+    protected_spans_with(input, &SpanPolicy::default())
+}
+
+/// 用指定策略扫描受保护区间。
+pub fn protected_spans_with(input: &str, policy: &SpanPolicy) -> Vec<ProtectedSpan> {
+    let chars: Vec<(usize, char)> = input.char_indices().collect();
+    let byte_at = |idx: usize| chars.get(idx).map_or(input.len(), |(b, _)| *b);
+
+    let mut out: Vec<ProtectedSpan> = Vec::new();
+    let mut i = 0usize;
+
+    while i < chars.len() {
+        let (byte_pos, c) = chars[i];
+
+        let found = scan_at(&chars, i, policy, c);
+
+        match found {
+            Some((end_idx, kind)) => {
+                if end_idx > i {
+                    out.push(ProtectedSpan {
+                        start: byte_pos,
+                        end: byte_at(end_idx),
+                        kind,
+                    });
+                    i = end_idx;
+                    continue;
+                }
+                i += 1;
+            }
+            None => i += 1,
+        }
+    }
+
+    out
+}
+
+/// 在位置 `i` 尝试所有匹配器。
+///
+/// **必须**是顺序 `if ... return`，不能写成 `else if` 链：邮箱匹配器对几乎
+/// 每个字母/数字都会"试一次然后失败"，如果它失败就结束整条链，
+/// 后面的模板变量、路径、标识符永远没有机会（这正是重构前扫描器的隐藏缺陷）。
+fn scan_at(
+    chars: &[(usize, char)],
+    i: usize,
+    policy: &SpanPolicy,
+    c: char,
+) -> Option<(usize, ProtectedKind)> {
+    if policy.code && c == '`' {
+        if let Some(end) = code_end(chars, i) {
+            return Some((end, ProtectedKind::Code));
+        }
+    }
+    if policy.url && starts_with_url(chars, i) {
+        if let Some(end) = url_end(chars, i) {
+            return Some((end, ProtectedKind::Url));
+        }
+    }
+    if policy.email && is_email_char(c) && is_token_start(chars, i) {
+        if let Some(end) = email_end(chars, i) {
+            return Some((end, ProtectedKind::Email));
+        }
+    }
+    if policy.tag && c == '<' {
+        if let Some(end) = tag_end(chars, i) {
+            return Some((end, ProtectedKind::Tag));
+        }
+    }
+    if policy.tag && c == '{' && next_char(chars, i) == Some('{') {
+        if let Some(end) = delimited_end(chars, i, "{{", "}}") {
+            return Some((end, ProtectedKind::TemplateVar));
+        }
+    }
+    if policy.tag && c == '{' && next_char(chars, i) == Some('%') {
+        if let Some(end) = delimited_end(chars, i, "{%", "%}") {
+            return Some((end, ProtectedKind::Tag));
+        }
+    }
+    if policy.template_var && (c == '{' || (c == '$' && next_char(chars, i) == Some('{'))) {
+        if let Some(end) = template_var_end(chars, i) {
+            return Some((end, ProtectedKind::TemplateVar));
+        }
+    }
+    if policy.format_spec && c == '%' {
+        if let Some(end) = format_spec_end(chars, i) {
+            return Some((end, ProtectedKind::FormatSpec));
+        }
+    }
+    if policy.path && (c == '/' || c == '~' || is_windows_path_start(chars, i)) {
+        if let Some(end) = path_end(chars, i) {
+            return Some((end, ProtectedKind::Path));
+        }
+    }
+    if policy.number && c == '#' {
+        if let Some(end) = issue_number_end(chars, i) {
+            return Some((end, ProtectedKind::Number));
+        }
+    }
+    if policy.number && c.is_ascii_digit() {
+        if let Some(end) = numeric_end(chars, i) {
+            return Some((end, ProtectedKind::Number));
+        }
+    }
+    if policy.identifier && is_identifier_start(chars, i) {
+        if let Some(end) = identifier_end(chars, i) {
+            return Some((end, ProtectedKind::Identifier));
+        }
+    }
+    None
+}
+
+/// 文本片段：规则引擎只能改写 `Plain`。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Segment<'a> {
-    /// 普通文本，允许规则改写。
     Plain(&'a str),
-    /// 受保护片段，规则不得改动。
     Protected(&'a str),
 }
 
-/// 把输入切成「纯文本 / 受保护」片段。
-///
-/// 这是 `protect()` 与「规则只在纯文本上生效」共用的**唯一**扫描器，
-/// 避免两套正则各自演化、最终对不上。
+/// 把输入切成「纯文本 / 受保护」片段（默认策略）。
 pub fn split_protected(input: &str) -> Vec<Segment<'_>> {
-    let spans = protected_spans(input);
+    split_protected_with(input, &SpanPolicy::default())
+}
+
+/// 按策略切分。
+pub fn split_protected_with<'a>(input: &'a str, policy: &SpanPolicy) -> Vec<Segment<'a>> {
+    let spans = protected_spans_with(input, policy);
     let mut out = Vec::with_capacity(spans.len() * 2 + 1);
     let mut cursor = 0usize;
 
@@ -173,193 +326,82 @@ pub fn split_protected(input: &str) -> Vec<Segment<'_>> {
     out
 }
 
-/// 扫描受保护区间。这是 URL / 邮箱 / `{模板变量}` / 反引号代码的**唯一**识别入口。
-pub fn protected_spans(input: &str) -> Vec<ProtectedSpan> {
-    let chars: Vec<(usize, char)> = input.char_indices().collect();
-    let byte_at = |idx: usize| chars.get(idx).map_or(input.len(), |(b, _)| *b);
+// ============================================================
+// 各类型的匹配器
+// ============================================================
 
-    let mut out = Vec::new();
-    let mut i = 0usize;
-
-    while i < chars.len() {
-        let (byte_pos, c) = chars[i];
-
-        let found = if starts_with_url(&chars, i) {
-            url_end(&chars, i).map(|end| (end, ProtectedKind::Url))
-        } else if c == '{' {
-            brace_end(&chars, i).map(|end| (end, ProtectedKind::TemplateVar))
-        } else if c == '`' {
-            backtick_end(&chars, i).map(|end| (end, ProtectedKind::Code))
-        } else if is_email_char(c) && is_token_start(&chars, i) {
-            // 邮箱扫描失败时必须继续尝试数字，否则 `50%` 会被当成
-            // “像邮箱但没找到 @” 而整个分支吞掉。
-            email_end(&chars, i)
-                .map(|end| (end, ProtectedKind::Email))
-                .or_else(|| {
-                    if c.is_ascii_digit() {
-                        numeric_end(&chars, i).map(|end| (end, ProtectedKind::Number))
-                    } else {
-                        None
-                    }
-                })
-        } else if c.is_ascii_digit() {
-            numeric_end(&chars, i).map(|end| (end, ProtectedKind::Number))
-        } else {
-            None
-        };
-
-        match found {
-            Some((end_idx, kind)) => {
-                out.push(ProtectedSpan {
-                    start: byte_pos,
-                    end: byte_at(end_idx),
-                    kind,
-                });
-                i = end_idx;
-            }
-            None => i += 1,
-        }
-    }
-
-    out
+fn next_char(chars: &[(usize, char)], i: usize) -> Option<char> {
+    chars.get(i + 1).map(|(_, c)| *c)
 }
 
-/// 保护 URL、邮箱、`{占位符}` 与反引号代码块。
-///
-/// 设计文档 §6 明确要求：未能确保占位符恢复时必须返回警告或错误，
-/// 不得静默丢失。
-pub fn protect(input: &str) -> ProtectedText {
-    let mut segments: Vec<String> = Vec::new();
-    let mut out = String::with_capacity(input.len());
-
-    for segment in split_protected(input) {
-        match segment {
-            Segment::Plain(text) => out.push_str(text),
-            Segment::Protected(text) => {
-                out.push_str(&ProtectedText::marker(segments.len()));
-                segments.push(text.to_string());
-            }
-        }
-    }
-
-    ProtectedText {
-        text: out,
-        segments,
-    }
+fn char_slice(chars: &[(usize, char)], start: usize, end: usize) -> String {
+    chars[start.min(chars.len())..end.min(chars.len())]
+        .iter()
+        .map(|(_, c)| *c)
+        .collect()
 }
 
-/// 识别必须原样保留的数字格式。
-///
-/// 只匹配：
-/// - `50%` / `0.05%`
-/// - `0x80070005`
-/// - `07:15` / `7:15:30`
-/// - `2026-12-01` / `2026/12/01`
-/// - 版本号 `2.4.1`（至少两段点号）
-///
-/// 普通整数/小数不在这里保护；它们由译后数字检查负责。
-fn numeric_end(chars: &[(usize, char)], i: usize) -> Option<usize> {
-    let mut j = i;
-
-    // 0x...
-    if chars[i].1 == '0' && i + 1 < chars.len() && matches!(chars[i + 1].1, 'x' | 'X') {
-        j = i + 2;
-        let start = j;
-        while j < chars.len() && chars[j].1.is_ascii_hexdigit() {
+/// 三反引号或单反引号代码片段。
+fn code_end(chars: &[(usize, char)], i: usize) -> Option<usize> {
+    if char_slice(chars, i, i + 3) == "```" {
+        let mut j = i + 3;
+        while j + 3 <= chars.len() {
+            if char_slice(chars, j, j + 3) == "```" {
+                return Some(j + 3);
+            }
             j += 1;
-        }
-        if j > start {
-            return Some(j);
         }
         return None;
     }
-
-    // 时间 / 日期 / 版本 / 百分比：先吃掉数字与分隔符
-    let mut saw_colon = false;
-    let mut saw_dash = false;
-    let mut saw_slash = false;
-    let mut dots = 0usize;
-    while j < chars.len() {
-        let c = chars[j].1;
-        if c.is_ascii_digit() {
-            j += 1;
-        } else if c == ':' && !saw_colon && j + 1 < chars.len() && chars[j + 1].1.is_ascii_digit() {
-            saw_colon = true;
-            j += 1;
-        } else if c == '-' && j + 1 < chars.len() && chars[j + 1].1.is_ascii_digit() {
-            saw_dash = true;
-            j += 1;
-        } else if c == '/' && j + 1 < chars.len() && chars[j + 1].1.is_ascii_digit() {
-            saw_slash = true;
-            j += 1;
-        } else if c == '.' && j + 1 < chars.len() && chars[j + 1].1.is_ascii_digit() {
-            dots += 1;
-            j += 1;
-        } else {
-            break;
-        }
-    }
-
-    // 百分比（允许数字与 % 之间没有空格；有空格时只保护数字部分）
-    if j < chars.len() && chars[j].1 == '%' {
-        return Some(j + 1);
-    }
-    // 冒号时间（07:15）不单独保护：模型通常会把 07:15 写成 7: 15，
-    // 数字检查已能识别；强行分段反而会让 “10:30 AM on March 5” 这类
-    // 日期时间短语被拆坏。日期/版本/百分比仍然保护。
-    let _ = saw_colon;
-    if saw_dash || saw_slash || dots >= 2 {
-        return Some(j);
-    }
-    None
-}
-
-fn starts_with_url(chars: &[(usize, char)], i: usize) -> bool {
-    let head: String = chars[i..chars.len().min(i + 8)]
-        .iter()
-        .map(|(_, c)| *c)
-        .collect();
-    head.starts_with("http://") || head.starts_with("https://")
-}
-
-fn url_end(chars: &[(usize, char)], i: usize) -> Option<usize> {
-    let mut j = i;
-    while j < chars.len() && !chars[j].1.is_whitespace() {
-        j += 1;
-    }
-    Some(j)
-}
-
-fn brace_end(chars: &[(usize, char)], i: usize) -> Option<usize> {
-    chars[i..]
-        .iter()
-        .position(|(_, c)| *c == '}')
-        .map(|offset| i + offset + 1)
-}
-
-fn backtick_end(chars: &[(usize, char)], i: usize) -> Option<usize> {
     chars[i + 1..]
         .iter()
         .position(|(_, c)| *c == '`')
         .map(|offset| i + 1 + offset + 1)
 }
 
-fn is_email_char(c: char) -> bool {
-    c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '%' | '+' | '-')
+fn starts_with_url(chars: &[(usize, char)], i: usize) -> bool {
+    let head = char_slice(chars, i, i + 9).to_ascii_lowercase();
+    const SCHEMES: [&str; 6] = [
+        "http://", "https://", "ftp://", "file://", "ws://", "wss://",
+    ];
+    SCHEMES.iter().any(|s| head.starts_with(s))
+        || (head.starts_with("www.") && is_token_start(chars, i))
 }
 
-/// 只在"词的起点"尝试匹配邮箱，避免把 `a@b.c` 里的片段重复匹配。
+fn url_end(chars: &[(usize, char)], i: usize) -> Option<usize> {
+    let mut j = i;
+    while j < chars.len() && !chars[j].1.is_whitespace() {
+        if matches!(chars[j].1, '。' | '，' | '；' | '！' | '？' | '）' | '】') {
+            break;
+        }
+        j += 1;
+    }
+    // 去掉 URL 末尾的英文标点（`see https://x.com.` 的点是句号）
+    while j > i + 1
+        && matches!(
+            chars[j - 1].1,
+            '.' | ',' | ';' | ':' | '!' | '?' | ')' | '"' | '\''
+        )
+    {
+        j -= 1;
+    }
+    (j > i).then_some(j)
+}
+
+fn is_email_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '%' | '+' | '-' | '@')
+}
+
 fn is_token_start(chars: &[(usize, char)], i: usize) -> bool {
     match i.checked_sub(1).and_then(|prev| chars.get(prev)) {
-        Some((_, c)) => !is_email_char(*c),
+        Some((_, c)) => !c.is_ascii_alphanumeric() && !matches!(c, '_' | '.' | '%' | '+' | '-'),
         None => true,
     }
 }
 
-/// 匹配 `local@domain.tld`。域名至少一个点、TLD 至少两个字母。
 fn email_end(chars: &[(usize, char)], i: usize) -> Option<usize> {
     let mut j = i;
-    while j < chars.len() && is_email_char(chars[j].1) {
+    while j < chars.len() && is_email_char(chars[j].1) && chars[j].1 != '@' {
         j += 1;
     }
     if j >= chars.len() || chars[j].1 != '@' {
@@ -384,22 +426,353 @@ fn email_end(chars: &[(usize, char)], i: usize) -> Option<usize> {
         return None;
     }
 
-    // TLD 必须是至少两个字母（否则 `a@b.c` 这种不像邮箱，保持原样）
     let tld_start = chars[..j]
         .iter()
         .rposition(|(_, c)| *c == '.')
         .map(|pos| pos + 1)?;
-    let tld: String = chars[tld_start..j].iter().map(|(_, c)| *c).collect();
+    let tld = char_slice(chars, tld_start, j);
     if tld.len() < 2 || !tld.chars().all(|c| c.is_ascii_alphabetic()) {
         return None;
     }
     Some(j)
 }
 
-/// 还原占位符。
+/// HTML 标签 / 注释。
+fn tag_end(chars: &[(usize, char)], i: usize) -> Option<usize> {
+    let mut j = i + 1;
+    if j >= chars.len() {
+        return None;
+    }
+    if char_slice(chars, i, i + 4) == "<!--" {
+        let mut k = i + 4;
+        while k + 3 <= chars.len() {
+            if char_slice(chars, k, k + 3) == "-->" {
+                return Some(k + 3);
+            }
+            k += 1;
+        }
+        return None;
+    }
+    if chars[j].1 == '/' {
+        j += 1;
+    }
+    if j >= chars.len() || !chars[j].1.is_ascii_alphabetic() {
+        return None;
+    }
+    while j < chars.len() && (chars[j].1.is_ascii_alphanumeric() || chars[j].1 == '-') {
+        j += 1;
+    }
+    let mut k = j;
+    while k < chars.len() && k - i < 200 {
+        match chars[k].1 {
+            '>' => return Some(k + 1),
+            '\n' | '\r' | '<' => return None,
+            _ => k += 1,
+        }
+    }
+    None
+}
+
+/// `{{ ... }}` / `{% ... %}`。
+fn delimited_end(chars: &[(usize, char)], i: usize, open: &str, close: &str) -> Option<usize> {
+    let open_len = open.chars().count();
+    if char_slice(chars, i, i + open_len) != open {
+        return None;
+    }
+    let mut j = i + open_len;
+    let close_len = close.chars().count();
+    while j + close_len <= chars.len() {
+        if char_slice(chars, j, j + close_len) == close {
+            return Some(j + close_len);
+        }
+        if chars[j].1 == '\n' {
+            return None;
+        }
+        j += 1;
+    }
+    None
+}
+
+/// `{name}` / `${name}`。
+fn template_var_end(chars: &[(usize, char)], i: usize) -> Option<usize> {
+    let brace = if chars[i].1 == '$' { i + 1 } else { i };
+    if chars.get(brace).map(|(_, c)| *c) != Some('{') {
+        return None;
+    }
+    if brace + 1 >= chars.len() {
+        return None;
+    }
+    let mut j = brace + 1;
+    while j < chars.len() && j - brace <= 64 {
+        match chars[j].1 {
+            '}' => return Some(j + 1),
+            '\n' | '{' => return None,
+            _ => j += 1,
+        }
+    }
+    None
+}
+
+/// `%s` / `%d` / `%1$s` / `%.2f` / `%%`。
+fn format_spec_end(chars: &[(usize, char)], i: usize) -> Option<usize> {
+    let mut j = i + 1;
+    if j >= chars.len() {
+        return None;
+    }
+    if chars[j].1 == '%' {
+        return Some(j + 1);
+    }
+    let mut digits = 0usize;
+    while j < chars.len() && chars[j].1.is_ascii_digit() {
+        j += 1;
+        digits += 1;
+    }
+    if digits > 0 {
+        if j < chars.len() && chars[j].1 == '$' {
+            j += 1;
+        } else {
+            return None;
+        }
+    }
+    while j < chars.len() && matches!(chars[j].1, '-' | '+' | ' ' | '#' | '0' | '.' | '\'') {
+        j += 1;
+    }
+    while j < chars.len() && chars[j].1.is_ascii_digit() {
+        j += 1;
+    }
+    if j < chars.len()
+        && matches!(
+            chars[j].1,
+            's' | 'd' | 'i' | 'u' | 'f' | 'F' | 'e' | 'E' | 'g' | 'G' | 'x' | 'X' | 'o' | 'c' | 'p'
+        )
+    {
+        Some(j + 1)
+    } else {
+        None
+    }
+}
+
+fn is_windows_path_start(chars: &[(usize, char)], i: usize) -> bool {
+    let is_drive = chars[i].1.is_ascii_alphabetic()
+        && chars.get(i + 1).map(|(_, c)| *c) == Some(':')
+        && matches!(chars.get(i + 2).map(|(_, c)| *c), Some('\\') | Some('/'));
+    let is_unc = chars[i].1 == '\\'
+        && chars.get(i + 1).map(|(_, c)| *c) == Some('\\')
+        && chars
+            .get(i + 2)
+            .map(|(_, c)| *c)
+            .is_some_and(|c| c.is_ascii_alphanumeric());
+    is_drive || is_unc
+}
+
+/// 空格之后是否仍是路径片段（`Files\App`、`App\config.ini`、`config.ini`）。
+fn next_segment_looks_like_path(chars: &[(usize, char)], start: usize) -> bool {
+    let mut j = start;
+    let mut seen_dot = false;
+    while j < chars.len() && !chars[j].1.is_whitespace() {
+        let c = chars[j].1;
+        if c == '\\' || c == '/' {
+            return true;
+        }
+        if c == '.' {
+            seen_dot = true;
+        }
+        if matches!(c, ',' | ';' | '。' | ')' | '）' | '"' | '\'') {
+            break;
+        }
+        j += 1;
+    }
+    seen_dot
+}
+
+/// 文件路径（Windows 盘符/UNC、POSIX 绝对路径、`~/`）。
+fn path_end(chars: &[(usize, char)], i: usize) -> Option<usize> {
+    const TERMINATORS: [char; 13] = [
+        '\n', '\r', ',', ';', '。', '，', '；', '、', ')', '）', '"', '\'', '<',
+    ];
+
+    if is_windows_path_start(chars, i) {
+        let mut j = i + 2;
+        while j < chars.len() && !TERMINATORS.contains(&chars[j].1) {
+            // Windows 路径允许空格（`C:\Program Files\App`），但不能一路吃到句尾。
+            // 只有"空格后紧跟的片段仍像路径片段"（含 \ / 或带扩展名）时才继续。
+            if chars[j].1 == ' ' && !next_segment_looks_like_path(chars, j + 1) {
+                break;
+            }
+            j += 1;
+        }
+        while j > i + 3 && chars[j - 1].1.is_whitespace() {
+            j -= 1;
+        }
+        return (j > i + 3).then_some(j);
+    }
+
+    let is_posix = chars[i].1 == '/'
+        && chars
+            .get(i + 1)
+            .map(|(_, c)| c.is_ascii_alphanumeric() || matches!(*c, '_' | '.' | '-'))
+            .unwrap_or(false)
+        && is_token_start(chars, i);
+    let is_home = chars[i].1 == '~' && chars.get(i + 1).map(|(_, c)| *c) == Some('/');
+    if !is_posix && !is_home {
+        return None;
+    }
+
+    let mut j = i;
+    let mut slashes = 0usize;
+    while j < chars.len() {
+        let c = chars[j].1;
+        if c == '/' {
+            slashes += 1;
+            j += 1;
+        } else if c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-' | '~' | '+' | '%') {
+            j += 1;
+        } else {
+            break;
+        }
+    }
+    (slashes >= 2 && j - i >= 4).then_some(j)
+}
+
+/// `#10248` 形式的编号。
+fn issue_number_end(chars: &[(usize, char)], i: usize) -> Option<usize> {
+    let mut j = i + 1;
+    let start = j;
+    while j < chars.len() && (chars[j].1.is_ascii_alphanumeric() || chars[j].1 == '-') {
+        j += 1;
+    }
+    if j - start < 2 {
+        return None;
+    }
+    let token = char_slice(chars, start, j);
+    token.chars().any(|c| c.is_ascii_digit()).then_some(j)
+}
+
+/// 识别必须原样保留的数字格式（百分比/十六进制/日期/版本号）。
+fn numeric_end(chars: &[(usize, char)], i: usize) -> Option<usize> {
+    let mut j = i;
+
+    if chars[i].1 == '0' && i + 1 < chars.len() && matches!(chars[i + 1].1, 'x' | 'X') {
+        j = i + 2;
+        let start = j;
+        while j < chars.len() && chars[j].1.is_ascii_hexdigit() {
+            j += 1;
+        }
+        return (j > start).then_some(j);
+    }
+
+    let mut saw_dash = false;
+    let mut saw_slash = false;
+    let mut dots = 0usize;
+    while j < chars.len() {
+        let c = chars[j].1;
+        let next_is_digit = j + 1 < chars.len() && chars[j + 1].1.is_ascii_digit();
+        if c.is_ascii_digit() {
+            j += 1;
+        } else if c == ':' && next_is_digit {
+            // 时间 `14:30`：只吃掉分隔符，语义值由数字检查负责
+            j += 1;
+        } else if c == '-' && next_is_digit {
+            saw_dash = true;
+            j += 1;
+        } else if c == '/' && j + 1 < chars.len() && chars[j + 1].1.is_ascii_digit() {
+            saw_slash = true;
+            j += 1;
+        } else if c == '.' && j + 1 < chars.len() && chars[j + 1].1.is_ascii_digit() {
+            dots += 1;
+            j += 1;
+        } else {
+            break;
+        }
+    }
+
+    if j < chars.len() && chars[j].1 == '%' {
+        return Some(j + 1);
+    }
+    if saw_dash || saw_slash || dots >= 2 {
+        return Some(j);
+    }
+    None
+}
+
+/// 只对"含下划线"的标识符感兴趣（`API_KEY`、`user_id`），
+/// 避免把普通英文单词整片保护起来。
+fn is_identifier_start(chars: &[(usize, char)], i: usize) -> bool {
+    chars[i].1.is_ascii_alphabetic()
+        && is_token_start(chars, i)
+        && chars[i..].iter().take(48).any(|(_, c)| *c == '_')
+}
+
+/// `API_KEY` / `user_id` / `retry_count_v2`。
+fn identifier_end(chars: &[(usize, char)], i: usize) -> Option<usize> {
+    let mut j = i;
+    let mut has_underscore = false;
+    while j < chars.len() {
+        let c = chars[j].1;
+        if c.is_ascii_alphanumeric() {
+            j += 1;
+        } else if c == '_' {
+            has_underscore = true;
+            j += 1;
+        } else {
+            break;
+        }
+    }
+    if !has_underscore || j - i < 3 {
+        return None;
+    }
+    if chars.get(j).map(|(_, c)| *c) == Some('(') {
+        return None;
+    }
+    Some(j)
+}
+
+// ============================================================
+// 旧式"整段替换成 ⟦Pn⟧"API（保留给不需要严格校验的内部调用）
+// ============================================================
+
+/// 保护后的文本。
+#[derive(Clone, Debug)]
+pub struct ProtectedText {
+    pub text: String,
+    pub segments: Vec<String>,
+}
+
+impl ProtectedText {
+    pub fn is_empty(&self) -> bool {
+        self.segments.is_empty()
+    }
+
+    fn marker(index: usize) -> String {
+        format!("\u{27E6}P{index}\u{27E7}")
+    }
+}
+
+/// 保护 URL、邮箱、`{占位符}`、格式化占位符与反引号代码。
 ///
-/// 返回 `(还原后的文本, 未能还原的占位符列表)`。
-/// 后者非空时调用方**必须**生成 `PlaceholderRestoreFailed` 警告。
+/// ⚠️ 这个 API **不做**严格还原校验（缺标记只会进 `missing` 列表）。
+/// 真正的翻译主链必须走 [`crate::protection::ProtectionPlan`]。
+pub fn protect(input: &str) -> ProtectedText {
+    let mut segments: Vec<String> = Vec::new();
+    let mut out = String::with_capacity(input.len());
+
+    for segment in split_protected(input) {
+        match segment {
+            Segment::Plain(text) => out.push_str(text),
+            Segment::Protected(text) => {
+                out.push_str(&ProtectedText::marker(segments.len()));
+                segments.push(text.to_string());
+            }
+        }
+    }
+
+    ProtectedText {
+        text: out,
+        segments,
+    }
+}
+
+/// 还原占位符。返回 `(还原后的文本, 未能还原的占位符列表)`。
 pub fn restore(protected: &ProtectedText, translated: &str) -> (String, Vec<String>) {
     let mut out = translated.to_string();
     let mut missing = Vec::new();
@@ -409,7 +782,6 @@ pub fn restore(protected: &ProtectedText, translated: &str) -> (String, Vec<Stri
         if out.contains(&marker) {
             out = out.replace(&marker, seg);
         } else {
-            // 标记被引擎吞掉了
             missing.push(seg.clone());
         }
     }
@@ -421,58 +793,158 @@ pub fn restore(protected: &ProtectedText, translated: &str) -> (String, Vec<Stri
 mod tests {
     use super::*;
 
-    #[test]
-    fn 规范化应折叠空白() {
-        assert_eq!(normalize("  hello   world \n"), "hello world");
+    fn kinds(input: &str) -> Vec<(&str, ProtectedKind)> {
+        protected_spans(input)
+            .into_iter()
+            .map(|s| (&input[s.start..s.end], s.kind))
+            .collect()
     }
 
     #[test]
-    fn 单词判定() {
-        assert!(looks_like_single_word("hello"));
-        assert!(looks_like_single_word("猫"));
-        assert!(!looks_like_single_word("hello world"));
-        assert!(!looks_like_single_word("hello."));
-        assert!(!looks_like_single_word(""));
+    fn 规范化折叠空白但不改全角() {
+        assert_eq!(normalize("  a   b \n c  "), "a b c");
+        assert_eq!(normalize("Ａ　Ｂ"), "Ａ Ｂ");
     }
 
     #[test]
-    fn cjk句子不应被误判为单词() {
-        // 中文没有空格，必须靠字数区分
-        assert!(looks_like_single_word("计算机"), "3 字应当作词条");
-        assert!(looks_like_single_word("世界"), "2 字应当作词条");
-        assert!(!looks_like_single_word("我喜欢计算机"), "6 字应视为句子");
-        assert!(!looks_like_single_word("今天天气很好"), "6 字应视为句子");
+    fn url_包含查询参数与端口() {
+        let spans = kinds("See https://example.com:8443/a/b?id=3&x=%20 now.");
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].0, "https://example.com:8443/a/b?id=3&x=%20");
+        assert_eq!(spans[0].1, ProtectedKind::Url);
     }
 
     #[test]
-    fn 长英文单词仍算单词() {
-        assert!(looks_like_single_word("internationalization"));
+    fn url_末尾的句号不属于链接() {
+        let spans = kinds("Open https://example.com/a.");
+        assert_eq!(spans[0].0, "https://example.com/a");
     }
 
     #[test]
-    fn 切分受保护片段() {
-        // URL、邮箱、模板变量、反引号代码都必须是 Protected
-        let text =
-            "see https://example.com/LLM and mail a.b@example.com, then `code_x` and {token}";
-        let segments = split_protected(text);
-        let protected: Vec<&str> = segments
-            .iter()
-            .filter_map(|s| match s {
-                Segment::Protected(t) => Some(*t),
-                Segment::Plain(_) => None,
-            })
-            .collect();
-        assert_eq!(
-            protected,
-            vec![
-                "https://example.com/LLM",
-                "a.b@example.com",
-                "`code_x`",
-                "{token}"
-            ]
+    fn 邮箱与普通英文混合() {
+        let spans = kinds("Contact test@example.com for help.");
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].0, "test@example.com");
+        assert_eq!(spans[0].1, ProtectedKind::Email);
+    }
+
+    #[test]
+    fn www_开头的地址也算_url() {
+        let spans = kinds("Visit www.example.com today.");
+        assert_eq!(spans[0].0, "www.example.com");
+    }
+
+    #[test]
+    fn 模板变量与双花括号() {
+        let spans = kinds("Hello {name}, order {{ user.order_id }} and ${total}.");
+        assert_eq!(spans.len(), 3);
+        assert_eq!(spans[0].0, "{name}");
+        assert_eq!(spans[1].0, "{{ user.order_id }}");
+        assert_eq!(spans[2].0, "${total}");
+    }
+
+    #[test]
+    fn 格式化占位符而不是百分号数字() {
+        let spans = kinds("Value %s at 15% and %1$s plus %.2f and {}.");
+        let texts: Vec<&str> = spans.iter().map(|(t, _)| *t).collect();
+        assert!(texts.contains(&"%s"));
+        assert!(texts.contains(&"%1$s"));
+        assert!(texts.contains(&"%.2f"));
+        assert!(texts.contains(&"15%"));
+        assert!(texts.contains(&"{}"));
+        assert!(!texts.contains(&"%"), "{texts:?}");
+    }
+
+    #[test]
+    fn 代码片段包含反引号且内部不再细分() {
+        let spans = kinds("Run `curl https://example.com/{id}` now.");
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].0, "`curl https://example.com/{id}`");
+        assert_eq!(spans[0].1, ProtectedKind::Code);
+    }
+
+    #[test]
+    fn 三反引号代码块整体保护() {
+        let text = "before\n```rust\nlet x = 1;\n```\nafter";
+        let spans = kinds(text);
+        assert_eq!(spans.len(), 1);
+        assert!(spans[0].0.starts_with("```rust"));
+        assert!(spans[0].0.ends_with("```"));
+    }
+
+    #[test]
+    fn html_标签与模板标签() {
+        let spans = kinds("Use <b>bold</b> in {% if user %}view{% endif %}.");
+        let texts: Vec<&str> = spans.iter().map(|(t, _)| *t).collect();
+        assert!(texts.contains(&"<b>"), "{texts:?}");
+        assert!(texts.contains(&"</b>"));
+        assert!(texts.contains(&"{% if user %}"));
+        assert!(texts.contains(&"{% endif %}"));
+    }
+
+    #[test]
+    fn 编号与关键数字格式() {
+        let spans = kinds("Order #10248 shipped on 2026-11-11 with v2.1.3 at 0x1F.");
+        let texts: Vec<&str> = spans.iter().map(|(t, _)| *t).collect();
+        assert!(texts.contains(&"#10248"), "{texts:?}");
+        assert!(texts.contains(&"2026-11-11"));
+        assert!(texts.contains(&"2.1.3"), "{texts:?}");
+        assert!(texts.contains(&"0x1F"));
+    }
+
+    #[test]
+    fn 普通数量不保护() {
+        assert!(kinds("I have three books and 3 apples.").is_empty());
+    }
+
+    #[test]
+    fn 路径默认不保护可显式打开() {
+        let text = "Open C:\\Program Files\\App\\config.ini or /var/log/app.log now.";
+        assert!(kinds(text).is_empty());
+        let spans = protected_spans_with(text, &SpanPolicy::everything());
+        let texts: Vec<&str> = spans.iter().map(|s| &text[s.start..s.end]).collect();
+        assert!(
+            texts.contains(&"C:\\Program Files\\App\\config.ini"),
+            "{texts:?}"
         );
+        assert!(texts.contains(&"/var/log/app.log"), "{texts:?}");
+    }
 
-        // 拼回原文必须无损
+    #[test]
+    fn 单斜杠不算路径() {
+        let spans = protected_spans_with("this and/or that", &SpanPolicy::everything());
+        assert!(spans.is_empty(), "{spans:?}");
+    }
+
+    #[test]
+    fn 标识符默认可配置() {
+        let text = "Set API_KEY and user_id before starting.";
+        assert!(kinds(text).is_empty());
+        let spans = protected_spans_with(text, &SpanPolicy::everything());
+        let texts: Vec<&str> = spans.iter().map(|s| &text[s.start..s.end]).collect();
+        assert!(texts.contains(&"API_KEY"), "{texts:?}");
+        assert!(texts.contains(&"user_id"), "{texts:?}");
+    }
+
+    #[test]
+    fn 函数调用不被当成标识符() {
+        let spans = protected_spans_with("Call get_user( now", &SpanPolicy::everything());
+        assert!(spans.is_empty(), "{spans:?}");
+    }
+
+    #[test]
+    fn 中文与_unicode_混合不劈开字节() {
+        let text = "订单 {id} 已发货 🚚，链接 https://example.com/x。";
+        let spans = kinds(text);
+        let texts: Vec<&str> = spans.iter().map(|(t, _)| *t).collect();
+        assert!(texts.contains(&"{id}"));
+        assert!(texts.contains(&"https://example.com/x"), "{texts:?}");
+    }
+
+    #[test]
+    fn 切分片段覆盖全文且不重叠() {
+        let text = "Run `a` with {b} at https://x.example/y and #12.";
+        let segments = split_protected(text);
         let rebuilt: String = segments
             .iter()
             .map(|s| match s {
@@ -483,81 +955,13 @@ mod tests {
     }
 
     #[test]
-    fn 受保护跨度带类型与字节偏移() {
-        let text = "x https://a.example/p y a@b.com z {v} `c`";
-        let spans = protected_spans(text);
-        let kinds: Vec<(ProtectedKind, &str)> = spans
-            .iter()
-            .map(|s| (s.kind, &text[s.start..s.end]))
-            .collect();
-        assert_eq!(
-            kinds,
-            vec![
-                (ProtectedKind::Url, "https://a.example/p"),
-                (ProtectedKind::Email, "a@b.com"),
-                (ProtectedKind::TemplateVar, "{v}"),
-                (ProtectedKind::Code, "`c`"),
-            ]
-        );
-        // 偏移必须是字节偏移，且切片不 panic
-        for span in &spans {
-            assert!(span.start < span.end);
-            assert!(span.end <= text.len());
-            assert!(text.is_char_boundary(span.start) && text.is_char_boundary(span.end));
-        }
-    }
-
-    #[test]
-    fn 邮箱识别不应误伤普通文本() {
-        // 没有 TLD / TLD 太短 / 没有 @ 的情况都不该被当成邮箱
-        for text in ["a@b", "a@b.c", "hello world", "价格 100@50"] {
-            let segments = split_protected(text);
-            assert!(
-                segments.iter().all(|s| matches!(s, Segment::Plain(_))),
-                "{text:?} 被误判为受保护片段：{segments:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn 语言启发式() {
-        assert_eq!(guess_language("hello").unwrap().as_str(), "en");
-        assert_eq!(guess_language("你好").unwrap().as_str(), "zh-Hans");
-        assert_eq!(guess_language("こんにちは").unwrap().as_str(), "ja");
-        assert_eq!(guess_language("123").map(|t| t.as_str().to_string()), None);
-    }
-
-    #[test]
-    fn 占位符应被完整保护与还原() {
-        let src = "visit https://example.com and {name} in `code`";
-        let p = protect(src);
-        assert_eq!(p.segments.len(), 3);
-        assert!(!p.text.contains("example.com"));
-
-        let (restored, missing) = restore(&p, &format!("zh:{}", p.text));
-        assert!(missing.is_empty());
-        assert!(restored.contains("https://example.com"));
-        assert!(restored.contains("{name}"));
-        assert!(restored.contains("`code`"));
-    }
-
-    #[test]
-    fn 丢失占位符应被检出() {
-        let p = protect("hello {name}");
-        let (_, missing) = restore(&p, "你好"); // 引擎吞掉了标记
-        assert_eq!(missing, vec!["{name}".to_string()]);
-    }
-    #[test]
-    fn 关键数字格式被保护并可原样还原() {
-        let input = "Usage 50% on 2026-12-01, code 0x80070005, version 2.4.1.";
-        let protected = protect(input);
-        assert_eq!(protected.segments.len(), 4, "{:?}", protected.segments);
-        assert!(protected.segments.iter().any(|s| s == "50%"));
-        assert!(protected.segments.iter().any(|s| s == "2026-12-01"));
-        assert!(protected.segments.iter().any(|s| s == "0x80070005"));
-        assert!(protected.segments.iter().any(|s| s == "2.4.1"));
-        let (restored, missing) = restore(&protected, &protected.text);
-        assert!(missing.is_empty());
-        assert_eq!(restored, input);
+    fn 单词判定() {
+        assert!(looks_like_single_word("hello"));
+        assert!(looks_like_single_word("猫"));
+        assert!(!looks_like_single_word("hello world"));
+        assert!(!looks_like_single_word("hello."));
+        assert!(!looks_like_single_word(""));
+        // 中文整句不能被当成单词
+        assert!(!looks_like_single_word("我喜欢计算机"));
     }
 }

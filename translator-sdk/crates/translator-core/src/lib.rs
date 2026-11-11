@@ -1,80 +1,53 @@
-//! 协调器、路由、缓存与文本预处理。
+//! 翻译流水线的核心实现。
 //!
-//! 对应设计文档 `docs/01_翻译SDK完整开发设计.md` §6「翻译路由及处理流水线」。
-//!
-//! 流水线（P0 已实现的部分标 ✅）：
+//! # 九个模块，一条主链
 //!
 //! ```text
-//! Validate request            ✅
-//!   → Normalize               ✅
-//!   → Language ID (optional)  ✅ 启发式（真正的 LID 属 P1）
-//!   → Apply rules             ✅ 声明式规则包（可选，见 `rules` 模块）
-//!   → Protect placeholders    ✅ 基础版
-//!   → Cache lookup            ✅
-//!   → Select eligible engine  ✅ 按策略 + 能力 + 语言对
-//!   → 执行翻译                 ✅
-//!   → Restore placeholders    ✅ 含失败检测
-//!   → Term constraint (output)✅ P2.4，不碰受保护跨度
-//!   → 结果 + 来源 + 警告        ✅
-//!   → 结构化诊断（可选入口）    ✅ P2.4 `translate_with_diagnostics`
+//! text       扫描受保护跨度（URL/邮箱/变量/代码/数字/路径/标签/标识符）
+//! protection 统一保护计划（标记优先 + 分段回退 + 严格还原）
+//! terms      术语表（生成前约束 + 生成后校验）
+//! templates  固定 UI 文案整句匹配（作用域 + 精确/归一化）
+//! cache      缓存身份（模型/提示词/术语表/保护版本全部进键）
+//! routing    轻量后端路由（本地优先，远程需显式授权）
+//! quality    译后质量门禁（完整性 + 数值语义 + 启发式诊断）
+//! language   语言识别与形态分析的最小实现
+//! rules      确定性文本变换接口（由 translator-rules 实现）
+//! coordinator 按固定顺序调用以上模块，并守住完整性门禁
 //! ```
+//!
+//! # 已经移除的东西
+//!
+//! `semantic` / `composer` / `pipeline` / `context_sense` / `planner` / `evidence`
+//! / `plan` / `plan_cache` / `budget` 这些手写句法翻译与模型执行计划模块已归档到
+//! `archive/pre-online-refactor-20261111` 分支。产品主线只有**一条**整句翻译路径：
+//! 保护文本 → 调后端 → 还原 → 校验。
 
-pub mod budget;
 pub mod cache;
-pub mod composer;
-pub mod context_sense;
 pub mod coordinator;
 pub mod diagnostics;
-pub mod evidence;
-pub mod pipeline;
-pub mod plan;
-pub mod plan_cache;
-pub mod planner;
+pub mod language;
 pub mod protection;
 pub mod quality;
 pub mod routing;
 pub mod rules;
-pub mod semantic;
 pub mod templates;
 pub mod terms;
 pub mod text;
 
-pub use budget::{BudgetError, BudgetReservation, MemoryBudget, MemoryReport};
-pub use cache::{CacheEntry, CacheKey, QueryCache};
-pub use composer::{CompositionAnalysis, CompositionEngine, CompositionOutcome, CompositionToken};
-pub use context_sense::{compose_senses, select_by_context};
+pub use cache::{CacheEntry, CacheIdentity, CacheKey, CacheStats, QueryCache};
 pub use coordinator::{Coordinator, CoordinatorConfig};
-pub use diagnostics::{
-    RuleTrace, TermTrace, TranslateOutput, TranslationDiagnostics, UnitExecutionTrace,
-};
-pub use evidence::{
-    ContextRef, LanguageEvidence, PatternKind, PatternMatch, SenseCandidate, TextSpan,
-    TranslationConstraint, UnitKind,
-};
-pub use pipeline::{
-    analyze as analyze_pipeline, compose as compose_pipeline, render as render_chinese_tree,
-    validate as validate_chinese_tree, ChineseNode, ChineseNodeKind, ChineseSyntaxTree,
-    CoverageReport, CoverageState, MeaningGraph, MeaningNode, MeaningNodeKind, MeaningRelation,
-    MeaningRelationKind, PipelineOutput, SourceToken, SyntaxAnalysis, SyntaxAnalyzer, SyntaxEdge,
-    SyntaxNodeKind, TargetTransfer, TokenKind, TokenStream,
-};
-pub use planner::{
-    analyze, classify_fallback, plan as plan_text, plan_request, split_sentences, PlanShape,
-    RequestPlan, TextAnalysis, TranslationPlan, TranslationPlanner, TranslationUnit,
+pub use diagnostics::{RuleTrace, TermTrace, TranslateOutput, TranslationDiagnostics};
+pub use language::{guess, HeuristicIdentifier, LanguageIdentifier, MorphologyAnalyzer};
+pub use protection::{
+    Piece, ProtectedSpan, ProtectionError, ProtectionPlan, ProtectionPolicy, ProtectionStrategy,
+    StrategyPreference, PROTECTION_VERSION,
 };
 pub use quality::{QualityIssue, QualityIssueKind, QualityReport, QualitySeverity};
-pub use routing::RouteOutcome;
+pub use routing::{BackendRouter, RouteOutcome, RoutingConfig};
 pub use rules::{NoRules, RuleOutcome, RulePreview, TextRules};
-pub use semantic::{
-    CandidateSelector, CandidateValidation, ChineseClause, ChineseNounPhrase, ChineseRealizer,
-    ChineseRelation, ChineseStructure, Determiner, EntityRef, Lexeme, LexicalEvidence,
-    LexicalSenseCandidate, MeaningFrame, MeaningProgram, Modifier, Polarity, ProgramRelation,
-    QuestionType, RealizationCandidate, Rejection, RejectionReason, ScopeTarget, SemanticAnalysis,
-    SemanticCompositionEngine, SemanticOutcome, SyntaxGraph, SyntaxNode, SyntaxRelation,
-    SyntaxRelationKind, TargetLexeme, TenseAspect,
-};
-pub use templates::{SentenceTemplates, TemplateTable};
+pub use templates::{MatchMode, SentenceTemplates, TemplateScope, TemplateTable};
 pub use terms::{
-    NoTermGuard, TargetTermGuard, TermContext, TermOutcome, TermPolicy, TermViolation,
+    Glossary, GlossaryError, MatchType, NoTermGuard, TargetTermGuard, TermContext, TermEntry,
+    TermHit, TermOrigin, TermOutcome, TermPolicy, TermVerification, TermViolation,
 };
-pub use translator_analysis::{LanguageIdentifier, MorphologyAnalyzer};
+pub use text::{ProtectedKind, SpanPolicy};

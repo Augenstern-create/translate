@@ -5,20 +5,18 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
-
-[features]
-default = []
-# 真实本地 NMT（P3.1-E）。默认关闭：默认构建出的二进制依旧不依赖任何模型/进程代码。
-nmt = ["translator-api/nmt-bergamot"]
+description = "翻译 SDK 的命令行客户端（开发验证与日常使用）"
 
 [[bin]]
 name = "translator-cli"
 path = "src/main.rs"
 
 [dependencies]
-# 注意：CLI 启用 mocks feature，因此这个二进制**完全不需要任何真实模型**
-translator-api = { workspace = true, features = ["mocks", "dictionary", "rules", "resource"] }
+translator-api.workspace = true
+translator-http.workspace = true
 translator-types.workspace = true
-translator-resource.workspace = true
-translator-plugin-api = { workspace = true, features = ["mocks"] }
+translator-plugin-api.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
 pollster.workspace = true

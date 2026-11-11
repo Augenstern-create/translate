@@ -1,21 +1,40 @@
 //! 查询缓存。
 //!
-//! 设计文档 §6 要求缓存键必须包含：
-//! 规范化文本哈希、源/目标语言、引擎与模型版本、术语表版本、规则版本、
-//! 解码配置、隐私隔离域。
+//! # 缓存身份（§11.2）
 //!
-//! **P0 简化说明**：模型版本在调用引擎前未知，因此键中先用 `engine_id` 占位，
-//! 结果里带 `model_id` 供上层校验。这一简化已在 `CacheKey` 上注明，
-//! P2 资源管理落地后应改为「先解析模型、再计算键」。
+//! 一个译文能不能复用，取决于**所有影响输出的维度**。少写一项就会出现
+//! "换了模型/提示词/术语表，用户仍看到旧译文"——这类 bug 极难被发现，
+//! 因为结果看起来完全正常。
+//!
+//! ```text
+//! source_text_hash       规范化 + 打标记后的文本
+//! source_language        源语言
+//! target_language        目标语言
+//! backend_id             引擎 id（含后端名）
+//! model_id               模型标识
+//! model_revision         部署版本（远程服务可能别名不变换模型）
+//! prompt_version         提示词版本
+//! glossary_version       术语表 id@version
+//! protection_version     保护模块版本
+//! translation_mode       Precise / Fast
+//! context_hash           上下文身份
+//! privacy_scope          隐私隔离域
+//! generation_config_hash 温度/上限/扩展字段
+//! ```
+//!
+//! # 原则（§11.3）
+//!
+//! - 只缓存**通过完整性校验**的结果（由协调器保证：校验失败不写缓存）；
+//! - 用户之间必须隔离（`privacy_scope`）；
+//! - 术语表、提示词、模型身份变化必须让缓存失效（都在键里）；
+//! - 不把译文/原文写进日志；
+//! - 第一阶段只做进程内缓存，容量用 FIFO 淘汰。
 
-use std::collections::hash_map::{DefaultHasher, Entry};
+use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
 
-use translator_types::{
-    TextKind, TranslateOptions, TranslateRequest, TranslationMode, TranslationPolicy,
-    TranslationResult, TranslationRoute,
-};
+use translator_types::{TextKind, TranslationMode, TranslationResult, TranslationRoute};
 
 use crate::diagnostics::TranslationDiagnostics;
 
@@ -29,134 +48,136 @@ pub struct CacheEntry {
     pub diagnostics: TranslationDiagnostics,
 }
 
-/// 缓存键。所有影响译文结果的维度都必须进入键。
+/// 影响译文结果的全部维度。构造后不可变。
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct CacheKey {
-    /// 规范化 + 占位符保护后文本的哈希。
-    pub text_hash: u64,
+pub struct CacheIdentity {
     pub source: String,
     pub target: String,
-    pub engine_id: String,
-    /// 后端提供的执行身份摘要（模型/词表/解码/保护策略）；`None` 表示后端不提供。
-    pub engine_cache_identity: Option<String>,
-    /// P0 恒为 `None`；模型版本确定后填入。
+    pub backend_id: String,
     pub model_id: Option<String>,
-    pub glossary_id: Option<String>,
-    pub rules_version: u32,
-    /// 翻译模式（Precise / Fast）。两种模式的执行配置不同，结果不得互相复用。
+    pub model_revision: Option<String>,
+    pub prompt_version: String,
+    pub glossary_version: String,
+    pub protection_version: String,
     pub mode: TranslationMode,
-    /// 文本类型（Word / Sentence / Paragraph / Document / Auto）。
     pub text_kind: TextKind,
-    /// 分段/组织策略（`word` / `sentence` / `paragraph-group` / `document`…）。
     pub strategy: String,
-    /// 实际执行路由；词典/规则/NMT 不得共享缓存。
     pub route: TranslationRoute,
-    /// 上下文身份；不同上下文不得错误共享缓存。
     pub context_fingerprint: String,
-    pub decode_config: String,
-    /// 隐私隔离域：不同隐私上下文不得共享缓存。
-    pub privacy_domain: String,
-    /// 已挂载资源的指纹（`id@version`）。
-    ///
-    /// 资源版本变化必须让旧缓存失效（ADR-011）；P2.4 会把它换成
-    /// `ResolvedExecutionPlan` 的稳定指纹。
-    pub resource_fingerprint: String,
+    pub privacy_scope: String,
+    pub generation_config_hash: String,
+}
+
+impl CacheIdentity {
+    /// 最小可用身份（测试与词典路径用）。
+    pub fn new(backend_id: impl Into<String>, mode: TranslationMode) -> Self {
+        Self {
+            source: String::new(),
+            target: String::new(),
+            backend_id: backend_id.into(),
+            model_id: None,
+            model_revision: None,
+            prompt_version: String::new(),
+            glossary_version: String::new(),
+            protection_version: String::new(),
+            mode,
+            text_kind: TextKind::Auto,
+            strategy: "single".to_string(),
+            route: TranslationRoute::Remote,
+            context_fingerprint: String::new(),
+            privacy_scope: "local".to_string(),
+            generation_config_hash: String::new(),
+        }
+    }
+
+    pub fn with_languages(mut self, source: impl Into<String>, target: impl Into<String>) -> Self {
+        self.source = source.into();
+        self.target = target.into();
+        self
+    }
+
+    pub fn with_model(mut self, model_id: Option<String>, revision: Option<String>) -> Self {
+        self.model_id = model_id;
+        self.model_revision = revision;
+        self
+    }
+
+    pub fn with_prompt(mut self, prompt_version: impl Into<String>) -> Self {
+        self.prompt_version = prompt_version.into();
+        self
+    }
+
+    pub fn with_glossary(mut self, glossary_version: impl Into<String>) -> Self {
+        self.glossary_version = glossary_version.into();
+        self
+    }
+
+    pub fn with_protection(mut self, protection_version: impl Into<String>) -> Self {
+        self.protection_version = protection_version.into();
+        self
+    }
+
+    pub fn with_kind(mut self, kind: TextKind) -> Self {
+        self.text_kind = kind;
+        self
+    }
+
+    pub fn with_strategy(mut self, strategy: impl Into<String>) -> Self {
+        self.strategy = strategy.into();
+        self
+    }
+
+    pub fn with_route(mut self, route: TranslationRoute) -> Self {
+        self.route = route;
+        self
+    }
+
+    pub fn with_context(mut self, context_fingerprint: impl Into<String>) -> Self {
+        self.context_fingerprint = context_fingerprint.into();
+        self
+    }
+
+    pub fn with_privacy_scope(mut self, scope: impl Into<String>) -> Self {
+        self.privacy_scope = scope.into();
+        self
+    }
+
+    pub fn with_generation_config(mut self, hash: impl Into<String>) -> Self {
+        self.generation_config_hash = hash.into();
+        self
+    }
+}
+
+/// 缓存键。所有字段参与哈希；不再单独暴露"部分匹配"。
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct CacheKey {
+    text_hash: u64,
+    identity: CacheIdentity,
 }
 
 impl CacheKey {
-    /// 旧签名：默认按 [`TranslationMode::Precise`] 建键。
-    ///
-    /// 保留它是因为 P0～P10 的测试与宿主代码直接调用过这个函数；真正的翻译
-    /// 路径必须走 [`CacheKey::new_with_mode`]，否则 Fast 结果会污染 Precise 缓存。
-    pub fn new(
-        normalized_text: &str,
-        req: &TranslateRequest,
-        source: &str,
-        engine_id: &str,
-        engine_cache_identity: Option<&str>,
-        rules_version: u32,
-        resource_fingerprint: &str,
-    ) -> Self {
-        Self::new_with_mode(
-            normalized_text,
-            req,
-            source,
-            engine_id,
-            engine_cache_identity,
-            rules_version,
-            resource_fingerprint,
-            TranslationMode::Precise,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn new_with_mode(
-        normalized_text: &str,
-        req: &TranslateRequest,
-        source: &str,
-        engine_id: &str,
-        engine_cache_identity: Option<&str>,
-        rules_version: u32,
-        resource_fingerprint: &str,
-        mode: TranslationMode,
-    ) -> Self {
-        Self::new_with_options(
-            normalized_text,
-            req,
-            source,
-            engine_id,
-            engine_cache_identity,
-            rules_version,
-            resource_fingerprint,
-            &TranslateOptions::new(mode),
-            "",
-            TranslationRoute::LocalNmt,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn new_with_options(
-        normalized_text: &str,
-        req: &TranslateRequest,
-        source: &str,
-        engine_id: &str,
-        engine_cache_identity: Option<&str>,
-        rules_version: u32,
-        resource_fingerprint: &str,
-        options: &TranslateOptions,
-        strategy: &str,
-        route: TranslationRoute,
-    ) -> Self {
+    pub fn new(normalized_text: &str, identity: CacheIdentity) -> Self {
         let mut hasher = DefaultHasher::new();
         normalized_text.hash(&mut hasher);
-
         Self {
             text_hash: hasher.finish(),
-            source: source.to_string(),
-            target: req.target.as_str().to_string(),
-            engine_id: engine_id.to_string(),
-            engine_cache_identity: engine_cache_identity.map(str::to_string),
-            model_id: None,
-            glossary_id: req.glossary_id.clone(),
-            rules_version,
-            mode: options.mode,
-            text_kind: options.text_kind,
-            route,
-            strategy: strategy.to_string(),
-            context_fingerprint: options.context_id.clone().unwrap_or_default(),
-            decode_config: "default".to_string(),
-            // P8.3 / EP-04 / P17-A：远程策略与实际远程路由都不得与本地共享缓存。
-            // 显式 engine:<id> 的隐私域由宿主负责；这里隔离 RemoteOnly 与
-            // “本地不可用后按授权回退远程”的实际路由。
-            privacy_domain: if matches!(req.policy, TranslationPolicy::RemoteOnly)
-                || route == TranslationRoute::Remote
-            {
-                "remote".to_string()
-            } else {
-                "local".to_string()
-            },
-            resource_fingerprint: resource_fingerprint.to_string(),
+            identity,
         }
+    }
+
+    pub fn from_parts(text_hash: u64, identity: CacheIdentity) -> Self {
+        Self {
+            text_hash,
+            identity,
+        }
+    }
+
+    pub fn text_hash(&self) -> u64 {
+        self.text_hash
+    }
+
+    pub fn identity(&self) -> &CacheIdentity {
+        &self.identity
     }
 }
 
@@ -165,6 +186,9 @@ pub struct QueryCache {
     capacity: usize,
     map: HashMap<CacheKey, CacheEntry>,
     order: VecDeque<CacheKey>,
+    hits: u64,
+    inserts: u64,
+    evictions: u64,
 }
 
 impl QueryCache {
@@ -173,6 +197,9 @@ impl QueryCache {
             capacity,
             map: HashMap::new(),
             order: VecDeque::new(),
+            hits: 0,
+            inserts: 0,
+            evictions: 0,
         }
     }
 
@@ -188,239 +215,212 @@ impl QueryCache {
         self.map.is_empty()
     }
 
-    pub fn get(&self, key: &CacheKey) -> Option<&CacheEntry> {
-        self.map.get(key)
+    pub fn enabled(&self) -> bool {
+        self.capacity > 0
+    }
+
+    pub fn get(&mut self, key: &CacheKey) -> Option<&CacheEntry> {
+        if let Some(entry) = self.map.get(key) {
+            self.hits += 1;
+            return Some(entry);
+        }
+        None
+    }
+
+    pub fn contains(&self, key: &CacheKey) -> bool {
+        self.map.contains_key(key)
     }
 
     pub fn insert(&mut self, key: CacheKey, value: CacheEntry) {
         if self.capacity == 0 {
             return;
         }
-
-        // 已存在：就地更新，不改变淘汰顺序
-        match self.map.entry(key.clone()) {
-            Entry::Occupied(mut entry) => {
-                entry.insert(value);
-                return;
-            }
-            Entry::Vacant(_) => {}
+        self.inserts += 1;
+        if self.map.insert(key.clone(), value).is_none() {
+            self.order.push_back(key);
         }
-
-        while self.map.len() >= self.capacity {
+        while self.map.len() > self.capacity {
             if let Some(oldest) = self.order.pop_front() {
-                self.map.remove(&oldest);
+                if self.map.remove(&oldest).is_some() {
+                    self.evictions += 1;
+                }
             } else {
                 break;
             }
         }
-
-        self.order.push_back(key.clone());
-        self.map.insert(key, value);
     }
 
     pub fn clear(&mut self) {
         self.map.clear();
         self.order.clear();
     }
+
+    pub fn stats(&self) -> CacheStats {
+        CacheStats {
+            capacity: self.capacity,
+            len: self.map.len(),
+            hits: self.hits,
+            inserts: self.inserts,
+            evictions: self.evictions,
+        }
+    }
+}
+
+/// 缓存统计。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CacheStats {
+    pub capacity: usize,
+    pub len: usize,
+    pub hits: u64,
+    pub inserts: u64,
+    pub evictions: u64,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use translator_types::{LanguageTag, TranslateRequest};
+    use translator_types::{LanguageTag, TranslationWarning};
 
-    fn sample_key(text: &str) -> CacheKey {
-        let req = TranslateRequest::new(text, LanguageTag::new("zh-Hans").unwrap());
-        CacheKey::new(text, &req, "en", "mock.nmt", None, 1, "")
+    fn entry(text: &str) -> CacheEntry {
+        let lang_en = LanguageTag::new("en").unwrap();
+        let lang_zh = LanguageTag::new("zh-CN").unwrap();
+        CacheEntry {
+            result: TranslationResult {
+                text: text.to_string(),
+                source: lang_en,
+                target: lang_zh,
+                engine_id: "http.test".to_string(),
+                model_id: Some("m".to_string()),
+                elapsed_ms: 0,
+                warnings: Vec::new(),
+            },
+            diagnostics: TranslationDiagnostics::minimal("http.test"),
+        }
+    }
+
+    fn identity() -> CacheIdentity {
+        CacheIdentity::new("http.test", TranslationMode::Precise)
+            .with_languages("en", "zh-CN")
+            .with_model(Some("m".into()), Some("2026-11-01".into()))
+            .with_prompt("en_zh/precise_v1")
+            .with_protection(crate::protection::PROTECTION_VERSION)
+            .with_route(TranslationRoute::Remote)
     }
 
     #[test]
-    fn 资源指纹不同不得共享缓存() {
-        let target = LanguageTag::new("zh-Hans").unwrap();
-        let req = TranslateRequest::new("hi", target);
-        let a = CacheKey::new(
-            "hi",
-            &req,
-            "en",
-            "dictionary.package",
-            None,
-            1,
-            "dict.zh-en@0.1.0",
+    fn 相同输入命中() {
+        let mut cache = QueryCache::new(4);
+        let key = CacheKey::new("hello", identity());
+        cache.insert(key.clone(), entry("你好"));
+        assert_eq!(cache.get(&key).unwrap().result.text, "你好");
+        assert_eq!(cache.stats().hits, 1);
+    }
+
+    #[test]
+    fn 任一维度变化都不得命中() {
+        let base = identity();
+        let key = CacheKey::new("hello", base.clone());
+        let mut cache = QueryCache::new(16);
+        cache.insert(key.clone(), entry("你好"));
+
+        let variants = [
+            base.clone()
+                .with_model(Some("m".into()), Some("2026-12-01".into())),
+            base.clone().with_prompt("en_zh/precise_v2"),
+            base.clone().with_glossary("glossary.software@3"),
+            base.clone().with_protection("protect-v3"),
+            base.clone().with_languages("en", "zh-Hans"),
+            base.clone().with_context("doc-42"),
+            base.clone().with_generation_config("temp=0.7"),
+            base.clone().with_privacy_scope("user-7"),
+            base.clone().with_route(TranslationRoute::Rule),
+            base.clone().with_kind(TextKind::Paragraph),
+            base.clone().with_strategy("paragraph-group"),
+        ];
+        for variant in variants {
+            let other = CacheKey::new("hello", variant.clone());
+            assert!(!cache.contains(&other), "缓存身份变化仍然命中：{variant:?}");
+        }
+    }
+
+    #[test]
+    fn 模式不同不共享缓存() {
+        let mut cache = QueryCache::new(4);
+        let precise = CacheKey::new(
+            "hello",
+            identity()
+                .with_generation_config("")
+                .with_prompt("en_zh/precise_v1"),
         );
-        let b = CacheKey::new(
-            "hi",
-            &req,
-            "en",
-            "dictionary.package",
-            None,
-            1,
-            "dict.zh-en@0.2.0",
-        );
-        assert_ne!(a, b, "换资源版本后必须换缓存键（ADR-011）");
+        cache.insert(precise, entry("你好"));
+
+        let mut fast_identity = identity();
+        fast_identity.mode = TranslationMode::Fast;
+        fast_identity.prompt_version = "en_zh/fast_v1".to_string();
+        let fast = CacheKey::new("hello", fast_identity);
+        assert!(!cache.contains(&fast));
     }
 
     #[test]
-    fn 远程与本地策略不共享缓存键() {
-        let target = LanguageTag::new("zh-Hans").unwrap();
-        let local = TranslateRequest::new("hi", target.clone());
-        let remote = TranslateRequest::new("hi", target).with_policy(TranslationPolicy::RemoteOnly);
-        let a = CacheKey::new("hi", &local, "en", "mock.nmt", None, 1, "");
-        let b = CacheKey::new("hi", &remote, "en", "mock.nmt", None, 1, "");
-        assert_ne!(a, b, "隐私域不同的请求不得共享缓存（EP-04）");
-        assert_eq!(a.privacy_domain, "local");
-        assert_eq!(b.privacy_domain, "remote");
+    fn 文本不同不命中() {
+        let mut cache = QueryCache::new(4);
+        cache.insert(CacheKey::new("hello", identity()), entry("你好"));
+        assert!(!cache.contains(&CacheKey::new("hello!", identity())));
     }
 
     #[test]
-    fn 容量为0时不缓存() {
+    fn 容量为_0_表示禁用() {
         let mut cache = QueryCache::new(0);
-        cache.insert(sample_key("a"), dummy_entry());
+        let key = CacheKey::new("hello", identity());
+        cache.insert(key.clone(), entry("你好"));
+        assert!(!cache.enabled());
+        assert!(cache.get(&key).is_none());
+        assert_eq!(cache.len(), 0);
+    }
+
+    #[test]
+    fn fifo_淘汰最老的() {
+        let mut cache = QueryCache::new(2);
+        let k1 = CacheKey::new("a", identity());
+        let k2 = CacheKey::new("b", identity());
+        let k3 = CacheKey::new("c", identity());
+        cache.insert(k1.clone(), entry("甲"));
+        cache.insert(k2.clone(), entry("乙"));
+        cache.insert(k3.clone(), entry("丙"));
+        assert!(!cache.contains(&k1));
+        assert!(cache.contains(&k2));
+        assert!(cache.contains(&k3));
+        assert_eq!(cache.stats().evictions, 1);
+    }
+
+    #[test]
+    fn 重复插入同一键不重复排队() {
+        let mut cache = QueryCache::new(2);
+        let key = CacheKey::new("a", identity());
+        cache.insert(key.clone(), entry("甲"));
+        cache.insert(key.clone(), entry("甲2"));
+        assert_eq!(cache.len(), 1);
+        assert_eq!(cache.get(&key).unwrap().result.text, "甲2");
+    }
+
+    #[test]
+    fn 清理后为空() {
+        let mut cache = QueryCache::new(4);
+        cache.insert(CacheKey::new("a", identity()), entry("甲"));
+        cache.clear();
         assert!(cache.is_empty());
     }
 
     #[test]
-    fn 超出容量应淘汰最旧的() {
-        let mut cache = QueryCache::new(2);
-        let k1 = sample_key("a");
-        let k2 = sample_key("b");
-        let k3 = sample_key("c");
-
-        cache.insert(k1.clone(), dummy_entry());
-        cache.insert(k2.clone(), dummy_entry());
-        cache.insert(k3.clone(), dummy_entry());
-
-        assert_eq!(cache.len(), 2);
-        assert!(cache.get(&k1).is_none(), "最旧的应被淘汰");
-        assert!(cache.get(&k3).is_some());
-    }
-
-    #[test]
-    fn 缓存条目带诊断可按文本取回() {
-        let mut cache = QueryCache::new(2);
-        let key = sample_key("hi");
-        cache.insert(key.clone(), dummy_entry());
-        assert_eq!(cache.get(&key).unwrap().diagnostics.engine_id, "mock.nmt");
-    }
-
-    #[test]
-    fn 不同引擎不得共享缓存() {
-        let req = TranslateRequest::new("hi", LanguageTag::new("zh-Hans").unwrap());
-        let a = CacheKey::new("hi", &req, "en", "mock.nmt", None, 1, "");
-        let b = CacheKey::new("hi", &req, "en", "mock.dictionary", None, 1, "");
-        assert_ne!(a, b);
-    }
-
-    #[test]
-    fn 不同路由不得共享缓存() {
-        let req = TranslateRequest::new("hi", LanguageTag::new("zh-Hans").unwrap());
-        let opts = TranslateOptions::new(TranslationMode::Precise);
-        let dict = CacheKey::new_with_options(
-            "hi",
-            &req,
-            "en",
-            "dictionary.package",
-            None,
-            1,
-            "",
-            &opts,
-            "word",
-            TranslationRoute::Dictionary,
-        );
-        let nmt = CacheKey::new_with_options(
-            "hi",
-            &req,
-            "en",
-            "dictionary.package",
-            None,
-            1,
-            "",
-            &opts,
-            "word",
-            TranslationRoute::LocalNmt,
-        );
-        assert_ne!(dict, nmt, "不同路由不得共享缓存（P16-R / R8）");
-    }
-
-    #[test]
-    fn 不同模式不得共享缓存() {
-        let req = TranslateRequest::new("hi", LanguageTag::new("zh-Hans").unwrap());
-        let precise = CacheKey::new_with_mode(
-            "hi",
-            &req,
-            "en",
-            "mock.nmt",
-            None,
-            1,
-            "",
-            TranslationMode::Precise,
-        );
-        let fast = CacheKey::new_with_mode(
-            "hi",
-            &req,
-            "en",
-            "mock.nmt",
-            None,
-            1,
-            "",
-            TranslationMode::Fast,
-        );
-        assert_ne!(
-            precise, fast,
-            "Precise 与 Fast 不得共享缓存（docs/57 §4.2）"
-        );
-        assert_eq!(precise.mode, TranslationMode::Precise);
-        assert_eq!(fast.mode, TranslationMode::Fast);
-    }
-
-    #[test]
-    fn 不同术语表不得共享缓存() {
-        let base = TranslateRequest::new("hi", LanguageTag::new("zh-Hans").unwrap());
-        let with_glossary = base.clone().with_glossary("g1");
-        let a = CacheKey::new("hi", &base, "en", "mock.nmt", None, 1, "");
-        let b = CacheKey::new("hi", &with_glossary, "en", "mock.nmt", None, 1, "");
-        assert_ne!(a, b);
-    }
-
-    fn dummy_result() -> TranslationResult {
-        TranslationResult {
-            text: "译文".to_string(),
-            source: LanguageTag::new("en").unwrap(),
-            target: LanguageTag::new("zh-Hans").unwrap(),
-            engine_id: "mock.nmt".to_string(),
-            model_id: None,
-            elapsed_ms: 0,
-            warnings: Vec::new(),
-        }
-    }
-
-    fn dummy_entry() -> CacheEntry {
-        CacheEntry {
-            result: dummy_result(),
-            diagnostics: TranslationDiagnostics {
-                engine_id: "mock.nmt".to_string(),
-                capability: translator_types::Capability::Nmt,
-                route_reason: "测试".to_string(),
-                cache_hit: false,
-                source_assumed: false,
-                rules_version: 1,
-                resource_fingerprint: String::new(),
-                mode: TranslationMode::Precise,
-                text_kind: TextKind::Auto,
-                route: translator_types::TranslationRoute::LocalNmt,
-                model_invoked: true,
-                dictionary_hit: false,
-                rule_matched: false,
-                fallback_reason: None,
-                evidence: None,
-                units: Vec::new(),
-                strategy: "single".to_string(),
-                context_id: None,
-                quality: None,
-                rules: None,
-                protected_spans: Vec::new(),
-                restore_missing: Vec::new(),
-                term: None,
-            },
-        }
+    fn 缓存不改变警告内容() {
+        let mut cache = QueryCache::new(4);
+        let key = CacheKey::new("a", identity());
+        let mut e = entry("甲");
+        e.result
+            .warnings
+            .push(TranslationWarning::LanguageAssumed("en".into()));
+        cache.insert(key.clone(), e);
+        let hit = cache.get(&key).unwrap();
+        assert_eq!(hit.result.warnings.len(), 1);
     }
 }

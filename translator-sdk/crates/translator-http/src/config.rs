@@ -261,6 +261,15 @@ impl BackendConfig {
         }
     }
 
+    /// 是否是远程后端（会把文本发到本机之外）。
+    ///
+    /// 回环地址（`127.0.0.1` / `localhost` / `::1`）视为**本地**后端：
+    /// 自部署模型服务走同一套 HTTP 代码，但数据不出本机，因此不需要
+    /// "远程回退授权"。这条区分直接决定路由是否要求显式授权（§9.3）。
+    pub fn is_remote(&self) -> bool {
+        !is_loopback(self.base_url.trim())
+    }
+
     /// 该后端是否声明支持某语言对。
     pub fn supports_pair(&self, source: &str, target: &str) -> bool {
         self.language_pairs
@@ -385,9 +394,8 @@ impl BackendsFile {
 
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self, HttpError> {
         let path = path.as_ref();
-        let text = std::fs::read_to_string(path).map_err(|e| {
-            HttpError::config(format!("读取配置文件 {} 失败：{e}", path.display()))
-        })?;
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| HttpError::config(format!("读取配置文件 {} 失败：{e}", path.display())))?;
         Self::from_toml_str(&text)
     }
 
@@ -441,20 +449,11 @@ mod tests {
     #[test]
     fn 端点拼接不重复() {
         let mut cfg = base();
-        assert_eq!(
-            cfg.endpoint(),
-            "https://relay.example/v1/chat/completions"
-        );
+        assert_eq!(cfg.endpoint(), "https://relay.example/v1/chat/completions");
         cfg.base_url = "https://relay.example/v1/".into();
-        assert_eq!(
-            cfg.endpoint(),
-            "https://relay.example/v1/chat/completions"
-        );
+        assert_eq!(cfg.endpoint(), "https://relay.example/v1/chat/completions");
         cfg.base_url = "https://relay.example/v1/chat/completions".into();
-        assert_eq!(
-            cfg.endpoint(),
-            "https://relay.example/v1/chat/completions"
-        );
+        assert_eq!(cfg.endpoint(), "https://relay.example/v1/chat/completions");
     }
 
     #[test]

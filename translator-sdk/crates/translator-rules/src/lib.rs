@@ -46,9 +46,6 @@
 use std::fmt;
 use std::path::Path;
 
-pub mod migrate;
-pub mod terms;
-
 use serde::Deserialize;
 use translator_core::rules::{RuleOutcome, TextRules};
 use translator_core::text;
@@ -262,8 +259,8 @@ struct Pair {
 
 impl Pair {
     fn matches(&self, source: &LanguageTag, target: &LanguageTag) -> bool {
-        let from_ok = self.from.as_ref().map_or(true, |f| f == source);
-        let to_ok = self.to.as_ref().map_or(true, |t| t == target);
+        let from_ok = self.from.as_ref().is_none_or(|f| f == source);
+        let to_ok = self.to.as_ref().is_none_or(|t| t == target);
         from_ok && to_ok
     }
 }
@@ -732,11 +729,11 @@ fn replace_term(text: &str, from: &str, to: &str, whole_word: bool) -> String {
         let before_ok = text[..start]
             .chars()
             .next_back()
-            .map_or(true, |c| !is_word_char(c));
+            .is_none_or(|c| !is_word_char(c));
         let after_ok = text[end..]
             .chars()
             .next()
-            .map_or(true, |c| !is_word_char(c));
+            .is_none_or(|c| !is_word_char(c));
 
         out.push_str(&text[cursor..start]);
         if before_ok && after_ok {

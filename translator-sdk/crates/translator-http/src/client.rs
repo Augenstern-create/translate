@@ -69,10 +69,7 @@ impl Limiter {
     fn acquire(&self) {
         let mut active = self.active.lock().unwrap_or_else(|e| e.into_inner());
         while *active >= self.limit {
-            active = self
-                .cv
-                .wait(active)
-                .unwrap_or_else(|e| e.into_inner());
+            active = self.cv.wait(active).unwrap_or_else(|e| e.into_inner());
         }
         *active += 1;
     }
@@ -112,12 +109,7 @@ impl Slot {
             }
         }
         self.finished.store(1, Ordering::Release);
-        if let Some(waker) = self
-            .waker
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take()
-        {
+        if let Some(waker) = self.waker.lock().unwrap_or_else(|e| e.into_inner()).take() {
             waker.wake();
         }
     }
@@ -127,10 +119,7 @@ impl Slot {
     }
 
     fn take(&self) -> Option<Result<HttpOutcome, HttpError>> {
-        self.result
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take()
+        self.result.lock().unwrap_or_else(|e| e.into_inner()).take()
     }
 }
 
@@ -257,8 +246,16 @@ impl HttpTransport {
         let spawned = std::thread::Builder::new()
             .name("translate-http".to_string())
             .spawn(move || {
-                let outcome =
-                    run_with_retries(agent, limiter, meter, request, cancel, deadline, max_retries, max_body);
+                let outcome = run_with_retries(
+                    agent,
+                    limiter,
+                    meter,
+                    request,
+                    cancel,
+                    deadline,
+                    max_retries,
+                    max_body,
+                );
                 slot_for_thread.complete(outcome);
             });
 
@@ -295,8 +292,7 @@ fn run_with_retries(
         }
         if let Some(deadline) = deadline {
             if Instant::now() >= deadline {
-                return Err(HttpError::timeout("请求在发出前已超过截止时间")
-                    .with_attempts(attempt));
+                return Err(HttpError::timeout("请求在发出前已超过截止时间").with_attempts(attempt));
             }
         }
 
@@ -306,8 +302,7 @@ fn run_with_retries(
 
         match result {
             Ok(outcome) => {
-                let retryable_status =
-                    matches!(outcome.status, 408 | 425 | 429 | 500..=599);
+                let retryable_status = matches!(outcome.status, 408 | 425 | 429 | 500..=599);
                 if retryable_status && attempt <= max_retries && !is_cancelled(&cancel) {
                     meter.record_retry();
                     if !backoff(attempt, deadline, &cancel) {
@@ -316,8 +311,9 @@ fn run_with_retries(
                             meter.record_cancelled();
                             return Err(HttpError::cancelled().with_attempts(attempt));
                         }
-                        return Err(HttpError::timeout("重试等待期间超过截止时间")
-                            .with_attempts(attempt));
+                        return Err(
+                            HttpError::timeout("重试等待期间超过截止时间").with_attempts(attempt)
+                        );
                     }
                     continue;
                 }
@@ -333,8 +329,9 @@ fn run_with_retries(
                             meter.record_cancelled();
                             return Err(HttpError::cancelled().with_attempts(attempt));
                         }
-                        return Err(HttpError::timeout("重试等待期间超过截止时间")
-                            .with_attempts(attempt));
+                        return Err(
+                            HttpError::timeout("重试等待期间超过截止时间").with_attempts(attempt)
+                        );
                     }
                     continue;
                 }
@@ -425,16 +422,13 @@ fn execute_once(
 fn classify_transport(err: ureq::Error) -> HttpError {
     match err {
         ureq::Error::Timeout(_) => HttpError::timeout("后端请求超时"),
-        ureq::Error::HostNotFound => {
-            HttpError::new(HttpErrorKind::Unavailable, "无法解析后端域名")
-        }
+        ureq::Error::HostNotFound => HttpError::new(HttpErrorKind::Unavailable, "无法解析后端域名"),
         ureq::Error::Io(io) if io.kind() == std::io::ErrorKind::TimedOut => {
             HttpError::timeout(format!("后端请求超时：{io}"))
         }
-        ureq::Error::Io(io) => HttpError::new(
-            HttpErrorKind::Unavailable,
-            format!("连接后端失败：{io}"),
-        ),
+        ureq::Error::Io(io) => {
+            HttpError::new(HttpErrorKind::Unavailable, format!("连接后端失败：{io}"))
+        }
         ureq::Error::StatusCode(code) => HttpError::from_status(code, ""),
         other => HttpError::new(HttpErrorKind::Transport, format!("HTTP 传输错误：{other}")),
     }
@@ -454,7 +448,10 @@ mod tests {
         });
         let start = Instant::now();
         assert!(!backoff(3, None, &cancel));
-        assert!(start.elapsed() < Duration::from_millis(800), "取消后应尽快返回");
+        assert!(
+            start.elapsed() < Duration::from_millis(800),
+            "取消后应尽快返回"
+        );
     }
 
     #[test]

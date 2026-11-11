@@ -74,8 +74,7 @@ impl HttpTranslationEngine {
             precise,
             fast,
             meter,
-            default_source: LanguageTag::new("en")
-                .expect("常量语言标签 en 一定合法"),
+            default_source: LanguageTag::new("en").expect("常量语言标签 en 一定合法"),
         })
     }
 
@@ -187,7 +186,11 @@ impl HttpTranslationEngine {
 
         Ok(EngineOutput {
             text: completion.text,
-            model_id: Some(completion.model.unwrap_or_else(|| self.config.model.clone())),
+            model_id: Some(
+                completion
+                    .model
+                    .unwrap_or_else(|| self.config.model.clone()),
+            ),
             model_revision,
             usage: completion.usage,
             warnings: Vec::new(),
@@ -224,12 +227,14 @@ impl HttpTranslationEngine {
 
 impl TranslationEngine for HttpTranslationEngine {
     fn descriptor(&self) -> EngineDescriptor {
-        EngineDescriptor::new(
-            self.id.clone(),
-            [Capability::Nmt, Capability::Remote],
-            50,
-            "Apache-2.0 OR MIT",
-        )
+        // 只有真正"出网"的后端才声明 Remote：本机 HTTPS 服务（127.0.0.1）
+        // 与自部署模型一样属于本地执行，不应被远程回退策略拦住。
+        let capabilities = if self.config.is_remote() {
+            vec![Capability::Nmt, Capability::Remote]
+        } else {
+            vec![Capability::Nmt]
+        };
+        EngineDescriptor::new(self.id.clone(), capabilities, 50, "Apache-2.0 OR MIT")
     }
 
     fn supports(&self, source: &LanguageTag, target: &LanguageTag) -> bool {
@@ -239,8 +244,10 @@ impl TranslationEngine for HttpTranslationEngine {
     fn translate<'a>(
         &'a self,
         req: &'a TranslateRequest,
-    ) -> translator_plugin_api::BoxFuture<'a, Result<translator_types::TranslationResult, TranslationError>>
-    {
+    ) -> translator_plugin_api::BoxFuture<
+        'a,
+        Result<translator_types::TranslationResult, TranslationError>,
+    > {
         Box::pin(async move {
             let job = self.job_from_request(req, &[], &[], None);
             let out = self.run(&job).await?;
@@ -263,8 +270,10 @@ impl TranslationEngine for HttpTranslationEngine {
         &'a self,
         req: &'a TranslateRequest,
         cancel: &'a CancelToken,
-    ) -> translator_plugin_api::BoxFuture<'a, Result<translator_types::TranslationResult, TranslationError>>
-    {
+    ) -> translator_plugin_api::BoxFuture<
+        'a,
+        Result<translator_types::TranslationResult, TranslationError>,
+    > {
         Box::pin(async move {
             let job = self.job_from_request(req, &[], &[], Some(cancel));
             let out = self.run(&job).await?;
@@ -280,6 +289,15 @@ impl TranslationEngine for HttpTranslationEngine {
                 elapsed_ms: 0,
                 warnings: out.warnings,
             })
+        })
+    }
+
+    fn model_identity(&self) -> Option<translator_plugin_api::ModelIdentity> {
+        Some(translator_plugin_api::ModelIdentity {
+            model_id: self.config.model.clone(),
+            model_revision: self.config.model_revision.clone(),
+            prompt_version: self.precise.id().to_string(),
+            generation_config_hash: self.config.generation_fingerprint(),
         })
     }
 
@@ -359,7 +377,8 @@ max_concurrent_requests = 1
         let engine = &engines[0];
         let descriptor = engine.descriptor();
         assert!(descriptor.supports(Capability::Nmt));
-        assert!(descriptor.supports(Capability::Remote));
+        // 回环地址按本地后端处理
+        assert!(!descriptor.supports(Capability::Remote));
         assert_eq!(descriptor.id, "http.test");
         assert!(engine.supports(
             &LanguageTag::new("en").unwrap(),

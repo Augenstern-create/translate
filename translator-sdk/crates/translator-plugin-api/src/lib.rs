@@ -109,6 +109,20 @@ impl EngineOutput {
     }
 }
 
+/// 引擎的模型身份：参与缓存键的"这到底是哪个模型/哪个提示词"。
+///
+/// 单独成一个结构而不是一个拼接字符串，是为了让缓存键的每个维度都可读：
+/// 出问题时能直接看出"是模型换了还是提示词换了"（§11.2）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ModelIdentity {
+    pub model_id: String,
+    /// 部署版本。远程服务可能在别名不变时替换模型，因此这一项**不能**留空。
+    pub model_revision: Option<String>,
+    pub prompt_version: String,
+    /// 温度/输出上限/扩展字段等的稳定摘要。
+    pub generation_config_hash: String,
+}
+
 /// 翻译引擎。词典、本地 NMT、远程 LLM 都实现此 trait。
 pub trait TranslationEngine: Send + Sync {
     fn descriptor(&self) -> EngineDescriptor;
@@ -158,6 +172,11 @@ pub trait TranslationEngine: Send + Sync {
                 warnings: result.warnings,
             })
         })
+    }
+
+    /// 模型身份（可选）。能提供的后端应当提供：缓存键需要它。
+    fn model_identity(&self) -> Option<ModelIdentity> {
+        None
     }
 
     /// 影响译文的执行身份（模型/词表/解码/保护策略的稳定摘要）。
@@ -344,7 +363,9 @@ impl PluginRegistry {
 
         found.sort_by(|a, b| {
             let (da, db) = (a.descriptor(), b.descriptor());
-            db.priority.cmp(&da.priority).then_with(|| da.id.cmp(&db.id))
+            db.priority
+                .cmp(&da.priority)
+                .then_with(|| da.id.cmp(&db.id))
         });
 
         found

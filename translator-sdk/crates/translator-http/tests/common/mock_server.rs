@@ -128,6 +128,7 @@ impl MockServer {
         format!("http://{}/v1", self.addr)
     }
 
+    #[allow(dead_code)]
     pub fn addr(&self) -> SocketAddr {
         self.addr
     }

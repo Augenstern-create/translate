@@ -123,9 +123,7 @@ pub fn parse_response(status: u16, body: &str) -> Result<ChatCompletion, HttpErr
         .and_then(|m| m.get("content"))
         .and_then(Value::as_str)
         .ok_or_else(|| {
-            HttpError::invalid_response(
-                "响应缺少 choices[0].message.content（或不是字符串）",
-            )
+            HttpError::invalid_response("响应缺少 choices[0].message.content（或不是字符串）")
         })?;
 
     let finish_reason = choice
@@ -157,10 +155,7 @@ pub fn parse_response(status: u16, body: &str) -> Result<ChatCompletion, HttpErr
         .map(str::to_string);
 
     let usage = value.get("usage").map(|u| TokenUsage {
-        input_tokens: u
-            .get("prompt_tokens")
-            .and_then(Value::as_u64)
-            .unwrap_or(0),
+        input_tokens: u.get("prompt_tokens").and_then(Value::as_u64).unwrap_or(0),
         output_tokens: u
             .get("completion_tokens")
             .and_then(Value::as_u64)
@@ -202,10 +197,7 @@ fn classify_api_error(code: &str, message: &str) -> HttpError {
     };
     HttpError::new(
         kind,
-        format!(
-            "后端返回错误：{}",
-            crate::errors::truncate(message, 200)
-        ),
+        format!("后端返回错误：{}", crate::errors::truncate(message, 200)),
     )
 }
 
@@ -325,7 +317,8 @@ model = "configured-model-id"
 
     #[test]
     fn 截断的译文必须报错而不是返回半句() {
-        let body = r#"{"choices":[{"message":{"content":"这是一句被截"},"finish_reason":"length"}]}"#;
+        let body =
+            r#"{"choices":[{"message":{"content":"这是一句被截"},"finish_reason":"length"}]}"#;
         let err = parse_response(200, body).unwrap_err();
         assert!(err.message.contains("截断"), "{err}");
         assert_eq!(err.kind, crate::errors::HttpErrorKind::InvalidResponse);

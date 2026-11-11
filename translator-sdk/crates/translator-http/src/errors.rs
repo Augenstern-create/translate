@@ -55,7 +55,10 @@ impl HttpErrorKind {
     /// 配置错误、鉴权失败、余额不足、响应非法都**不**重试：
     /// 原样重发只会重复失败并可能重复计费。
     pub const fn is_retryable(self) -> bool {
-        matches!(self, Self::RateLimited | Self::Unavailable | Self::Transport)
+        matches!(
+            self,
+            Self::RateLimited | Self::Unavailable | Self::Transport
+        )
     }
 
     pub const fn code(self) -> TranslationErrorCode {
