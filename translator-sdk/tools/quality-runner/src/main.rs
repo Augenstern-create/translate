@@ -83,27 +83,53 @@ fn run() -> Result<u8, String> {
         options.text_kind = TextKind::Sentence;
         options.mode = args.mode;
 
-        let outcome = pollster::block_on(translator.translate_with_options(&request, &options));
+        let outcome =
+            pollster::block_on(translator.translate_with_diagnostics_options(&request, &options));
         let elapsed = started.elapsed().as_millis() as u64;
         latencies.push(elapsed);
 
         let record = match outcome {
             Ok(output) => {
+                let result = &output.result;
                 let mut failures = Vec::new();
+                // 1) 字面约束：URL / 邮箱 / 变量 / 代码 / 标签必须逐字出现
                 for needle in &case.must_preserve {
-                    if !output.text.contains(needle) {
+                    if !result.text.contains(needle) {
                         failures.push(format!("缺少受保护内容 {needle}"));
                     }
                 }
+                // 2) 数字约束：先看字面，再看 SDK 的语义判定
+                //    （`$39.99` 写成 `39.99美元`、`2:00` 写成 `凌晨2点` 都是正确的）
+                let critical_numbers: Vec<String> = output
+                    .diagnostics
+                    .quality
+                    .as_ref()
+                    .map(|quality| {
+                        quality
+                            .issues
+                            .iter()
+                            .filter(|issue| {
+                                issue.severity == translator_api::QualitySeverity::Critical
+                            })
+                            .map(|issue| {
+                                format!(
+                                    "SDK 判定致命问题 {}：{}",
+                                    issue.kind.as_str(),
+                                    issue.detail
+                                )
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
                 for needle in &case.must_keep_numbers {
-                    if !output.text.contains(needle) {
-                        // 数字可能被写成中文；这里只做"字面保留"的严格判定，
-                        // 语义等价由 SDK 的 quality::number 负责（已在下游执行）
-                        failures.push(format!("关键数字未字面保留 {needle}"));
+                    if !result.text.contains(needle) && !critical_numbers.is_empty() {
+                        failures.push(format!("关键数字未保留 {needle}"));
                     }
                 }
+                failures.extend(critical_numbers);
+                // 3) 术语
                 for term in &case.glossary {
-                    if !output.text.contains(&term.target) {
+                    if !result.text.contains(&term.target) {
                         failures.push(format!("术语未遵循 {} → {}", term.source, term.target));
                     }
                 }
@@ -112,8 +138,8 @@ fn run() -> Result<u8, String> {
                     id: case.id.clone(),
                     category: case.category.clone(),
                     ok,
-                    output: output.text.clone(),
-                    engine_id: output.engine_id.clone(),
+                    output: result.text.clone(),
+                    engine_id: result.engine_id.clone(),
                     elapsed_ms: elapsed,
                     failures,
                     error: None,

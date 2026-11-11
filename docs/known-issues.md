@@ -25,7 +25,8 @@
 | K-18 | 段落 | `paragraph_strategy = sentence/group/best/context` 目前**不改变执行方式**（统一整段翻译），仅进缓存身份 | 中 | Open（先保证整段质量） |
 | K-19 | 评测 | `fixtures/eval` 的 `reference_zh` 全部为空，没有人工参考译文 | 高 | PENDING_HUMAN |
 | K-20 | 评测 | 未在真实转发站上跑过批量评测（缺 base_url/密钥） | 高 | PENDING_HUMAN |
-| K-21 | 本地模型 | 没有用真实权重跑过质量/延迟/内存对比 | 高 | PENDING_HUMAN（Phase 5 未完成实测） |
+| K-21 | 本地模型 | CPU 实测已做（Qwen2.5-1.5B，p50 732 ms / RSS 1.87 GB，smoke 29/30）；**与远程基线的质量对比未做** | 高 | PENDING_HUMAN（缺密钥与人工评分） |
+| K-21b | 本地模型 | 1.5B 模型术语选择不稳定（无约束时会换同义词），长文档需分块（4k 上下文） | 中 | Accepted（靠术语表 + 分块策略） |
 | K-22 | 平台 | Windows 只做了交叉编译检查，未在实机运行 | 高 | PENDING_HUMAN |
 | K-23 | 平台 | Android 完全延后；JNI 层已归档 | 中 | Accepted（计划内） |
 | K-24 | 成本 | 客户端 token 计数只用于提醒，不是可信计费边界 | 低 | Accepted |

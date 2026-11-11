@@ -5,7 +5,7 @@
 //!
 //! 解析原则：宁可报错，不要"看起来能用"。缺 `choices`、`content` 为空、
 //! `content` 不是字符串、被 `max_tokens` 截断，全部按
-//! [`HttpErrorKind::InvalidResponse`] 处理，而不是返回半句话当作译文。
+//! [`crate::errors::HttpErrorKind::InvalidResponse`] 处理，而不是返回半句话当作译文。
 
 use serde_json::{json, Value};
 use translator_types::TokenUsage;

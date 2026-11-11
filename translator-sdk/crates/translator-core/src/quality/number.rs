@@ -694,6 +694,15 @@ fn time_alternatives(raw: &str) -> Vec<String> {
         format!("{hour}点{minute}分"),
         format!("{hour}:{minute:02}"),
     ];
+    if hour < 12 {
+        // 上午/凌晨：12 小时制下小时数不变，`2:00 AM` → `凌晨2点`
+        for prefix in ["上午", "凌晨", "早上"] {
+            out.push(format!("{prefix}{hour}点{minute:02}分"));
+            out.push(format!("{prefix} {hour}点{minute:02}分"));
+            out.push(format!("{prefix}{hour}点"));
+            out.push(format!("{prefix}{hour}点半"));
+        }
+    }
     if hour >= 12 {
         let h12 = if hour == 12 { 12 } else { hour - 12 };
         for prefix in ["下午", "傍晚", "晚上"] {
@@ -1036,6 +1045,14 @@ mod tests {
         assert!(direct.issues.is_empty(), "{:?}", direct.issues);
         let converted = check("Starts at 14:30.", "下午 2:30 开始。");
         assert!(converted.issues.is_empty(), "{:?}", converted.issues);
+    }
+
+    #[test]
+    fn 上午与凌晨写法也等价() {
+        let morning = check("The backup finished at 2:00 AM.", "备份在凌晨2点完成。");
+        assert!(morning.issues.is_empty(), "{:?}", morning.issues);
+        let nine = check("The meeting starts at 9:00.", "会议上午9点开始。");
+        assert!(nine.issues.is_empty(), "{:?}", nine.issues);
     }
 
     #[test]

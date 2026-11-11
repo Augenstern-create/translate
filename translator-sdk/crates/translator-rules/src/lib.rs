@@ -730,10 +730,7 @@ fn replace_term(text: &str, from: &str, to: &str, whole_word: bool) -> String {
             .chars()
             .next_back()
             .is_none_or(|c| !is_word_char(c));
-        let after_ok = text[end..]
-            .chars()
-            .next()
-            .is_none_or(|c| !is_word_char(c));
+        let after_ok = text[end..].chars().next().is_none_or(|c| !is_word_char(c));
 
         out.push_str(&text[cursor..start]);
         if before_ok && after_ok {

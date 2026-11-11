@@ -40,9 +40,10 @@
 pub use translator_core::{
     BackendRouter, CacheStats, Coordinator, CoordinatorConfig, Glossary, GlossaryError, MatchMode,
     NoRules, NoTermGuard, Piece, ProtectedKind, ProtectedSpan, ProtectionPolicy,
-    ProtectionStrategy, RuleOutcome, RulePreview, SentenceTemplates, SpanPolicy,
-    StrategyPreference, TemplateScope, TemplateTable, TermEntry, TermPolicy, TermVerification,
-    TextRules, TranslateOutput, TranslationDiagnostics,
+    ProtectionStrategy, QualityIssue, QualityIssueKind, QualityReport, QualitySeverity,
+    RuleOutcome, RulePreview, SentenceTemplates, SpanPolicy, StrategyPreference, TemplateScope,
+    TemplateTable, TermEntry, TermPolicy, TermVerification, TextRules, TranslateOutput,
+    TranslationDiagnostics,
 };
 pub use translator_dictionary as dictionary;
 pub use translator_http::{
