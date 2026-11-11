@@ -28,7 +28,7 @@ cargo test -p translator-api           # 端到端流水线（脚本化引擎）
 当前基线（Linux，`refactor/online-translation-v1`）：
 
 ```text
-passed = 305   failed = 0   ignored = 4
+passed = 330   failed = 0   ignored = 4
 ```
 
 覆盖的关键场景：
@@ -63,6 +63,23 @@ passed = 305   failed = 0   ignored = 4
 - 截断输出（`finish_reason=length`）不得当成功
 - 密钥缺失时不发请求
 - 术语与占位符进入 system 消息，原文只出现一次
+
+**终检（`translator-core` 白盒，S1-01）**
+
+- 修复不破坏内容 → 采用（`repair=applied`）
+- 修复会拆坏受保护版本号 → 退回原候选（`repair=rejected`）
+- 修复会改动版本号等严格数字 → 不采用
+- 候选与修复后都不通过 → `IntegrityFailure`
+- 严格术语在**最终文本**上重新核验（Enforce 时失败）
+
+**Web 界面安全（`apps/translator-cli/tests/serve_security.rs`，真实 socket）**
+
+- 首页可访问、带随机 CSRF 令牌与安全响应头；页面不含 `innerHTML`
+- 合法同源请求可完成翻译；健康检查不需要令牌
+- 缺少/错误 CSRF → 403；跨站 Origin → 403；非法 Host → 403
+- 超大 Content-Length → 413 且**不读取请求体**（有耗时断言）
+- 非法 Content-Length → 400；chunked → 400；超大请求头 → 431
+- 非 JSON Content-Type → 415；PUT → 405；非法 JSON → 400
 
 **流水线（`translator-api`）**
 
@@ -118,7 +135,7 @@ cargo run -p quality-runner -- \
 | `cargo fmt --check` | 无差异 |
 | `cargo clippy -- -D warnings` | 零警告 |
 | `cargo test --workspace` | 0 失败 |
-| 保护用例 | 100% 通过 |
+| 保护用例 | 100% 通过（含"多吐一份"检测） |
 | 确定性数字/编号用例 | 100% 通过 |
 | 空输出 | 不得作为成功返回 |
 | 保护还原失败 | 不得写入缓存 |
