@@ -2,18 +2,34 @@
 //!
 //! # 为什么是"内置在 CLI 里的一页网页"
 //!
-//! 目标是**最小可用**（§18 Phase 6）：用户不需要写代码、不需要理解 crate、
-//! 打开浏览器就能翻译和查词。为此不需要引入 GUI 框架，也不需要前端构建链：
-//! 一个 `TcpListener` + 一段内嵌 HTML 就够了。
+//! 目标是**最小可用**：用户不需要写代码、不需要理解 crate、打开浏览器就能
+//! 翻译和查词。为此不需要引入 GUI 框架，也不需要前端构建链。
 //!
-//! # 安全边界（重要）
+//! # 安全模型（S1-03 / S1-04）
 //!
-//! - **只绑定 127.0.0.1**：不接受来自局域网的连接；
-//! - 没有鉴权，因此也不允许通过 `--host` 暴露到公网；
-//! - 默认端口 8765，可用 `--port` 改；
-//! - 该界面会把用户输入发给**已配置的翻译后端**，这一点在页面上明确写出。
+//! 这是一个**本机、单用户、无身份体系**的界面。它仍然必须防住两类真实威胁：
+//!
+//! 1. **任意网页向本机服务发写请求**（CSRF / DNS rebinding）；
+//! 2. **超限或畸形请求**把进程拖死。
+//!
+//! 因此：
+//!
+//! - 只绑定 `127.0.0.1`，没有"对外开放"选项；
+//! - 校验 `Host`：只接受 `127.0.0.1:<port>` / `localhost:<port>`（防 DNS rebinding）；
+//! - 校验 `Origin`：浏览器提交的跨站请求一律 403；
+//! - CSRF：启动时生成随机会话令牌，页面通过 `<meta>` 取得，POST 必须带回
+//!   `x-csrf-token`；令牌不是硬编码常量；
+//! - 请求头 / 请求行 / 请求体都有上限，超限**在读取前**直接拒绝（431/413）；
+//! - 只允许 GET/HEAD 与 POST；POST 必须是 `application/json`；
+//! - 不支持的 `Transfer-Encoding`、非法 `Content-Length` 直接 400；
+//! - 每个连接有读写超时。
+//!
+//! # XSS（S1-02）
+//!
+//! 页面渲染译文与词典释义一律使用 `textContent` / `createElement`，
+//! **不**使用 `innerHTML`，也不引入任何外部脚本或样式。
 
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 use std::time::Duration;
@@ -24,27 +40,47 @@ use translator_types::{LanguageTag, LookupRequest, TextKind, TranslateRequest, T
 /// 只监听回环地址：这是安全边界，不是可配置项。
 const BIND_HOST: &str = "127.0.0.1";
 
+/// 请求行上限（字节）。
+const MAX_REQUEST_LINE: usize = 8 * 1024;
+/// 请求头上限（字节，含请求行）。
+const MAX_HEAD_BYTES: usize = 16 * 1024;
+/// 请求体上限（字节）。
+const MAX_BODY_BYTES: usize = 256 * 1024;
+/// 单次连接读超时。
+const READ_TIMEOUT: Duration = Duration::from_secs(10);
+/// 单次连接写超时（翻译可能较慢，但不能无限等）。
+const WRITE_TIMEOUT: Duration = Duration::from_secs(180);
+
 /// 启动本地 UI，阻塞直到进程退出。
 pub fn serve(translator: Arc<Translator>, port: u16) -> Result<(), String> {
     let listener = TcpListener::bind((BIND_HOST, port))
         .map_err(|e| format!("无法绑定 {BIND_HOST}:{port}：{e}"))?;
+    serve_listener(listener, translator)
+}
+
+/// 在已绑定的监听器上提供服务（测试用，端口可以是 0）。
+pub fn serve_listener(listener: TcpListener, translator: Arc<Translator>) -> Result<(), String> {
     let addr = listener
         .local_addr()
         .map_err(|e| format!("读取监听地址失败：{e}"))?;
+    let port = addr.port();
+    let state = Arc::new(ServerState {
+        translator,
+        csrf: generate_token(),
+    });
 
     println!("翻译界面已启动：http://{addr}/");
     println!("（仅监听回环地址；按 Ctrl+C 结束。文本会发送到已配置的后端）");
     eprintln!(
         "提示：后端 = {:?}；如需改配置请编辑 translate.toml 后重启",
-        translator.backend_ids()
+        state.translator.backend_ids()
     );
 
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };
-        let translator = Arc::clone(&translator);
-        // 每个连接一个线程：翻译可能要几秒，不能把页面卡死
+        let state = Arc::clone(&state);
         std::thread::spawn(move || {
-            if let Err(err) = handle(stream, &translator) {
+            if let Err(err) = handle(stream, &state, port) {
                 eprintln!("请求处理失败：{err}");
             }
         });
@@ -52,95 +88,326 @@ pub fn serve(translator: Arc<Translator>, port: u16) -> Result<(), String> {
     Ok(())
 }
 
-struct HttpRequest {
+struct ServerState {
+    translator: Arc<Translator>,
+    /// 每次启动随机生成的 CSRF 令牌。
+    csrf: String,
+}
+
+// ============================================================
+// 请求解析（带硬上限）
+// ============================================================
+
+/// 一次已经通过头部解析的请求。
+struct Request {
     method: String,
     path: String,
+    host: Option<String>,
+    origin: Option<String>,
+    csrf: Option<String>,
+    content_type: Option<String>,
     body: String,
 }
 
-fn handle(mut stream: TcpStream, translator: &Translator) -> std::io::Result<()> {
-    stream.set_read_timeout(Some(Duration::from_secs(30)))?;
-    stream.set_write_timeout(Some(Duration::from_secs(180)))?;
+/// 头部读取失败的原因（直接映射到 HTTP 状态码）。
+enum HeadError {
+    /// 请求头或请求行过大 → 431。
+    HeadersTooLarge,
+    /// 请求体超过上限 → 413（在读取之前拒绝）。
+    BodyTooLarge,
+    /// 报文格式错误（请求行、Content-Length 等）。
+    Malformed(String),
+    /// 不支持的传输方式（chunked）。
+    UnsupportedFraming,
+}
 
-    let Some(request) = read_request(&stream)? else {
-        return Ok(());
+impl HeadError {
+    fn status(&self) -> u16 {
+        match self {
+            Self::HeadersTooLarge => 431,
+            Self::BodyTooLarge => 413,
+            Self::Malformed(_) => 400,
+            Self::UnsupportedFraming => 400,
+        }
+    }
+
+    fn message(&self) -> String {
+        match self {
+            Self::HeadersTooLarge => "请求头超过大小限制".to_string(),
+            Self::BodyTooLarge => "请求体超过大小限制".to_string(),
+            Self::Malformed(msg) => msg.clone(),
+            Self::UnsupportedFraming => {
+                "不支持 Transfer-Encoding（请使用 Content-Length）".to_string()
+            }
+        }
+    }
+}
+
+fn read_request(stream: &TcpStream) -> Result<Request, HeadError> {
+    let mut reader = BufReader::new(
+        stream
+            .try_clone()
+            .map_err(|e| HeadError::Malformed(format!("无法读取连接：{e}")))?,
+    );
+
+    let mut total = 0usize;
+    let mut line = String::new();
+    read_line(&mut reader, &mut total, &mut line)?;
+    if line.is_empty() {
+        return Err(HeadError::Malformed("空请求行".to_string()));
+    }
+    let mut parts = line.split_whitespace();
+    let method = parts.next().unwrap_or("").to_string();
+    let path = parts.next().unwrap_or("/").to_string();
+    let version = parts.next().unwrap_or("");
+    if method.is_empty() || !version.starts_with("HTTP/1.") || parts.next().is_some() {
+        return Err(HeadError::Malformed("请求行格式非法".to_string()));
+    }
+
+    let mut host = None;
+    let mut origin = None;
+    let mut csrf = None;
+    let mut content_type = None;
+    let mut content_length: Option<usize> = None;
+    let mut header_count = 0usize;
+
+    loop {
+        read_line(&mut reader, &mut total, &mut line)?;
+        if line.is_empty() {
+            break;
+        }
+        header_count += 1;
+        if header_count > 64 {
+            return Err(HeadError::HeadersTooLarge);
+        }
+        let Some((name, value)) = line.split_once(':') else {
+            return Err(HeadError::Malformed(format!(
+                "非法请求头：{}",
+                truncate(&line, 40)
+            )));
+        };
+        let name_lower = name.trim().to_ascii_lowercase();
+        let value = value.trim().to_string();
+        match name_lower.as_str() {
+            "host" => host = Some(value),
+            "origin" => origin = Some(value),
+            "x-csrf-token" => csrf = Some(value),
+            "content-type" => content_type = Some(value),
+            "content-length" => {
+                if content_length.is_some() {
+                    return Err(HeadError::Malformed("重复的 Content-Length".to_string()));
+                }
+                let parsed: usize = value.parse().map_err(|_| {
+                    HeadError::Malformed(format!("非法 Content-Length：{}", truncate(&value, 20)))
+                })?;
+                if parsed > MAX_BODY_BYTES {
+                    // 超限必须在读取请求体**之前**拒绝，不能截断后继续处理
+                    return Err(HeadError::BodyTooLarge);
+                }
+                content_length = Some(parsed);
+            }
+            "transfer-encoding" => return Err(HeadError::UnsupportedFraming),
+            _ => {}
+        }
+    }
+
+    // 请求体：严格按 Content-Length 读满
+    let mut body = Vec::new();
+    if let Some(len) = content_length {
+        body.resize(len, 0);
+        reader
+            .read_exact(&mut body)
+            .map_err(|e| HeadError::Malformed(format!("读取请求体失败：{e}")))?;
+    }
+
+    Ok(Request {
+        method,
+        path,
+        host,
+        origin,
+        csrf,
+        content_type,
+        body: String::from_utf8_lossy(&body).to_string(),
+    })
+}
+
+/// 逐行读取（只认 `\n`，容忍 `\r\n`），并累计总字节数。
+fn read_line(
+    reader: &mut BufReader<TcpStream>,
+    total: &mut usize,
+    line: &mut String,
+) -> Result<(), HeadError> {
+    line.clear();
+    let mut raw = Vec::new();
+    loop {
+        let mut byte = [0u8; 1];
+        let n = reader
+            .read(&mut byte)
+            .map_err(|e| HeadError::Malformed(format!("读取请求头失败：{e}")))?;
+        if n == 0 {
+            break;
+        }
+        *total += 1;
+        if *total > MAX_HEAD_BYTES {
+            return Err(HeadError::HeadersTooLarge);
+        }
+        if byte[0] == b'\n' {
+            break;
+        }
+        if byte[0] != b'\r' {
+            raw.push(byte[0]);
+        }
+        if raw.len() > MAX_REQUEST_LINE {
+            return Err(HeadError::HeadersTooLarge);
+        }
+    }
+    *line = String::from_utf8_lossy(&raw).to_string();
+    Ok(())
+}
+
+// ============================================================
+// 校验规则（纯函数，便于测试）
+// ============================================================
+
+/// `Host` 必须是本机回环地址与实际监听端口（防 DNS rebinding）。
+fn host_allowed(host: Option<&str>, port: u16) -> bool {
+    let Some(host) = host else {
+        // HTTP/1.1 必须带 Host；缺失按不合法处理
+        return false;
+    };
+    let host = host.trim().to_ascii_lowercase();
+    host == format!("127.0.0.1:{port}") || host == format!("localhost:{port}")
+}
+
+/// 浏览器发起的跨站请求必须被拒绝；没有 Origin 的请求（curl / 本机页面）放行。
+fn origin_allowed(origin: Option<&str>, port: u16) -> bool {
+    let Some(origin) = origin else {
+        return true;
+    };
+    let origin = origin.trim().to_ascii_lowercase();
+    origin == format!("http://127.0.0.1:{port}") || origin == format!("http://localhost:{port}")
+}
+
+/// CSRF 令牌比较（定长比较，避免明显的时序差异）。
+fn csrf_matches(provided: Option<&str>, expected: &str) -> bool {
+    let Some(provided) = provided else {
+        return false;
+    };
+    if provided.len() != expected.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (a, b) in provided.as_bytes().iter().zip(expected.as_bytes()) {
+        diff |= a ^ b;
+    }
+    diff == 0
+}
+
+/// POST 必须是 JSON。
+fn content_type_allowed(value: Option<&str>) -> bool {
+    let Some(value) = value else {
+        return false;
+    };
+    let value = value.trim().to_ascii_lowercase();
+    value == "application/json" || value.starts_with("application/json;")
+}
+
+fn truncate(text: &str, max: usize) -> String {
+    text.chars().take(max).collect()
+}
+
+// ============================================================
+// 路由与响应
+// ============================================================
+
+fn handle(mut stream: TcpStream, state: &ServerState, port: u16) -> std::io::Result<()> {
+    stream.set_read_timeout(Some(READ_TIMEOUT))?;
+    stream.set_write_timeout(Some(WRITE_TIMEOUT))?;
+
+    let request = match read_request(&stream) {
+        Ok(request) => request,
+        Err(err) => {
+            return respond_json(
+                &mut stream,
+                err.status(),
+                &serde_json::json!({ "error": err.message() }).to_string(),
+            );
+        }
     };
 
-    match (
-        request.method.as_str(),
-        request.path.split('?').next().unwrap_or(""),
-    ) {
-        ("GET", "/") | ("GET", "/index.html") => respond_html(&mut stream, INDEX_HTML),
+    // Host 校验对所有请求生效
+    if !host_allowed(request.host.as_deref(), port) {
+        return respond_json(
+            &mut stream,
+            403,
+            &serde_json::json!({ "error": "非法的 Host" }).to_string(),
+        );
+    }
+
+    let path = request.path.split('?').next().unwrap_or("").to_string();
+    match (request.method.as_str(), path.as_str()) {
+        ("GET", "/") | ("GET", "/index.html") => {
+            let html = INDEX_HTML.replace("{{CSRF_TOKEN}}", &state.csrf);
+            respond_html(&mut stream, &html)
+        }
+        ("HEAD", "/") => respond_head(&mut stream, "text/html; charset=utf-8"),
         ("GET", "/api/health") => {
             let body = serde_json::json!({
                 "status": "ok",
-                "backends": translator.backend_ids(),
-                "mode": format!("{:?}", translator.default_options().mode),
+                "backends": state.translator.backend_ids(),
+                "mode": format!("{:?}", state.translator.default_options().mode),
             })
             .to_string();
             respond_json(&mut stream, 200, &body)
         }
-        ("POST", "/api/translate") => match translate(translator, &request.body) {
-            Ok(body) => respond_json(&mut stream, 200, &body),
-            Err(message) => respond_json(
-                &mut stream,
-                400,
-                &serde_json::json!({ "error": message }).to_string(),
-            ),
-        },
-        ("POST", "/api/lookup") => match lookup(translator, &request.body) {
-            Ok(body) => respond_json(&mut stream, 200, &body),
-            Err(message) => respond_json(
-                &mut stream,
-                400,
-                &serde_json::json!({ "error": message }).to_string(),
-            ),
-        },
-        _ => respond_json(
+        ("POST", "/api/translate") | ("POST", "/api/lookup") => {
+            if !origin_allowed(request.origin.as_deref(), port) {
+                return respond_json(
+                    &mut stream,
+                    403,
+                    &serde_json::json!({ "error": "非法的 Origin" }).to_string(),
+                );
+            }
+            if !csrf_matches(request.csrf.as_deref(), &state.csrf) {
+                return respond_json(
+                    &mut stream,
+                    403,
+                    &serde_json::json!({ "error": "缺少或错误的 CSRF 令牌" }).to_string(),
+                );
+            }
+            if !content_type_allowed(request.content_type.as_deref()) {
+                return respond_json(
+                    &mut stream,
+                    415,
+                    &serde_json::json!({ "error": "Content-Type 必须是 application/json" })
+                        .to_string(),
+                );
+            }
+            let outcome = if path == "/api/translate" {
+                translate(&state.translator, &request.body)
+            } else {
+                lookup(&state.translator, &request.body)
+            };
+            match outcome {
+                Ok(body) => respond_json(&mut stream, 200, &body),
+                Err(message) => respond_json(
+                    &mut stream,
+                    400,
+                    &serde_json::json!({ "error": message }).to_string(),
+                ),
+            }
+        }
+        ("GET", _) | ("HEAD", _) => respond_json(
             &mut stream,
             404,
             &serde_json::json!({ "error": "not found" }).to_string(),
         ),
+        _ => respond_json_with_allow(
+            &mut stream,
+            405,
+            &serde_json::json!({ "error": "method not allowed" }).to_string(),
+        ),
     }
-}
-
-fn read_request(stream: &TcpStream) -> std::io::Result<Option<HttpRequest>> {
-    let mut reader = BufReader::new(stream.try_clone()?);
-    let mut request_line = String::new();
-    if reader.read_line(&mut request_line)? == 0 {
-        return Ok(None);
-    }
-    let mut parts = request_line.split_whitespace();
-    let method = parts.next().unwrap_or("").to_string();
-    let path = parts.next().unwrap_or("/").to_string();
-
-    let mut content_length = 0usize;
-    loop {
-        let mut line = String::new();
-        if reader.read_line(&mut line)? == 0 {
-            break;
-        }
-        let trimmed = line.trim_end_matches(['\r', '\n']);
-        if trimmed.is_empty() {
-            break;
-        }
-        if let Some((k, v)) = trimmed.split_once(':') {
-            if k.eq_ignore_ascii_case("content-length") {
-                content_length = v.trim().parse().unwrap_or(0);
-            }
-        }
-    }
-
-    let mut body = vec![0u8; content_length.min(1 << 20)];
-    if content_length > 0 {
-        reader.read_exact(&mut body)?;
-    }
-
-    Ok(Some(HttpRequest {
-        method,
-        path,
-        body: String::from_utf8_lossy(&body).to_string(),
-    }))
 }
 
 fn translate(translator: &Translator, body: &str) -> Result<String, String> {
@@ -178,6 +445,7 @@ fn translate(translator: &Translator, body: &str) -> Result<String, String> {
         "attempts": output.diagnostics.attempts,
         "cached": output.diagnostics.cache_hit,
         "protection": output.diagnostics.protection_strategy,
+        "repair": output.diagnostics.repair,
         "warnings": output.result.warnings.iter().map(|w| format!("{w:?}")).collect::<Vec<_>>(),
         "quality": output.diagnostics.quality.as_ref().map(|q| serde_json::json!({
             "fatal": q.has_fatal(),
@@ -215,46 +483,100 @@ fn lookup(translator: &Translator, body: &str) -> Result<String, String> {
     Ok(serde_json::json!({ "entries": list }).to_string())
 }
 
+fn security_headers() -> &'static str {
+    "X-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nX-Frame-Options: DENY\r\n"
+}
+
 fn respond_json(stream: &mut TcpStream, status: u16, body: &str) -> std::io::Result<()> {
-    respond(
-        stream,
-        status,
-        "application/json; charset=utf-8",
-        body.as_bytes(),
-    )
+    respond_json_inner(stream, status, body, "")
 }
 
-fn respond_html(stream: &mut TcpStream, body: &str) -> std::io::Result<()> {
-    respond(stream, 200, "text/html; charset=utf-8", body.as_bytes())
+fn respond_json_with_allow(stream: &mut TcpStream, status: u16, body: &str) -> std::io::Result<()> {
+    respond_json_inner(stream, status, body, "Allow: GET, HEAD, POST\r\n")
 }
 
-fn respond(
+fn respond_json_inner(
     stream: &mut TcpStream,
     status: u16,
-    content_type: &str,
-    body: &[u8],
+    body: &str,
+    extra: &str,
 ) -> std::io::Result<()> {
-    let reason = match status {
-        200 => "OK",
-        400 => "Bad Request",
-        404 => "Not Found",
-        _ => "Status",
-    };
-    let head = format!(
-        "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
-        body.len()
+    let payload = format!(
+        "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\n{extra}{security}Connection: close\r\n\r\n{body}",
+        body.len(),
+        reason = reason(status),
+        extra = extra,
+        security = security_headers(),
+        body = body
     );
-    stream.write_all(head.as_bytes())?;
-    stream.write_all(body)?;
+    stream.write_all(payload.as_bytes())?;
     stream.flush()
 }
 
-/// 单页界面。刻意不引用任何外部资源：离线也能用。
+fn respond_html(stream: &mut TcpStream, body: &str) -> std::io::Result<()> {
+    let payload = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\n{}Connection: close\r\n\r\n{}",
+        body.len(),
+        security_headers(),
+        body
+    );
+    stream.write_all(payload.as_bytes())?;
+    stream.flush()
+}
+
+fn respond_head(stream: &mut TcpStream, content_type: &str) -> std::io::Result<()> {
+    let payload = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: 0\r\nCache-Control: no-store\r\n{}Connection: close\r\n\r\n",
+        security_headers()
+    );
+    stream.write_all(payload.as_bytes())?;
+    stream.flush()
+}
+
+fn reason(status: u16) -> &'static str {
+    match status {
+        200 => "OK",
+        400 => "Bad Request",
+        403 => "Forbidden",
+        404 => "Not Found",
+        405 => "Method Not Allowed",
+        413 => "Payload Too Large",
+        415 => "Unsupported Media Type",
+        431 => "Request Header Fields Too Large",
+        _ => "Status",
+    }
+}
+
+/// 生成随机会话令牌（每次启动不同，不是硬编码常量）。
+fn generate_token() -> String {
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hasher};
+
+    let state = RandomState::new();
+    let mut hasher = state.build_hasher();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    hasher.write_u128(nanos);
+    hasher.write_u32(std::process::id());
+    let first = hasher.finish();
+
+    let mut second_hasher = state.build_hasher();
+    second_hasher.write_u64(first);
+    second_hasher.write_u64(0x9E37_79B9_7F4A_7C15);
+    let second = second_hasher.finish();
+
+    format!("{first:016x}{second:016x}")
+}
+
+/// 单页界面。刻意不引用任何外部资源：离线也能用；渲染一律用 textContent。
 const INDEX_HTML: &str = r#"<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf-token" content="{{CSRF_TOKEN}}">
 <title>英译中翻译</title>
 <style>
   :root { color-scheme: light dark; }
@@ -276,6 +598,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
   .err { color: #dc2626; }
   input[type=text] { padding: .45rem; font: inherit; border-radius: 8px; border: 1px solid #8884; }
   ul { padding-left: 1.2rem; }
+  .entry-head { font-weight: 600; }
 </style>
 </head>
 <body>
@@ -303,57 +626,99 @@ const INDEX_HTML: &str = r#"<!doctype html>
 <div id="dict"></div>
 
 <script>
-const $ = (id) => document.getElementById(id);
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var CSRF = document.querySelector('meta[name="csrf-token"]').getAttribute("content");
 
-async function postJSON(url, payload) {
-  const res = await fetch(url, { method: 'POST', headers: {'content-type':'application/json'},
-                                 body: JSON.stringify(payload) });
-  const data = await res.json().catch(() => ({ error: '响应不是 JSON' }));
-  if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
-  return data;
-}
+  function setText(el, value) { el.textContent = value; }
 
-$('go').onclick = async () => {
-  const text = $('input').value.trim();
-  if (!text) return;
-  const mode = document.querySelector('input[name=mode]:checked').value;
-  $('go').disabled = true;
-  $('out').textContent = '翻译中…';
-  $('meta').textContent = ''; $('warn').textContent = '';
-  $('out').className = 'out';
-  try {
-    const data = await postJSON('/api/translate', { text, mode });
-    $('out').textContent = data.text;
-    const q = data.quality ? ` · ${data.quality.summary}` : '';
-    $('meta').textContent = `${data.engine_id} · ${data.elapsed_ms} ms · 保护=${data.protection}` +
-      (data.cached ? ' · 命中缓存' : '') + (data.attempts > 1 ? ` · 尝试${data.attempts}次` : '') + q;
-    if (data.warnings && data.warnings.length) $('warn').textContent = '⚠ ' + data.warnings.join('；');
-  } catch (e) {
-    $('out').textContent = '翻译失败';
-    $('out').className = 'out err';
-    $('meta').textContent = e.message;
-  } finally {
-    $('go').disabled = false;
+  async function postJSON(url, payload) {
+    var res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-csrf-token": CSRF },
+      body: JSON.stringify(payload),
+    });
+    var data = await res.json().catch(function () { return { error: "响应不是 JSON" }; });
+    if (!res.ok) { throw new Error(data.error || ("HTTP " + res.status)); }
+    return data;
   }
-};
 
-$('clear').onclick = () => { $('input').value = ''; $('out').textContent = '';
-  $('meta').textContent = ''; $('warn').textContent = ''; };
+  $("go").onclick = async function () {
+    var text = $("input").value.trim();
+    if (!text) { return; }
+    var mode = document.querySelector("input[name=mode]:checked").value;
+    $("go").disabled = true;
+    setText($("out"), "翻译中…");
+    $("out").className = "out";
+    setText($("meta"), ""); setText($("warn"), "");
+    try {
+      var data = await postJSON("/api/translate", { text: text, mode: mode });
+      setText($("out"), data.text);
+      var q = data.quality ? " · " + data.quality.summary : "";
+      setText($("meta"),
+        data.engine_id + " · " + data.elapsed_ms + " ms · 保护=" + data.protection +
+        (data.cached ? " · 命中缓存" : "") +
+        (data.attempts > 1 ? " · 尝试" + data.attempts + "次" : "") +
+        (data.repair === "rejected" ? " · 格式修复已回退" : "") + q);
+      if (data.warnings && data.warnings.length) {
+        setText($("warn"), "⚠ " + data.warnings.join("；"));
+      }
+    } catch (e) {
+      setText($("out"), "翻译失败");
+      $("out").className = "out err";
+      setText($("meta"), e.message);
+    } finally {
+      $("go").disabled = false;
+    }
+  };
 
-$('lookup').onclick = async () => {
-  const term = $('term').value.trim();
-  if (!term) return;
-  $('dict').textContent = '查询中…';
-  try {
-    const data = await postJSON('/api/lookup', { term });
-    if (!data.entries.length) { $('dict').textContent = '未找到'; return; }
-    $('dict').innerHTML = data.entries.map(e =>
-      `<p><b>${e.headword}</b> <span class="meta">[${e.source_id}]</span></p>` +
-      '<ul>' + e.senses.map(s => `<li>${s}</li>`).join('') + '</ul>').join('');
-  } catch (e) {
-    $('dict').textContent = '查词失败：' + e.message;
+  $("clear").onclick = function () {
+    $("input").value = "";
+    setText($("out"), ""); setText($("meta"), ""); setText($("warn"), "");
+  };
+
+  // 词典渲染：全部走 createElement + textContent，绝不把词典数据当 HTML 解析
+  function renderEntries(entries) {
+    var container = $("dict");
+    while (container.firstChild) { container.removeChild(container.firstChild); }
+    if (!entries.length) { setText(container, "未找到"); return; }
+
+    entries.forEach(function (entry) {
+      var head = document.createElement("p");
+      var name = document.createElement("span");
+      name.className = "entry-head";
+      setText(name, entry.headword);
+      head.appendChild(name);
+      var source = document.createElement("span");
+      source.className = "meta";
+      setText(source, "  [" + entry.source_id + "]");
+      head.appendChild(source);
+      container.appendChild(head);
+
+      var list = document.createElement("ul");
+      entry.senses.forEach(function (sense) {
+        var li = document.createElement("li");
+        setText(li, sense);
+        list.appendChild(li);
+      });
+      container.appendChild(list);
+    });
   }
-};
+
+  $("lookup").onclick = async function () {
+    var term = $("term").value.trim();
+    if (!term) { return; }
+    var container = $("dict");
+    setText(container, "查询中…");
+    try {
+      var data = await postJSON("/api/lookup", { term: term });
+      renderEntries(data.entries || []);
+    } catch (e) {
+      setText(container, "查词失败：" + e.message);
+    }
+  };
+})();
 </script>
 </body>
 </html>
@@ -364,15 +729,66 @@ mod tests {
     use super::*;
 
     #[test]
-    fn 页面不引用外部资源() {
-        assert!(!INDEX_HTML.contains("http://"));
-        assert!(!INDEX_HTML.contains("https://"));
-        assert!(INDEX_HTML.contains("/api/translate"));
-        assert!(INDEX_HTML.contains("/api/lookup"));
+    fn 只绑定回环地址() {
+        assert_eq!(BIND_HOST, "127.0.0.1", "界面不得监听非回环地址");
     }
 
     #[test]
-    fn 只绑定回环地址() {
-        assert_eq!(BIND_HOST, "127.0.0.1", "界面不得监听非回环地址");
+    fn 页面不引用外部资源且不使用_innerhtml() {
+        assert!(!INDEX_HTML.contains("http://"));
+        assert!(!INDEX_HTML.contains("https://"));
+        assert!(
+            !INDEX_HTML.contains("innerHTML"),
+            "词典渲染不得使用 innerHTML"
+        );
+        assert!(INDEX_HTML.contains("textContent"));
+        assert!(INDEX_HTML.contains("createElement"));
+        assert!(INDEX_HTML.contains("{{CSRF_TOKEN}}"));
+    }
+
+    #[test]
+    fn host_只接受本机与当前端口() {
+        assert!(host_allowed(Some("127.0.0.1:8765"), 8765));
+        assert!(host_allowed(Some("localhost:8765"), 8765));
+        assert!(host_allowed(Some("LOCALHOST:8765"), 8765));
+        assert!(!host_allowed(Some("127.0.0.1:9999"), 8765));
+        assert!(!host_allowed(Some("evil.example:8765"), 8765));
+        assert!(!host_allowed(Some("127.0.0.1"), 8765));
+        assert!(!host_allowed(None, 8765));
+    }
+
+    #[test]
+    fn origin_只接受同源() {
+        assert!(origin_allowed(None, 8765));
+        assert!(origin_allowed(Some("http://127.0.0.1:8765"), 8765));
+        assert!(origin_allowed(Some("http://localhost:8765"), 8765));
+        assert!(!origin_allowed(Some("http://evil.example"), 8765));
+        assert!(!origin_allowed(Some("http://127.0.0.1:9999"), 8765));
+        assert!(!origin_allowed(Some("null"), 8765));
+    }
+
+    #[test]
+    fn csrf_必须精确匹配且每次启动不同() {
+        let token = generate_token();
+        assert_eq!(token.len(), 32);
+        assert!(csrf_matches(Some(&token), &token));
+        assert!(!csrf_matches(None, &token));
+        assert!(!csrf_matches(Some(""), &token));
+        assert!(!csrf_matches(Some(&token[..31]), &token));
+        assert_ne!(generate_token(), token, "令牌必须每次不同");
+    }
+
+    #[test]
+    fn content_type_必须是_json() {
+        assert!(content_type_allowed(Some("application/json")));
+        assert!(content_type_allowed(Some(
+            "application/json; charset=utf-8"
+        )));
+        assert!(content_type_allowed(Some("APPLICATION/JSON")));
+        assert!(!content_type_allowed(Some("text/html")));
+        assert!(!content_type_allowed(Some(
+            "application/x-www-form-urlencoded"
+        )));
+        assert!(!content_type_allowed(None));
     }
 }

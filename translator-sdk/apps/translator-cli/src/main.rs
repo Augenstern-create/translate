@@ -32,10 +32,9 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-mod serve;
-
 use serde::Deserialize;
 use translator_api::{Translator, TranslatorBuilder};
+use translator_cli::serve;
 use translator_http::{BackendConfig, BackendsFile, HttpSettings};
 use translator_types::{
     LanguageTag, LookupRequest, TextKind, TranslateRequest, TranslationError, TranslationMode,
