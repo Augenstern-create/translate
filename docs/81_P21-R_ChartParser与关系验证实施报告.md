@@ -110,8 +110,8 @@ SemanticTransfer::transfer_graph(&SyntaxGraph) -> Option<MeaningGraph>
 ## 7. 回归
 
 - 320：chrF `0.5172 → 0.5196`、BLEU `0.5192 → 0.5210`、NMT 289、Rule 33、0 回归、3 改善；
-- 默认测试：549 / 0 / 60；
-- 全特性：562 / 0 / 67；
+- 默认测试：550 / 0 / 60；
+- 全特性：563 / 0 / 67；
 - P19 36/36；P21 专项 20/20；高级 8/8；矩阵 100/100；后置 20/20；独立 20/20；
 - 文档结构 1.0；
 - 人工评审 118 行 `PENDING_HUMAN`。
@@ -138,27 +138,34 @@ candidate_score: u32
 legacy_reason: Option<String>
 ```
 
-`candidate_score` 由 MeaningGraph 关系数和 SyntaxGraph 边数构成，用于多候选排序；它仍是启发式分数，不是概率模型。
+`candidate_score` 由 MeaningGraph 关系数和 SyntaxGraph 边数构成；`analyze_single` 选择最高分候选，只有同分且语义不同的候选才拒绝。该分数仍是启发式，不是概率模型。
 
 - Chart 成功时 `legacy_reason = None`；
 - 旧路径回退时记录 `chart-unsupported`；
-- 该字段只提供隔离诊断，不把旧路径宣称为已退场。
+- 若已存在完整 Chart 候选但语义/验证失败，直接拒绝，不再转入旧 SyntaxAnalyzer；
+- 旧路径只在完全没有 Chart 候选时作为兼容路径。
 
 ## 9. 复审问题整改记录
 
 | 复审问题 | 本次处置 | 验证 |
 |---|---|---|
 | `NP → DET NP` 方向错误 | 调用改为 left=DET, right=NP | `限定词短语由_chart组合`，`The dog saw the cat.` 直接 Chart 解析并断言 Determiner/Subject/Object |
-| 同跨度只保留一个候选 | `by_span` 改为 `Vec<usize>`；组合器枚举左右候选；`analyze_single` 逐个候选进行语义转换和验证 | `chart_保留跨度候选`；完整 packed forest/概率消歧仍未完成 |
+| 同跨度只保留一个候选 | `by_span` 为 `Vec<usize>`；删除 `get()` first-match，所有一元/二元/三元规则统一使用 `get_all()` 枚举；`analyze_single` 逐候选验证 | `chart_保留跨度候选`；完整 packed forest/概率消歧仍未完成 |
 | 多个修饰被覆盖 | `NpFacts.modifiers: Vec`，目标 NP 逐个生成 Modifier | `She bought two beautiful new books.` 断言 2 条 Modifier 关系 |
 | 多个状语被覆盖 | `VpFacts.adverbials: Vec`，逐个生成 Time 关系/目标节点 | 多个 Time 关系保留 |
 | 基础并列 | 增加 `np.coord3` 三元组合、`coordination` 关系、目标“和”连接 | `The dog and the cat saw the man.` 走 Chart，输出包含“和” |
-| 关系从句 | 增加 `Rel`、`NP REL VP → NP`、`Relative` 事件、目标“V+O+的+N” | `The man who saw the dog ran.` 走 Chart，输出包含“看见狗” |
+| 关系从句 | 增加 `Rel`、`NP REL VP → NP`、`Relative` 事件、目标 Relative 子树（Verb/Patient + 的） | `The man who saw the dog ran.` 走 Chart，输出包含“看见狗” |
+| 关系从句否定 | Relative 事件支持 Scope → 目标 Relative 内的 Negation | `The man who didn't see the dog ran.` 走 Chart，输出包含“没看见” |
+| 嵌套关系拒绝 | 多个 Relative head 时直接返回 None，不生成错误简化译文 | `The man who saw the dog that saw the cat ran.` 被拒绝 |
 | 对象并列 | 增加 `V + NP CONJ NP` 的 VP/Clause 组合、对象 Coordination 目标“猫和男人” | `The dog saw the cat and the man.` 走 Chart；`I bought two books and three pens.` 也走 Chart |
+| 多并列 | 增加 `np.coord5` / `np.coord7`，保留 3–4 个并列实体 | `The dog and the cat and the man ran.`、`The dog and the cat and the man and the woman ran.` 走 Chart |
 | 从句并列 | 增加 `CLAUSE CONJ CLAUSE → CLAUSE`、子句拆分、ClauseCoordination 与目标“，”连接 | `The dog ran and the cat slept.` 走 Chart，输出 `狗跑了，猫睡觉了。` |
 | want/否定作用域 | 增加 `V INF VP → VP`、Complement 关系和补语 Patient 关系 | `I don't want to go.`、`I want to buy a book.` 走 Chart，否定绑定 WANT |
 | 条件否定 | 条件主句复用 Chart 路径 | `If it rains, I don't go.` 走 Chart，输出 `如果下雨，我不去。` |
-| PP 附着 | 增加 P/Pp、`Pp → P NP`、`NP → NP PP`、`VP → VP PP`；VP PP 支持 Location/Instrument，NP PP 支持 PpModifier 目标修饰 | `She went to school.` 走 Chart；`The dog saw the man with a book.` 保留多个 PP 附着候选 |
+| 条件 + want | 条件主句复用 want/否定 Chart 路径 | `If it rains, I don't want to go.` 走 Chart，输出 `如果下雨，我不想去。` |
+| 否定条件 | 条件分句自身走 Chart 否定路径 | `If it doesn't rain, I go.` 走 Chart，输出 `如果不下雨，我去。` |
+| 条件分句并列 | 条件分句走 Clause Coordination，主句走 Chart place | `If it rains and it rains, I stay home.` 走 Chart，整体验证通过 |
+| PP 附着 | `Pp → P NP`、`NP → NP PP`、`VP → VP PP`；VP PP 支持 Location/Instrument，NP PP 用 Relative 子树实现修饰 | `She went to school.`、`The man in the house ran.`、`The man in the house with a dog ran.` 走 Chart |
 | 路由不透明 | `PipelineOutput.route: ParserRoute::{Chart,LegacyLinear}`；Chart 成功样本断言 `ParserRoute::Chart` | p80 主样本、限定词样本 |
 | Validator 类型兜底 | 节点映射改为严格 `source == idx && kind == expected`，不再按类型兜底 | p80 主样本与反例 |
 | 只验证角色标签 | Agent/Patient 同时检查目标 NP 结构位置（subject/object，或被动反向）与 source/role | 保持 source/role 不变、只交换目标 NP 位置的测试必须拒绝 |

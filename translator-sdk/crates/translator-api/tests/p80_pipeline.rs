@@ -241,6 +241,42 @@ fn 纵向链路生成全部中间结构() {
     let out = pipeline::analyze("If it rains, I don't go.", &lexicon).expect("cond-neg");
     assert_eq!(out.route, pipeline::ParserRoute::Chart);
     assert_eq!(out.text, "如果下雨，我不去。");
+    let out = pipeline::analyze("If it rains, I don't want to go.", &lexicon).expect("cond-want");
+    assert_eq!(out.route, pipeline::ParserRoute::Chart);
+    assert_eq!(out.text, "如果下雨，我不想去。");
+    assert!(out.validation.valid);
+    let out = pipeline::analyze("The man in the house ran.", &lexicon).expect("np-pp");
+    assert_eq!(out.route, pipeline::ParserRoute::Chart);
+    assert!(out.text.contains("在"));
+    assert!(out.text.contains("房子"));
+    let out =
+        pipeline::analyze("The man in the house with a dog ran.", &lexicon).expect("multi-pp");
+    assert_eq!(out.route, pipeline::ParserRoute::Chart);
+    assert!(out.text.contains("房子"));
+    assert!(out.text.contains("狗"));
+    let out = pipeline::analyze("If it doesn't rain, I go.", &lexicon).expect("cond-neg-rain");
+    assert_eq!(out.route, pipeline::ParserRoute::Chart);
+    assert_eq!(out.text, "如果不下雨，我去。");
+    assert!(out.validation.valid);
+    let out = pipeline::analyze("The dog and the cat and the man ran.", &lexicon).expect("coord5");
+    assert_eq!(out.route, pipeline::ParserRoute::Chart);
+    assert!(out.text.matches("和").count() >= 2);
+    let out = pipeline::analyze("The man who didn't see the dog ran.", &lexicon).expect("rel-neg");
+    assert_eq!(out.route, pipeline::ParserRoute::Chart);
+    assert!(out.text.contains("没"));
+    assert!(out.text.contains("看见"));
+    assert!(pipeline::analyze("The man who saw the dog that saw the cat ran.", &lexicon).is_none());
+    let out =
+        pipeline::analyze("If it rains and it rains, I stay home.", &lexicon).expect("cond-coord");
+    assert_eq!(out.route, pipeline::ParserRoute::Chart);
+    assert!(out.validation.valid);
+    let out = pipeline::analyze(
+        "The dog and the cat and the man and the woman ran.",
+        &lexicon,
+    )
+    .expect("coord7");
+    assert_eq!(out.route, pipeline::ParserRoute::Chart);
+    assert!(out.text.matches("和").count() >= 3);
     let out = pipeline::analyze("She went to school.", &lexicon).expect("pp");
     assert_eq!(out.route, pipeline::ParserRoute::Chart);
     assert!(out.text.contains("学校"));
@@ -467,4 +503,32 @@ fn clause_coord_syntax() {
     let out = pipeline::analyze("The dog ran and the cat slept.", &lexicon).expect("clause-coord");
     assert_eq!(out.route, pipeline::ParserRoute::Chart);
     assert_eq!(out.text, "狗跑了，猫睡觉了。");
+}
+
+#[test]
+fn quantity_位置错误必须拒绝() {
+    let lexicon = test_lexicon();
+    let out = pipeline::analyze("I bought two books and three pens.", &lexicon).expect("quantity");
+    assert_eq!(out.route, pipeline::ParserRoute::Chart);
+    let mut bad = out.chinese.clone();
+    let quantities: Vec<usize> = bad
+        .nodes
+        .iter()
+        .filter(|node| node.kind == pipeline::ChineseNodeKind::Quantity)
+        .map(|node| node.id)
+        .collect();
+    assert!(quantities.len() >= 2);
+    let parents: Vec<(usize, usize)> = bad
+        .nodes
+        .iter()
+        .flat_map(|node| node.children.iter().map(move |child| (node.id, *child)))
+        .filter(|(_, child)| bad.nodes[*child].kind == pipeline::ChineseNodeKind::Quantity)
+        .collect();
+    let (first_parent, first_quantity) = parents[0];
+    let (second_parent, _) = parents[1];
+    bad.nodes[first_parent]
+        .children
+        .retain(|child| *child != first_quantity);
+    bad.nodes[second_parent].children.push(first_quantity);
+    assert!(!pipeline::validate(&out.meaning, &bad).valid);
 }

@@ -834,11 +834,11 @@ impl Chart {
         true
     }
 
-    fn get(&self, start: usize, end: usize, category: ChartCategory) -> Option<&ChartItem> {
-        self.by_span
-            .get(&(start, end, category))
-            .and_then(|ids| ids.first())
-            .and_then(|id| self.items.get(*id))
+    pub fn get_all(&self, start: usize, end: usize, category: ChartCategory) -> Vec<ChartItem> {
+        self.candidates(start, end, category)
+            .into_iter()
+            .cloned()
+            .collect()
     }
 
     pub fn candidates(&self, start: usize, end: usize, category: ChartCategory) -> Vec<&ChartItem> {
@@ -1040,7 +1040,7 @@ impl<'a> ChartParser<'a> {
                     negated: false,
                     past: false,
                 });
-            } else if is_time {
+            } else if is_time || matches!(surface.as_str(), "home" | "here" | "there") {
                 chart.add(ChartItem {
                     id: 0,
                     start: i,
@@ -1142,7 +1142,7 @@ impl<'a> ChartParser<'a> {
             // unary: N -> NP, V -> VP
             for start in 0..words.len() {
                 for end in (start + 1)..=words.len() {
-                    if let Some(n) = chart.get(start, end, ChartCategory::N).cloned() {
+                    for n in chart.get_all(start, end, ChartCategory::N) {
                         changed |= chart.add(ChartItem {
                             id: 0,
                             start,
@@ -1157,7 +1157,7 @@ impl<'a> ChartParser<'a> {
                             past: n.past,
                         });
                     }
-                    if let Some(v) = chart.get(start, end, ChartCategory::V).cloned() {
+                    for v in chart.get_all(start, end, ChartCategory::V) {
                         changed |= chart.add(ChartItem {
                             id: 0,
                             start,
@@ -1177,31 +1177,33 @@ impl<'a> ChartParser<'a> {
             if chart.items.len() > 2048 {
                 return None;
             }
-            // V INF VP -> VP (control complement).
+            // V INF VP -> VP (control complement), all candidates.
             for start in 0..words.len() {
                 for mid1 in (start + 1)..words.len() {
                     for mid2 in (mid1 + 1)..words.len() {
                         for end in (mid2 + 1)..=words.len() {
-                            let (Some(verb), Some(inf), Some(vp)) = (
-                                chart.get(start, mid1, ChartCategory::V).cloned(),
-                                chart.get(mid1, mid2, ChartCategory::Inf).cloned(),
-                                chart.get(mid2, end, ChartCategory::Vp).cloned(),
-                            ) else {
-                                continue;
-                            };
-                            changed |= chart.add(ChartItem {
-                                id: 0,
-                                start,
-                                end,
-                                category: ChartCategory::Vp,
-                                rule: "vp.inf",
-                                children: vec![verb.id, inf.id, vp.id],
-                                head: verb.head.clone(),
-                                lemma: verb.lemma.clone(),
-                                pos: verb.pos.clone(),
-                                negated: verb.negated || vp.negated,
-                                past: verb.past || vp.past,
-                            });
+                            let verbs = chart.get_all(start, mid1, ChartCategory::V);
+                            let infs = chart.get_all(mid1, mid2, ChartCategory::Inf);
+                            let vps = chart.get_all(mid2, end, ChartCategory::Vp);
+                            for verb in &verbs {
+                                for inf in &infs {
+                                    for vp in &vps {
+                                        changed |= chart.add(ChartItem {
+                                            id: 0,
+                                            start,
+                                            end,
+                                            category: ChartCategory::Vp,
+                                            rule: "vp.inf",
+                                            children: vec![verb.id, inf.id, vp.id],
+                                            head: verb.head.clone(),
+                                            lemma: verb.lemma.clone(),
+                                            pos: verb.pos.clone(),
+                                            negated: verb.negated || vp.negated,
+                                            past: verb.past || vp.past,
+                                        });
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1372,42 +1374,199 @@ impl<'a> ChartParser<'a> {
             for mid1 in (start + 1)..words.len() {
                 for mid2 in (mid1 + 1)..words.len() {
                     for end in (mid2 + 1)..=words.len() {
-                        let (Some(left), Some(conj), Some(right)) = (
-                            chart.get(start, mid1, ChartCategory::Np).cloned(),
-                            chart.get(mid1, mid2, ChartCategory::Conj).cloned(),
-                            chart.get(mid2, end, ChartCategory::Np).cloned(),
-                        ) else {
-                            continue;
-                        };
-                        chart.add(ChartItem {
-                            id: 0,
-                            start,
-                            end,
-                            category: ChartCategory::Np,
-                            rule: "np.coord3",
-                            children: vec![left.id, conj.id, right.id],
-                            head: left.head.clone(),
-                            lemma: left.lemma.clone(),
-                            pos: left.pos.clone(),
-                            negated: left.negated || right.negated,
-                            past: left.past || right.past,
-                        });
+                        let lefts = chart.get_all(start, mid1, ChartCategory::Np);
+                        let conjs = chart.get_all(mid1, mid2, ChartCategory::Conj);
+                        let rights = chart.get_all(mid2, end, ChartCategory::Np);
+                        for left in &lefts {
+                            for conj in &conjs {
+                                for right in &rights {
+                                    chart.add(ChartItem {
+                                        id: 0,
+                                        start,
+                                        end,
+                                        category: ChartCategory::Np,
+                                        rule: "np.coord3",
+                                        children: vec![left.id, conj.id, right.id],
+                                        head: left.head.clone(),
+                                        lemma: left.lemma.clone(),
+                                        pos: left.pos.clone(),
+                                        negated: left.negated || right.negated,
+                                        past: left.past || right.past,
+                                    });
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
+        // Three-conjunct NP coordination, represented directly to preserve quantities.
+        for start in 0..words.len() {
+            for m1 in (start + 1)..words.len() {
+                for m2 in (m1 + 1)..words.len() {
+                    for m3 in (m2 + 1)..words.len() {
+                        for m4 in (m3 + 1)..words.len() {
+                            for end in (m4 + 1)..=words.len() {
+                                let as_ = chart.get_all(start, m1, ChartCategory::Np);
+                                let c1s = chart.get_all(m1, m2, ChartCategory::Conj);
+                                let bs = chart.get_all(m2, m3, ChartCategory::Np);
+                                let c2s = chart.get_all(m3, m4, ChartCategory::Conj);
+                                let cs = chart.get_all(m4, end, ChartCategory::Np);
+                                for a in &as_ {
+                                    for c1 in &c1s {
+                                        for b in &bs {
+                                            for c2 in &c2s {
+                                                for c in &cs {
+                                                    chart.add(ChartItem {
+                                                        id: 0,
+                                                        start,
+                                                        end,
+                                                        category: ChartCategory::Np,
+                                                        rule: "np.coord5",
+                                                        children: vec![
+                                                            a.id, c1.id, b.id, c2.id, c.id,
+                                                        ],
+                                                        head: a.head.clone(),
+                                                        lemma: a.lemma.clone(),
+                                                        pos: a.pos.clone(),
+                                                        negated: a.negated
+                                                            || b.negated
+                                                            || c.negated,
+                                                        past: a.past || b.past || c.past,
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Four-conjunct NP coordination.
+        for b1 in 1..words.len() {
+            for b2 in (b1 + 1)..words.len() {
+                for b3 in (b2 + 1)..words.len() {
+                    for b4 in (b3 + 1)..words.len() {
+                        for b5 in (b4 + 1)..words.len() {
+                            for b6 in (b5 + 1)..words.len() {
+                                for b7 in (b6 + 1)..=words.len() {
+                                    let ps = chart.get_all(0, b1, ChartCategory::Np);
+                                    let c1s = chart.get_all(b1, b2, ChartCategory::Conj);
+                                    let qs = chart.get_all(b2, b3, ChartCategory::Np);
+                                    let c2s = chart.get_all(b3, b4, ChartCategory::Conj);
+                                    let rs = chart.get_all(b4, b5, ChartCategory::Np);
+                                    let c3s = chart.get_all(b5, b6, ChartCategory::Conj);
+                                    let ss = chart.get_all(b6, b7, ChartCategory::Np);
+                                    for p1 in &ps {
+                                        for c1 in &c1s {
+                                            for p2 in &qs {
+                                                for c2 in &c2s {
+                                                    for p3 in &rs {
+                                                        for c3 in &c3s {
+                                                            for p4 in &ss {
+                                                                chart.add(ChartItem {
+                                                                    id: 0,
+                                                                    start: 0,
+                                                                    end: b7,
+                                                                    category: ChartCategory::Np,
+                                                                    rule: "np.coord7",
+                                                                    children: vec![
+                                                                        p1.id, c1.id, p2.id, c2.id,
+                                                                        p3.id, c3.id, p4.id,
+                                                                    ],
+                                                                    head: p1.head.clone(),
+                                                                    lemma: p1.lemma.clone(),
+                                                                    pos: p1.pos.clone(),
+                                                                    negated: p1.negated
+                                                                        || p2.negated
+                                                                        || p3.negated
+                                                                        || p4.negated,
+                                                                    past: p1.past
+                                                                        || p2.past
+                                                                        || p3.past
+                                                                        || p4.past,
+                                                                });
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Five-conjunct NP coordination.
+        for b1 in 1..words.len() {
+            for b2 in (b1 + 1)..words.len() {
+                for b3 in (b2 + 1)..words.len() {
+                    for b4 in (b3 + 1)..words.len() {
+                        for b5 in (b4 + 1)..words.len() {
+                            for b6 in (b5 + 1)..words.len() {
+                                for b7 in (b6 + 1)..words.len() {
+                                    for b8 in (b7 + 1)..words.len() {
+                                        for b9 in (b8 + 1)..=words.len() {
+                                            let ps = chart.get_all(0, b1, ChartCategory::Np);
+                                            let c1s = chart.get_all(b1, b2, ChartCategory::Conj);
+                                            let qs = chart.get_all(b2, b3, ChartCategory::Np);
+                                            let c2s = chart.get_all(b3, b4, ChartCategory::Conj);
+                                            let rs = chart.get_all(b4, b5, ChartCategory::Np);
+                                            let c3s = chart.get_all(b5, b6, ChartCategory::Conj);
+                                            let ss = chart.get_all(b6, b7, ChartCategory::Np);
+                                            let c4s = chart.get_all(b7, b8, ChartCategory::Conj);
+                                            let ts = chart.get_all(b8, b9, ChartCategory::Np);
+                                            for p1 in &ps {
+                                                for c1 in &c1s {
+                                                    for p2 in &qs {
+                                                        for c2 in &c2s {
+                                                            for p3 in &rs {
+                                                                for c3 in &c3s {
+                                                                    for p4 in &ss {
+                                                                        for c4 in &c4s {
+                                                                            for p5 in &ts {
+                                                                                chart.add(ChartItem { id: 0, start: 0, end: b9, category: ChartCategory::Np, rule: "np.coord9", children: vec![p1.id, c1.id, p2.id, c2.id, p3.id, c3.id, p4.id, c4.id, p5.id], head: p1.head.clone(), lemma: p1.lemma.clone(), pos: p1.pos.clone(), negated: p1.negated || p2.negated || p3.negated || p4.negated || p5.negated, past: p1.past || p2.past || p3.past || p4.past || p5.past });
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         let coord_ids: Vec<usize> = chart
             .items
             .iter()
-            .filter(|item| item.rule == "np.coord3")
+            .filter(|item| {
+                matches!(
+                    item.rule,
+                    "np.coord3" | "np.coord5" | "np.coord7" | "np.coord9"
+                )
+            })
             .map(|item| item.id)
             .collect();
         for coord_id in coord_ids {
             let coord = chart.items[coord_id].clone();
-            if let Some(vp) = chart
-                .get(coord.end, words.len(), ChartCategory::Vp)
-                .cloned()
-            {
+            for vp in chart.get_all(coord.end, words.len(), ChartCategory::Vp) {
                 chart.add(ChartItem {
                     id: 0,
                     start: coord.start,
@@ -1465,7 +1624,7 @@ impl<'a> ChartParser<'a> {
                     })
                     .cloned()
                 {
-                    if let Some(subject) = chart.get(0, verb.start, ChartCategory::Np).cloned() {
+                    for subject in chart.get_all(0, verb.start, ChartCategory::Np) {
                         chart.add(ChartItem {
                             id: 0,
                             start: 0,
@@ -1489,26 +1648,28 @@ impl<'a> ChartParser<'a> {
             for mid1 in (start + 1)..words.len() {
                 for mid2 in (mid1 + 1)..words.len() {
                     for end in (mid2 + 1)..=words.len() {
-                        let (Some(noun), Some(rel), Some(vp)) = (
-                            chart.get(start, mid1, ChartCategory::Np).cloned(),
-                            chart.get(mid1, mid2, ChartCategory::Rel).cloned(),
-                            chart.get(mid2, end, ChartCategory::Vp).cloned(),
-                        ) else {
-                            continue;
-                        };
-                        chart.add(ChartItem {
-                            id: 0,
-                            start,
-                            end,
-                            category: ChartCategory::Np,
-                            rule: "np.rel",
-                            children: vec![noun.id, rel.id, vp.id],
-                            head: noun.head.clone(),
-                            lemma: noun.lemma.clone(),
-                            pos: noun.pos.clone(),
-                            negated: noun.negated || vp.negated,
-                            past: noun.past || vp.past,
-                        });
+                        let nouns = chart.get_all(start, mid1, ChartCategory::Np);
+                        let rels = chart.get_all(mid1, mid2, ChartCategory::Rel);
+                        let vps = chart.get_all(mid2, end, ChartCategory::Vp);
+                        for noun in &nouns {
+                            for rel in &rels {
+                                for vp in &vps {
+                                    chart.add(ChartItem {
+                                        id: 0,
+                                        start,
+                                        end,
+                                        category: ChartCategory::Np,
+                                        rule: "np.rel",
+                                        children: vec![noun.id, rel.id, vp.id],
+                                        head: noun.head.clone(),
+                                        lemma: noun.lemma.clone(),
+                                        pos: noun.pos.clone(),
+                                        negated: noun.negated || vp.negated,
+                                        past: noun.past || vp.past,
+                                    });
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1521,7 +1682,7 @@ impl<'a> ChartParser<'a> {
             .collect();
         for rel_id in rel_ids {
             let noun = chart.items[rel_id].clone();
-            if let Some(vp) = chart.get(noun.end, words.len(), ChartCategory::Vp).cloned() {
+            for vp in chart.get_all(noun.end, words.len(), ChartCategory::Vp) {
                 chart.add(ChartItem {
                     id: 0,
                     start: noun.start,
@@ -1543,26 +1704,28 @@ impl<'a> ChartParser<'a> {
             for mid1 in (start + 1)..words.len() {
                 for mid2 in (mid1 + 1)..words.len() {
                     for end in (mid2 + 1)..=words.len() {
-                        let (Some(left), Some(conj), Some(right)) = (
-                            chart.get(start, mid1, ChartCategory::Clause).cloned(),
-                            chart.get(mid1, mid2, ChartCategory::Conj).cloned(),
-                            chart.get(mid2, end, ChartCategory::Clause).cloned(),
-                        ) else {
-                            continue;
-                        };
-                        chart.add(ChartItem {
-                            id: 0,
-                            start,
-                            end,
-                            category: ChartCategory::Clause,
-                            rule: "clause.coord",
-                            children: vec![left.id, conj.id, right.id],
-                            head: left.head.clone(),
-                            lemma: left.lemma.clone(),
-                            pos: left.pos.clone(),
-                            negated: left.negated || right.negated,
-                            past: left.past || right.past,
-                        });
+                        let lefts = chart.get_all(start, mid1, ChartCategory::Clause);
+                        let conjs = chart.get_all(mid1, mid2, ChartCategory::Conj);
+                        let rights = chart.get_all(mid2, end, ChartCategory::Clause);
+                        for left in &lefts {
+                            for conj in &conjs {
+                                for right in &rights {
+                                    chart.add(ChartItem {
+                                        id: 0,
+                                        start,
+                                        end,
+                                        category: ChartCategory::Clause,
+                                        rule: "clause.coord",
+                                        children: vec![left.id, conj.id, right.id],
+                                        head: left.head.clone(),
+                                        lemma: left.lemma.clone(),
+                                        pos: left.pos.clone(),
+                                        negated: left.negated || right.negated,
+                                        past: left.past || right.past,
+                                    });
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1589,6 +1752,9 @@ fn chart_rule_score(rule: &str) -> u32 {
         "coord.left" => 25,
         "np.coord" => 30,
         "np.coord3" => 35,
+        "np.coord5" => 40,
+        "np.coord7" => 45,
+        "np.coord9" => 50,
         "vp.inf" => 50,
         "np.rel" => 45,
         _ => 10,
@@ -1683,9 +1849,25 @@ fn chart_item_to_graph(
             (ChartCategory::Np, 0) if item.rule == "np.rel" => SyntaxRelation::Head,
             (ChartCategory::Np, 1) if item.rule == "np.rel" => SyntaxRelation::Relative,
             (ChartCategory::Np, 2) if item.rule == "np.rel" => SyntaxRelation::Relative,
-            (ChartCategory::Np, 0) if item.rule == "np.coord3" => SyntaxRelation::Conjunct,
-            (ChartCategory::Np, 1) if item.rule == "np.coord3" => SyntaxRelation::Conjunction,
-            (ChartCategory::Np, 2) if item.rule == "np.coord3" => SyntaxRelation::Conjunct,
+            (ChartCategory::Np, 0) if item.rule == "np.coord3" || item.rule == "np.coord5" => {
+                SyntaxRelation::Conjunct
+            }
+            (ChartCategory::Np, 1) if item.rule == "np.coord3" || item.rule == "np.coord5" => {
+                SyntaxRelation::Conjunction
+            }
+            (ChartCategory::Np, 2) if item.rule == "np.coord3" || item.rule == "np.coord5" => {
+                SyntaxRelation::Conjunct
+            }
+            (ChartCategory::Np, 3) if item.rule == "np.coord5" => SyntaxRelation::Conjunction,
+            (ChartCategory::Np, 4) if item.rule == "np.coord5" => SyntaxRelation::Conjunct,
+            (ChartCategory::Np, 5) if matches!(item.rule, "np.coord7" | "np.coord9") => {
+                SyntaxRelation::Conjunction
+            }
+            (ChartCategory::Np, 6) if matches!(item.rule, "np.coord7" | "np.coord9") => {
+                SyntaxRelation::Conjunct
+            }
+            (ChartCategory::Np, 7) if item.rule == "np.coord9" => SyntaxRelation::Conjunction,
+            (ChartCategory::Np, 8) if item.rule == "np.coord9" => SyntaxRelation::Conjunct,
             (ChartCategory::Np, 0) => SyntaxRelation::Head,
             (ChartCategory::Pp, 0) if child_item.category == ChartCategory::P => {
                 SyntaxRelation::Preposition
@@ -1709,6 +1891,17 @@ fn chart_item_to_graph(
     }
     if item.rule == "np.coord3" && child_nodes.len() == 3 {
         graph.nodes[node].coord_heads = vec![child_nodes[0], child_nodes[2]];
+    }
+    if item.rule == "np.coord5" && child_nodes.len() == 5 {
+        graph.nodes[node].coord_heads = vec![child_nodes[0], child_nodes[2], child_nodes[4]];
+    }
+    if item.rule == "np.coord7" && child_nodes.len() == 7 {
+        graph.nodes[node].coord_heads = vec![
+            child_nodes[0],
+            child_nodes[2],
+            child_nodes[4],
+            child_nodes[6],
+        ];
     }
     node
 }
@@ -1983,6 +2176,19 @@ pub struct SemanticTransfer<'a> {
 impl<'a> SemanticTransfer<'a> {
     /// 新路径：只从 SyntaxGraph 的节点和关系推导语义。
     pub fn transfer_graph(&self, syntax: &SyntaxGraph) -> Option<MeaningGraph> {
+        let mut relative_heads = Vec::new();
+        for edge in syntax
+            .edges
+            .iter()
+            .filter(|edge| edge.relation == SyntaxRelation::Relative)
+        {
+            if !relative_heads.contains(&edge.head) {
+                relative_heads.push(edge.head);
+            }
+        }
+        if relative_heads.len() > 1 {
+            return None;
+        }
         if syntax.edges.iter().any(|edge| {
             edge.relation == SyntaxRelation::Conjunction
                 && syntax
@@ -2038,72 +2244,6 @@ impl<'a> SemanticTransfer<'a> {
             });
             if let Some(relative_vp) = subject_np.relative {
                 self.add_relative(syntax, &mut graph, agent, relative_vp)?;
-            }
-        }
-        if let Some(object) = patient_np {
-            let np = NpFacts::collect(syntax, object)?;
-            let patient = self.graph_entity(syntax, &mut graph, np.head)?;
-            graph.relations.push(MeaningRelation {
-                head: event,
-                dependent: patient,
-                kind: MeaningRelationKind::Patient,
-            });
-            if let Some(relative_vp) = np.relative {
-                self.add_relative(syntax, &mut graph, patient, relative_vp)?;
-            }
-            if let Some(value) = np.quantity {
-                let node = syntax.nodes.get(np.head)?;
-                let quantity = add(
-                    &mut graph,
-                    MeaningNodeKind::Property,
-                    value.to_string(),
-                    "numeral",
-                    node.span,
-                    SenseResolution::Resolved(format!("quantity:{value}")),
-                );
-                graph.relations.push(MeaningRelation {
-                    head: patient,
-                    dependent: quantity,
-                    kind: MeaningRelationKind::Quantity,
-                });
-            }
-            for modifier in np.modifiers {
-                let node = syntax.nodes.get(modifier)?;
-                let modifier = add(
-                    &mut graph,
-                    MeaningNodeKind::Property,
-                    node.lemma.clone(),
-                    "adjective",
-                    node.span,
-                    self.sense(&node.lemma, "adjective", None),
-                );
-                graph.relations.push(MeaningRelation {
-                    head: patient,
-                    dependent: modifier,
-                    kind: MeaningRelationKind::Modifier,
-                });
-            }
-            for pp_id in np.pps {
-                let pp = PpFacts::collect(syntax, pp_id)?;
-                let object = self.graph_entity(syntax, &mut graph, pp.object)?;
-                let prep = add(
-                    &mut graph,
-                    MeaningNodeKind::Preposition,
-                    pp.preposition.clone(),
-                    "preposition",
-                    syntax.nodes.get(pp_id)?.span,
-                    SenseResolution::Resolved(format!("prep:{}", pp.preposition)),
-                );
-                graph.relations.push(MeaningRelation {
-                    head: object,
-                    dependent: prep,
-                    kind: MeaningRelationKind::Preposition,
-                });
-                graph.relations.push(MeaningRelation {
-                    head: patient,
-                    dependent: object,
-                    kind: MeaningRelationKind::PpModifier,
-                });
             }
         }
         if let Some(complement_id) = facts.complement {
@@ -2167,6 +2307,50 @@ impl<'a> SemanticTransfer<'a> {
                 }
             }
         }
+        if let Some(object) = patient_np {
+            let np = NpFacts::collect(syntax, object)?;
+            let patient = self.graph_entity(syntax, &mut graph, np.head)?;
+            graph.relations.push(MeaningRelation {
+                head: event,
+                dependent: patient,
+                kind: MeaningRelationKind::Patient,
+            });
+            if let Some(relative_vp) = np.relative {
+                self.add_relative(syntax, &mut graph, patient, relative_vp)?;
+            }
+            if let Some(value) = np.quantity {
+                let node = syntax.nodes.get(np.head)?;
+                let quantity = add(
+                    &mut graph,
+                    MeaningNodeKind::Property,
+                    value.to_string(),
+                    "numeral",
+                    node.span,
+                    SenseResolution::Resolved(format!("quantity:{value}")),
+                );
+                graph.relations.push(MeaningRelation {
+                    head: patient,
+                    dependent: quantity,
+                    kind: MeaningRelationKind::Quantity,
+                });
+            }
+            for modifier in np.modifiers {
+                let node = syntax.nodes.get(modifier)?;
+                let modifier = add(
+                    &mut graph,
+                    MeaningNodeKind::Property,
+                    node.lemma.clone(),
+                    "adjective",
+                    node.span,
+                    self.sense(&node.lemma, "adjective", None),
+                );
+                graph.relations.push(MeaningRelation {
+                    head: patient,
+                    dependent: modifier,
+                    kind: MeaningRelationKind::Modifier,
+                });
+            }
+        }
         for pp_id in facts.pps {
             let pp = PpFacts::collect(syntax, pp_id)?;
             let entity = self.graph_entity(syntax, &mut graph, pp.object)?;
@@ -2183,15 +2367,14 @@ impl<'a> SemanticTransfer<'a> {
                 dependent: prep,
                 kind: MeaningRelationKind::Preposition,
             });
-            let kind = if pp.preposition == "with" {
-                MeaningRelationKind::Instrument
-            } else {
-                MeaningRelationKind::Location
-            };
             graph.relations.push(MeaningRelation {
                 head: event,
                 dependent: entity,
-                kind,
+                kind: if pp.preposition == "with" {
+                    MeaningRelationKind::Instrument
+                } else {
+                    MeaningRelationKind::Location
+                },
             });
         }
         for adv in advs {
@@ -2207,7 +2390,11 @@ impl<'a> SemanticTransfer<'a> {
             graph.relations.push(MeaningRelation {
                 head: event,
                 dependent: time,
-                kind: MeaningRelationKind::Time,
+                kind: if matches!(node.lemma.as_str(), "home" | "here" | "there") {
+                    MeaningRelationKind::Location
+                } else {
+                    MeaningRelationKind::Time
+                },
             });
         }
         if let Some(neg) = neg {
@@ -2252,6 +2439,22 @@ impl<'a> SemanticTransfer<'a> {
             dependent: event,
             kind: MeaningRelationKind::Relative,
         });
+        if let Some(neg) = facts.negation {
+            let node = syntax.nodes.get(neg)?;
+            let operator = add(
+                graph,
+                MeaningNodeKind::Operator,
+                "not".to_string(),
+                "adverb",
+                node.span,
+                SenseResolution::Resolved("negation".to_string()),
+            );
+            graph.relations.push(MeaningRelation {
+                head: operator,
+                dependent: event,
+                kind: MeaningRelationKind::Scope,
+            });
+        }
         if let Some(object) = facts.object {
             let np = NpFacts::collect(syntax, object)?;
             let patient = self.graph_entity(syntax, graph, np.head)?;
@@ -2347,13 +2550,38 @@ impl<'a> SemanticTransfer<'a> {
                         });
                     }
                 }
+                entities.push(entity);
             }
-            entities.push(entity);
         }
-        if entities.len() > 1 {
+        if entities.len() == 1 {
+            let entity = entities[0];
+            for pp_id in &np.pps {
+                let pp = PpFacts::collect(syntax, *pp_id)?;
+                let object = self.graph_entity(syntax, graph, pp.object)?;
+                let prep = add(
+                    graph,
+                    MeaningNodeKind::Preposition,
+                    pp.preposition.clone(),
+                    "preposition",
+                    syntax.nodes.get(*pp_id)?.span,
+                    SenseResolution::Resolved(format!("prep:{}", pp.preposition)),
+                );
+                graph.relations.push(MeaningRelation {
+                    head: object,
+                    dependent: prep,
+                    kind: MeaningRelationKind::Preposition,
+                });
+                graph.relations.push(MeaningRelation {
+                    head: entity,
+                    dependent: object,
+                    kind: MeaningRelationKind::PpModifier,
+                });
+            }
+        }
+        for index in 1..entities.len() {
             graph.relations.push(MeaningRelation {
                 head: entities[0],
-                dependent: entities[1],
+                dependent: entities[index],
                 kind: MeaningRelationKind::Coordination,
             });
         }
@@ -2606,6 +2834,7 @@ pub enum ChineseNodeKind {
     Place,
     Preposition,
     Conjunction,
+    Relative,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -2790,6 +3019,8 @@ impl<'a> TargetTransfer<'a> {
         if let Some(location) = relation_node(meaning, event.id, MeaningRelationKind::Location) {
             let text = if event.lemma == "stay" && location.lemma == "home" {
                 "在家里".to_string()
+            } else if event.lemma == "go" && location.lemma == "home" {
+                "家".to_string()
             } else {
                 self.target(location)?.to_string()
             };
@@ -2815,15 +3046,26 @@ impl<'a> TargetTransfer<'a> {
         meaning: &MeaningGraph,
         id: usize,
     ) -> Option<usize> {
-        if let Some(relation) = meaning.relations.iter().find(|relation| {
-            relation.kind == MeaningRelationKind::Coordination
-                && (relation.head == id || relation.dependent == id)
-        }) {
-            let ids = if relation.head == id {
-                [relation.head, relation.dependent]
+        let mut ids = vec![id];
+        for relation in meaning
+            .relations
+            .iter()
+            .filter(|relation| relation.kind == MeaningRelationKind::Coordination)
+        {
+            let partner = if relation.head == id {
+                Some(relation.dependent)
+            } else if relation.dependent == id {
+                Some(relation.head)
             } else {
-                [relation.dependent, relation.head]
+                None
             };
+            if let Some(partner) = partner {
+                if !ids.contains(&partner) {
+                    ids.push(partner);
+                }
+            }
+        }
+        if ids.len() > 1 {
             let np = add_ch(tree, ChineseNodeKind::NounPhrase, String::new());
             for (index, entity_id) in ids.into_iter().enumerate() {
                 if index > 0 {
@@ -2883,38 +3125,68 @@ impl<'a> TargetTransfer<'a> {
                     candidate.head == event.id && candidate.kind == MeaningRelationKind::Patient
                 })
                 .and_then(|candidate| meaning.nodes.get(candidate.dependent));
-            let verb_text = self.target(event)?;
-            let text = if let Some(patient) = patient {
-                format!("{}{}的", verb_text, self.target(patient)?)
-            } else {
-                format!("{}的", verb_text)
-            };
-            let modifier = add_ch(tree, ChineseNodeKind::Modifier, text);
-            tree.nodes[modifier].source = Some(event.id);
-            tree.nodes[np].children.push(modifier);
-            let hidden_verb = add_ch(tree, ChineseNodeKind::Verb, String::new());
-            tree.nodes[hidden_verb].source = Some(event.id);
-            tree.nodes[np].children.push(hidden_verb);
-            if let Some(patient) = patient {
-                let hidden_noun = add_ch(tree, ChineseNodeKind::Noun, String::new());
-                tree.nodes[hidden_noun].source = Some(patient.id);
-                tree.nodes[np].children.push(hidden_noun);
+            let relative = add_ch(tree, ChineseNodeKind::Relative, String::new());
+            tree.nodes[relative].source = Some(event.id);
+            if let Some(scope) = meaning.relations.iter().find(|candidate| {
+                candidate.head != event.id
+                    && candidate.kind == MeaningRelationKind::Scope
+                    && candidate.dependent == event.id
+            }) {
+                let neg = add_ch(tree, ChineseNodeKind::Negation, "没".to_string());
+                tree.nodes[neg].source = Some(scope.head);
+                tree.nodes[relative].children.push(neg);
             }
+            let verb = add_ch(tree, ChineseNodeKind::Verb, self.target(event)?.to_string());
+            tree.nodes[verb].source = Some(event.id);
+            tree.nodes[relative].children.push(verb);
+            if let Some(patient) = patient {
+                let noun = add_ch(
+                    tree,
+                    ChineseNodeKind::Noun,
+                    self.target(patient)?.to_string(),
+                );
+                tree.nodes[noun].source = Some(patient.id);
+                tree.nodes[relative].children.push(noun);
+            }
+            tree.nodes[np].children.push(relative);
         }
         for relation in meaning.relations.iter().filter(|relation| {
             relation.head == id && relation.kind == MeaningRelationKind::PpModifier
         }) {
             let object = meaning.nodes.get(relation.dependent)?;
-            let text = format!("有{}的", self.target(object)?);
-            let modifier = add_ch(tree, ChineseNodeKind::Modifier, text);
-            tree.nodes[modifier].source = Some(object.id);
-            tree.nodes[np].children.push(modifier);
+            let relative = add_ch(tree, ChineseNodeKind::Relative, String::new());
+            tree.nodes[relative].source = Some(object.id);
+            let prefix = meaning
+                .relations
+                .iter()
+                .find(|candidate| {
+                    candidate.head == object.id
+                        && candidate.kind == MeaningRelationKind::Preposition
+                })
+                .and_then(|candidate| meaning.nodes.get(candidate.dependent))
+                .map(|prep| match prep.lemma.as_str() {
+                    "with" => "有",
+                    "in" | "at" | "on" => "在",
+                    "by" => "被",
+                    "for" => "为",
+                    "to" => "到",
+                    other => other,
+                })
+                .unwrap_or("有");
+            let prep = add_ch(tree, ChineseNodeKind::Preposition, prefix.to_string());
+            tree.nodes[relative].children.push(prep);
+            let noun = add_ch(
+                tree,
+                ChineseNodeKind::Noun,
+                self.target(object)?.to_string(),
+            );
+            tree.nodes[noun].source = Some(object.id);
+            tree.nodes[relative].children.push(noun);
+            tree.nodes[np].children.push(relative);
             if let Some(prep_relation) = meaning.relations.iter().find(|candidate| {
                 candidate.head == object.id && candidate.kind == MeaningRelationKind::Preposition
             }) {
-                let hidden = add_ch(tree, ChineseNodeKind::Preposition, String::new());
-                tree.nodes[hidden].source = Some(prep_relation.dependent);
-                tree.nodes[np].children.push(hidden);
+                tree.nodes[prep].source = Some(prep_relation.dependent);
             }
         }
         let noun_text = if node.plural && node.lemma == "brother" {
@@ -3012,7 +3284,12 @@ fn mark_role(tree: &mut ChineseSyntaxTree, np: usize, role: &str) {
 
 fn render_node(tree: &ChineseSyntaxTree, id: usize, out: &mut String) {
     let node = &tree.nodes[id];
-    if matches!(
+    if node.kind == ChineseNodeKind::Relative {
+        for child in &node.children {
+            render_node(tree, *child, out);
+        }
+        out.push('的');
+    } else if matches!(
         node.kind,
         ChineseNodeKind::Clause | ChineseNodeKind::NounPhrase
     ) {
@@ -3046,6 +3323,35 @@ pub struct ValidationReport {
     pub relation_mappings: Vec<RelationMapping>,
 }
 
+fn collect_target_nodes<'a>(tree: &'a ChineseSyntaxTree, out: &mut Vec<&'a ChineseNode>) {
+    out.extend(tree.nodes.iter());
+    if let Some(condition) = &tree.condition {
+        collect_target_nodes(condition, out);
+    }
+    if let Some(parts) = &tree.coordination {
+        for part in parts {
+            collect_target_nodes(part, out);
+        }
+    }
+}
+
+fn parent_of(tree: &ChineseSyntaxTree, child: usize) -> Option<usize> {
+    tree.nodes
+        .iter()
+        .find_map(|node| node.children.contains(&child).then_some(node.id))
+}
+
+fn same_parent(tree: &ChineseSyntaxTree, first: usize, second: usize) -> bool {
+    let first_node = tree.nodes.iter().find(|node| node.source == Some(first));
+    let second_node = tree.nodes.iter().find(|node| node.source == Some(second));
+    match (first_node, second_node) {
+        (Some(a), Some(b)) => {
+            parent_of(tree, a.id).is_some() && parent_of(tree, a.id) == parent_of(tree, b.id)
+        }
+        _ => false,
+    }
+}
+
 fn noun_in_np(tree: &ChineseSyntaxTree, np: usize, source: usize) -> bool {
     tree.nodes.get(np).is_some_and(|node| {
         node.children.iter().any(|child| {
@@ -3057,10 +3363,8 @@ fn noun_in_np(tree: &ChineseSyntaxTree, np: usize, source: usize) -> bool {
 }
 
 pub fn validate(meaning: &MeaningGraph, tree: &ChineseSyntaxTree) -> ValidationReport {
-    let mut target_nodes: Vec<&ChineseNode> = tree.nodes.iter().collect();
-    if let Some(condition) = &tree.condition {
-        target_nodes.extend(condition.nodes.iter());
-    }
+    let mut target_nodes: Vec<&ChineseNode> = Vec::new();
+    collect_target_nodes(tree, &mut target_nodes);
     let mut mappings = Vec::new();
     let mut used = vec![false; target_nodes.len()];
     for (idx, node) in meaning.nodes.iter().enumerate() {
@@ -3076,9 +3380,11 @@ pub fn validate(meaning: &MeaningGraph, tree: &ChineseSyntaxTree) -> ValidationR
             MeaningNodeKind::Property => ChineseNodeKind::Modifier,
             MeaningNodeKind::Preposition => ChineseNodeKind::Preposition,
         };
-        if let Some(chinese) = target_nodes.iter().enumerate().find(|(i, n)| {
-            !used[*i] && (n.source == Some(idx) || (n.source.is_none() && n.kind == expected))
-        }) {
+        if let Some(chinese) = target_nodes
+            .iter()
+            .enumerate()
+            .find(|(i, n)| !used[*i] && n.source == Some(idx) && n.kind == expected)
+        {
             used[chinese.0] = true;
             mappings.push(Mapping {
                 meaning: idx,
@@ -3123,12 +3429,17 @@ pub fn validate(meaning: &MeaningGraph, tree: &ChineseSyntaxTree) -> ValidationR
                 object_np.is_some_and(|np| noun_in_np(tree, np, source))
             }
         };
+        let coordinated_clause = meaning
+            .relations
+            .iter()
+            .any(|candidate| candidate.kind == MeaningRelationKind::ClauseCoordination);
         let role = match relation.kind {
             MeaningRelationKind::Agent => {
                 (meaning
                     .relations
                     .iter()
                     .any(|candidate| candidate.kind == MeaningRelationKind::Coordination)
+                    || coordinated_clause
                     || agent_in_role(relation.dependent)
                     || tree.condition.as_ref().is_some_and(|condition| {
                         condition.nodes.iter().any(|node| {
@@ -3153,7 +3464,7 @@ pub fn validate(meaning: &MeaningGraph, tree: &ChineseSyntaxTree) -> ValidationR
                     candidate.kind == MeaningRelationKind::Coordination
                         && candidate.head == relation.dependent
                 });
-                if relative_patient || coordinated_patient {
+                if relative_patient || coordinated_patient || coordinated_clause {
                     target_nodes.iter().any(|node| {
                         node.kind == ChineseNodeKind::Noun
                             && node.source == Some(relation.dependent)
@@ -3167,8 +3478,8 @@ pub fn validate(meaning: &MeaningGraph, tree: &ChineseSyntaxTree) -> ValidationR
                         })
                 }
             }
-            MeaningRelationKind::Quantity => has(ChineseNodeKind::Quantity, relation.dependent),
-            MeaningRelationKind::Modifier => has(ChineseNodeKind::Modifier, relation.dependent),
+            MeaningRelationKind::Quantity => same_parent(tree, relation.head, relation.dependent),
+            MeaningRelationKind::Modifier => same_parent(tree, relation.head, relation.dependent),
             MeaningRelationKind::Time => has(ChineseNodeKind::Time, relation.dependent),
             MeaningRelationKind::Location => {
                 has(ChineseNodeKind::Place, relation.dependent)
@@ -3188,9 +3499,15 @@ pub fn validate(meaning: &MeaningGraph, tree: &ChineseSyntaxTree) -> ValidationR
                     .count()
                     >= 2
             }
-            MeaningRelationKind::PpModifier => has(ChineseNodeKind::Modifier, relation.dependent),
-            MeaningRelationKind::Relative => has(ChineseNodeKind::Modifier, relation.dependent),
-            MeaningRelationKind::ClauseCoordination => tree.coordination.is_some(),
+            MeaningRelationKind::PpModifier => has(ChineseNodeKind::Relative, relation.dependent),
+            MeaningRelationKind::Relative => has(ChineseNodeKind::Relative, relation.dependent),
+            MeaningRelationKind::ClauseCoordination => {
+                tree.coordination.is_some()
+                    || tree
+                        .condition
+                        .as_ref()
+                        .is_some_and(|condition| condition.coordination.is_some())
+            }
         };
         if role {
             relation_mappings.push(RelationMapping {
@@ -3264,6 +3581,22 @@ pub fn analyze(source: &str, lexicon: &CompositionEngine) -> Option<PipelineOutp
     analyze_single(source, lexicon)
 }
 
+fn offset_tree_sources(tree: &mut ChineseSyntaxTree, offset: usize) {
+    for node in &mut tree.nodes {
+        if let Some(source) = node.source.as_mut() {
+            *source += offset;
+        }
+    }
+    if let Some(condition) = tree.condition.as_mut() {
+        offset_tree_sources(condition, offset);
+    }
+    if let Some(parts) = tree.coordination.as_mut() {
+        for part in parts {
+            offset_tree_sources(part, offset);
+        }
+    }
+}
+
 fn analyze_conditional(
     condition_source: &str,
     main_source: &str,
@@ -3324,11 +3657,7 @@ fn analyze_conditional(
             }
         }
     }
-    for node in &mut condition_chinese.nodes {
-        if let Some(source) = node.source.as_mut() {
-            *source += offset;
-        }
-    }
+    offset_tree_sources(&mut condition_chinese, offset);
     main.chinese.condition = Some(Box::new(condition_chinese));
     let validation = validate(&main.meaning, &main.chinese);
     if !validation.valid {
@@ -3412,9 +3741,12 @@ fn analyze_single(source: &str, lexicon: &CompositionEngine) -> Option<PipelineO
         return None;
     }
     let stream = tokenize_lossless(source);
+    let mut chart_had_candidates = false;
     if stream.coverage.complete {
         let mut candidates = Vec::new();
-        for graph in (ChartParser { lexicon }).parse_candidates(&stream) {
+        let chart_candidates = (ChartParser { lexicon }).parse_candidates(&stream);
+        chart_had_candidates = !chart_candidates.is_empty();
+        for graph in chart_candidates {
             if let Some(parts) = clause_coordination_parts(&graph) {
                 let mut outputs = Vec::new();
                 for part in parts {
@@ -3474,11 +3806,20 @@ fn analyze_single(source: &str, lexicon: &CompositionEngine) -> Option<PipelineO
                         kind: MeaningRelationKind::ClauseCoordination,
                     });
                     let base = left.chinese.clone();
+                    let mut right_chinese = right.chinese.clone();
+                    for node in &mut right_chinese.nodes {
+                        if let Some(source) = node.source.as_mut() {
+                            *source += offset;
+                        }
+                    }
                     let mut chinese = left.chinese.clone();
-                    chinese.coordination = Some(vec![base, right.chinese.clone()]);
+                    chinese.coordination = Some(vec![base, right_chinese]);
                     left.chinese = chinese;
+                    left.validation = validate(&left.meaning, &left.chinese);
+                    if !left.validation.valid {
+                        return None;
+                    }
                     left.text = render(&left.chinese);
-                    left.validation.valid = left.validation.valid && right.validation.valid;
                     left.syntax = graph;
                     left.candidates = 2;
                     return Some(left);
@@ -3517,7 +3858,9 @@ fn analyze_single(source: &str, lexicon: &CompositionEngine) -> Option<PipelineO
             let first = candidates.remove(best_index);
             let signature = meaning_signature(&first.meaning);
             if candidates.iter().any(|candidate| {
-                candidate.text != first.text || meaning_signature(&candidate.meaning) != signature
+                candidate.candidate_score == first.candidate_score
+                    && (candidate.text != first.text
+                        || meaning_signature(&candidate.meaning) != signature)
             }) {
                 // Ambiguous analyses with different semantics must not win by order.
                 return None;
@@ -3526,6 +3869,10 @@ fn analyze_single(source: &str, lexicon: &CompositionEngine) -> Option<PipelineO
             output.candidates = candidates.len() + 1;
             return Some(output);
         }
+    }
+    if chart_had_candidates {
+        // Hard isolation: a full-span Chart analysis existed but failed semantic/validation.
+        return None;
     }
     let syntax = SyntaxAnalyzer { lexicon }.analyze(source)?;
     let meaning = SemanticTransfer { lexicon }.transfer(&syntax)?;
