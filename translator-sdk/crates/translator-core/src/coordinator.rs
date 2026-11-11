@@ -643,7 +643,7 @@ impl Coordinator {
             ));
         }
 
-        let (outcome, quality_report) = loop {
+        let (outcome, finalized) = loop {
             attempt += 1;
             self.check_cancel(cancel)?;
             if attempt > 1 {
@@ -666,47 +666,45 @@ impl Coordinator {
 
             match executed {
                 Ok(executed) => {
-                    let report = quality::check_with_protection(
-                        &plan,
+                    // 终检：格式修复 + 完整性 + 术语，全部针对**最终文本**
+                    match self.finalize_translation(
+                        &work_text,
                         &executed.text,
+                        &plan,
+                        &source,
                         &req.target,
                         options.mode,
-                    );
-                    let fatal = report.has_fatal() && self.config.strict_integrity;
-                    if !fatal {
-                        break (executed, report);
+                    ) {
+                        Ok(finalized) => break (executed, finalized),
+                        Err(err) => {
+                            if attempt >= max_attempts {
+                                return Err(TranslationError::new(
+                                    err.code,
+                                    format!("尝试 {attempt} 次仍未通过：{}", err.message),
+                                ));
+                            }
+                            // 第一次失败：如果用的是标记策略，就换分段（结构上不可能丢标记）
+                            if plan.strategy() == ProtectionStrategy::Marker && !plan.is_trivial() {
+                                plan = ProtectionPlan::prepare(
+                                    &work_text,
+                                    &ProtectionPolicy {
+                                        preference: crate::protection::StrategyPreference::Segment,
+                                        spans: self.config.protection.spans,
+                                    },
+                                )?;
+                                retry_hint = Some(
+                                    "上一次输出没有完整保留受保护内容；这次受保护内容不会出现在输入里。"
+                                        .to_string(),
+                                );
+                            } else {
+                                retry_hint = Some(format!(
+                                    "上一次输出未通过校验（{}）。请逐字保留所有数字、编号、占位符与术语。",
+                                    err.message
+                                ));
+                            }
+                            continue;
+                        }
                     }
-
-                    if attempt >= max_attempts {
-                        return Err(TranslationError::new(
-                            TranslationErrorCode::IntegrityFailure,
-                            format!(
-                                "译文未通过完整性检查（尝试 {attempt} 次）：{}",
-                                report.fatal_summary()
-                            ),
-                        ));
-                    }
-
-                    // 第一次失败：如果用的是标记策略，就换分段（结构上不可能丢标记）
-                    if plan.strategy() == ProtectionStrategy::Marker && !plan.is_trivial() {
-                        plan = ProtectionPlan::prepare(
-                            &work_text,
-                            &ProtectionPolicy {
-                                preference: crate::protection::StrategyPreference::Segment,
-                                spans: self.config.protection.spans,
-                            },
-                        )?;
-                        retry_hint = Some(
-                            "上一次输出没有完整保留受保护内容；这次受保护内容不会出现在输入里。"
-                                .to_string(),
-                        );
-                    } else {
-                        let missing = report.fatal_summary();
-                        retry_hint = Some(format!(
-                            "上一次输出未通过完整性检查（{missing}）。请逐字保留所有数字、编号与占位符。"
-                        ));
-                    }
-                    continue;
                 }
                 Err(err) => {
                     let retryable = matches!(
@@ -744,45 +742,13 @@ impl Coordinator {
             }
         };
 
-        // 10. 术语校验
-        let term_verification = self.config.glossary.as_ref().map(|glossary| {
-            glossary.verify(
-                &work_text,
-                &outcome.text,
-                source.as_str(),
-                req.target.as_str(),
-                self.config.domain.as_deref(),
-            )
-        });
-
-        if let Some(verification) = &term_verification {
-            if self.config.term_policy.runs() {
-                for violation in &verification.violations {
-                    warnings.push(TranslationWarning::TermMismatch(violation.detail()));
-                }
-                if self.config.term_policy.rejects_unmet_strict()
-                    && !verification.strict_satisfied()
-                {
-                    let detail: Vec<String> = verification
-                        .violations
-                        .iter()
-                        .filter(|v| v.strict)
-                        .map(|v| v.detail())
-                        .collect();
-                    return Err(TranslationError::new(
-                        TranslationErrorCode::IntegrityFailure,
-                        format!("术语约束未满足：{}", detail.join("；")),
-                    ));
-                }
-            }
-        }
-
-        // 11. 组装结果 + 诊断
+        // 10. 组装结果 + 诊断（术语与完整性已在终检里对最终文本完成）
         let elapsed_ms = started.elapsed().as_millis() as u64;
         warnings.extend(outcome.warnings.iter().cloned());
+        warnings.extend(finalized.warnings.iter().cloned());
 
-        let mut result = TranslationResult {
-            text: outcome.text.clone(),
+        let result = TranslationResult {
+            text: finalized.text.clone(),
             source: source.clone(),
             target: req.target.clone(),
             engine_id: outcome.engine_id.clone(),
@@ -790,16 +756,6 @@ impl Coordinator {
             elapsed_ms,
             warnings,
         };
-        // 输出层面的确定性修复（只做格式换位，不猜内容）。
-        // 修复**不得**碰受保护内容：一旦修复会破坏它，就放弃修复。
-        let repaired = quality::repair_output(&result.text);
-        if plan
-            .spans()
-            .iter()
-            .all(|span| repaired.contains(&span.original))
-        {
-            result.text = repaired;
-        }
 
         let diagnostics = self.build_diagnostics(
             &route,
@@ -809,12 +765,13 @@ impl Coordinator {
             source_assumed,
             attempt,
             elapsed_ms,
-            term_verification.as_ref(),
-            Some(quality_report),
+            finalized.terms.as_ref(),
+            Some(finalized.quality.clone()),
             outcome.usage,
             outcome.model_revision.clone(),
             outcome.prompt_version.clone(),
             self.rules_trace(&rule_applied),
+            finalized.repair,
         );
 
         // 12. 写缓存（只有通过校验的结果才会走到这里）
@@ -837,6 +794,156 @@ impl Coordinator {
             result,
             diagnostics,
         })
+    }
+
+    /// 统一终检：**先做安全格式修复，再对最终文本做完整校验**。
+    ///
+    /// 修复策略（S1-01）：
+    ///
+    /// 1. 先算修复后的文本；
+    /// 2. 修复改变了文本时，用最终校验判定它是否可接受；
+    /// 3. 若修复后不通过、但**原候选**通过，则退回原候选（不能因为"格式优化"
+    ///    让一份本来合格的译文不可用）；
+    /// 4. 两者都不通过 → 返回 `IntegrityFailure`，由调用方进入有界重试。
+    ///
+    /// 模板路径与模型路径**都必须**走这里，避免维护两套终检逻辑。
+    fn finalize_translation(
+        &self,
+        source_text: &str,
+        candidate: &str,
+        plan: &ProtectionPlan,
+        source: &LanguageTag,
+        target: &LanguageTag,
+        mode: TranslationMode,
+    ) -> Result<FinalizedTranslation, TranslationError> {
+        let proposed = quality::repair_output(candidate);
+
+        // 修复没有改变文本：直接校验候选。
+        if proposed == candidate {
+            let (quality, terms, warnings) =
+                self.validate_final(source_text, candidate, plan, source, target, mode)?;
+            return Ok(FinalizedTranslation {
+                text: candidate.to_string(),
+                quality,
+                terms,
+                warnings,
+                repair: RepairOutcome::Unchanged,
+            });
+        }
+
+        // 修复会改动确定性数字（编号/版本/日期/百分比）：一律不采用。
+        if !self.repair_is_safe(candidate, &proposed) {
+            let (quality, terms, warnings) =
+                self.validate_final(source_text, candidate, plan, source, target, mode)?;
+            return Ok(FinalizedTranslation {
+                text: candidate.to_string(),
+                quality,
+                terms,
+                warnings,
+                repair: RepairOutcome::Rejected,
+            });
+        }
+
+        // 修复改变了文本但数字没变：只有在它能通过终检时才采用。
+        match self.validate_final(source_text, &proposed, plan, source, target, mode) {
+            Ok((quality, terms, warnings)) => Ok(FinalizedTranslation {
+                text: proposed,
+                quality,
+                terms,
+                warnings,
+                repair: RepairOutcome::Applied,
+            }),
+            Err(_repaired_error) => {
+                // 修复把译文弄坏了（例如受保护内容被拆开）：退回原候选，
+                // 但原候选必须自己通过终检——不能拿"修复失败"当免检理由。
+                let (quality, terms, warnings) =
+                    self.validate_final(source_text, candidate, plan, source, target, mode)?;
+                Ok(FinalizedTranslation {
+                    text: candidate.to_string(),
+                    quality,
+                    terms,
+                    warnings,
+                    repair: RepairOutcome::Rejected,
+                })
+            }
+        }
+    }
+
+    /// 修复前后"确定性数字"是否完全一致。
+    ///
+    /// 只比较 `is_strict()` 的 token（编号、版本号、日期、百分比）：
+    /// 普通数量允许中英互转，格式修复也不应该动它们。
+    fn repair_is_safe(&self, before: &str, after: &str) -> bool {
+        let strict = |text: &str| {
+            let mut tokens: Vec<String> = quality::number::tokenize(text)
+                .into_iter()
+                .filter(|t| t.kind.is_strict())
+                .map(|t| t.raw)
+                .collect();
+            tokens.sort();
+            tokens
+        };
+        strict(before) == strict(after)
+    }
+
+    /// 对**最终文本**跑完整性 + 术语校验。
+    fn validate_final(
+        &self,
+        source_text: &str,
+        text: &str,
+        plan: &ProtectionPlan,
+        source: &LanguageTag,
+        target: &LanguageTag,
+        mode: TranslationMode,
+    ) -> Result<
+        (
+            QualityReport,
+            Option<crate::terms::TermVerification>,
+            Vec<TranslationWarning>,
+        ),
+        TranslationError,
+    > {
+        let quality = quality::check_with_protection(plan, text, target, mode);
+        if self.config.strict_integrity && quality.has_fatal() {
+            return Err(TranslationError::new(
+                TranslationErrorCode::IntegrityFailure,
+                format!("译文未通过完整性检查：{}", quality.fatal_summary()),
+            ));
+        }
+
+        let mut warnings = Vec::new();
+        let terms = self.config.glossary.as_ref().map(|glossary| {
+            glossary.verify(
+                source_text,
+                text,
+                source.as_str(),
+                target.as_str(),
+                self.config.domain.as_deref(),
+            )
+        });
+        if let Some(verification) = &terms {
+            if self.config.term_policy.runs() {
+                for violation in &verification.violations {
+                    warnings.push(TranslationWarning::TermMismatch(violation.detail()));
+                }
+                if self.config.term_policy.rejects_unmet_strict()
+                    && !verification.strict_satisfied()
+                {
+                    let detail: Vec<String> = verification
+                        .violations
+                        .iter()
+                        .filter(|v| v.strict)
+                        .map(|v| v.detail())
+                        .collect();
+                    return Err(TranslationError::new(
+                        TranslationErrorCode::IntegrityFailure,
+                        format!("术语约束未满足：{}", detail.join("；")),
+                    ));
+                }
+            }
+        }
+
+        Ok((quality, terms, warnings))
     }
 
     /// 应用确定性规则包。规则失败不影响主链（只记录未生效）。
@@ -932,22 +1039,20 @@ impl Coordinator {
         self.counters.template_hits.fetch_add(1, Ordering::Relaxed);
         let elapsed_ms = started.elapsed().as_millis() as u64;
 
-        // 模板结果同样要过完整性门禁（§8.4）：模板里可能带 `{filename}` 这类变量
+        // 模板结果走**同一套**终检（S1-01/§8.4）：模板里可能带 `{filename}` 这类变量，
+        // 也可能与术语表冲突——"本地确定性数据"不是免检理由。
         let plan = ProtectionPlan::prepare(normalized, &self.config.protection)?;
-        let report = quality::check_with_protection(&plan, &hit, &req.target, options.mode);
-        if report.has_fatal() && self.config.strict_integrity {
-            return Err(TranslationError::new(
-                TranslationErrorCode::IntegrityFailure,
-                format!(
-                    "模板译文未通过完整性检查（模板数据本身可能已过期）：{}",
-                    report.fatal_summary()
-                ),
-            ));
-        }
+        let finalized = self
+            .finalize_translation(normalized, &hit, &plan, source, &req.target, options.mode)
+            .map_err(|err| {
+                TranslationError::new(
+                    err.code,
+                    format!("模板译文未通过终检（模板数据可能已过期）：{}", err.message),
+                )
+            })?;
 
-        let text = quality::repair_output(&hit);
         let mut result = TranslationResult {
-            text,
+            text: finalized.text.clone(),
             source: source.clone(),
             target: req.target.clone(),
             engine_id: format!(
@@ -998,9 +1103,10 @@ impl Coordinator {
             resource_fingerprint: self.config.resource_fingerprint.clone(),
             route_reason: "整句模板命中".to_string(),
             protection_strategy: plan.strategy().as_str().to_string(),
+            repair: finalized.repair.as_str().to_string(),
             protected_spans: plan.spans().to_vec(),
-            glossary: None,
-            quality: Some(report),
+            glossary: self.term_trace(finalized.terms.as_ref()),
+            quality: Some(finalized.quality.clone()),
             attempts: 1,
             elapsed_ms,
             prompt_version: String::new(),
@@ -1145,6 +1251,20 @@ impl Coordinator {
         }
     }
 
+    /// 术语诊断轨迹（模型路径与模板路径共用）。
+    fn term_trace(&self, terms: Option<&crate::terms::TermVerification>) -> Option<TermTrace> {
+        let verification = terms?;
+        let glossary = self.config.glossary.as_ref()?;
+        Some(TermTrace {
+            id: glossary.id().to_string(),
+            version: glossary.version(),
+            policy: self.config.term_policy,
+            hits: verification.hits.len(),
+            satisfied: verification.satisfied_count(),
+            violations: verification.violations.clone(),
+        })
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn build_diagnostics(
         &self,
@@ -1161,25 +1281,9 @@ impl Coordinator {
         model_revision: Option<String>,
         prompt_version: String,
         rules: Option<RuleTrace>,
+        repair: RepairOutcome,
     ) -> TranslationDiagnostics {
-        let glossary = terms.map(|v| TermTrace {
-            id: self
-                .config
-                .glossary
-                .as_ref()
-                .map(|g| g.id().to_string())
-                .unwrap_or_default(),
-            version: self
-                .config
-                .glossary
-                .as_ref()
-                .map(|g| g.version())
-                .unwrap_or(0),
-            policy: self.config.term_policy,
-            hits: v.hits.len(),
-            satisfied: v.satisfied_count(),
-            violations: v.violations.clone(),
-        });
+        let glossary = self.term_trace(terms);
 
         TranslationDiagnostics {
             engine_id: result.engine_id.clone(),
@@ -1193,6 +1297,7 @@ impl Coordinator {
             resource_fingerprint: self.config.resource_fingerprint.clone(),
             route_reason: route.reason.clone(),
             protection_strategy: plan.strategy().as_str().to_string(),
+            repair: repair.as_str().to_string(),
             protected_spans: plan.spans().to_vec(),
             glossary,
             quality,
@@ -1204,6 +1309,40 @@ impl Coordinator {
             rules,
         }
     }
+}
+
+/// 格式修复的处置结果。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RepairOutcome {
+    /// 修复没有改变文本。
+    Unchanged,
+    /// 修复后的文本通过了终检，采用之。
+    Applied,
+    /// 修复后的文本未通过终检，退回原候选。
+    Rejected,
+}
+
+impl RepairOutcome {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Unchanged => "unchanged",
+            Self::Applied => "applied",
+            Self::Rejected => "rejected",
+        }
+    }
+}
+
+/// 通过终检的最终译文。
+///
+/// 关键不变量：`text` 就是被 `quality` / `terms` 判定过的**同一份文本**。
+/// 任何会改变译文的操作（格式修复、术语处理）都必须发生在生成它之前。
+#[derive(Debug)]
+struct FinalizedTranslation {
+    text: String,
+    quality: QualityReport,
+    terms: Option<crate::terms::TermVerification>,
+    warnings: Vec<TranslationWarning>,
+    repair: RepairOutcome,
 }
 
 /// 执行结果（内部）。
@@ -1233,4 +1372,190 @@ fn hash8(text: &str) -> String {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     text.hash(&mut hasher);
     format!("{:08x}", hasher.finish() as u32)
+}
+
+#[cfg(test)]
+mod finalize_tests {
+    //! S1-01：统一终检的白盒测试。
+    //!
+    //! 这些用例直接对 `finalize_translation` 断言，因为"修复是否被采用/退回"
+    //! 在端到端层面不容易构造出自然的中文输入；机制本身必须被单独固定下来。
+
+    use super::*;
+    use translator_plugin_api::mocks::MockNmtEngine;
+
+    fn coordinator() -> Coordinator {
+        let mut registry = PluginRegistry::new();
+        registry
+            .register_engine(MockNmtEngine::new())
+            .expect("注册 mock 引擎失败");
+        Coordinator::new(Arc::new(registry), CoordinatorConfig::default())
+    }
+
+    fn plan(text: &str) -> ProtectionPlan {
+        ProtectionPlan::prepare(text, &ProtectionPolicy::default()).expect("保护计划")
+    }
+
+    fn zh() -> (LanguageTag, LanguageTag) {
+        (
+            LanguageTag::new("en").unwrap(),
+            LanguageTag::new("zh-CN").unwrap(),
+        )
+    }
+
+    #[test]
+    fn 修复不破坏内容时会被采用() {
+        let c = coordinator();
+        let (en, zh) = zh();
+        let source = "The temperature is above 20 degrees.";
+        let p = plan(source);
+        assert!(p.is_trivial(), "该源文不应有受保护片段");
+
+        let finalized = c
+            .finalize_translation(
+                source,
+                "温度在以上20度。",
+                &p,
+                &en,
+                &zh,
+                TranslationMode::Precise,
+            )
+            .expect("应通过终检");
+        assert_eq!(finalized.repair, RepairOutcome::Applied);
+        assert_eq!(finalized.text, "温度在20度以上。");
+    }
+
+    #[test]
+    fn 修复破坏受保护版本号时退回原候选() {
+        let c = coordinator();
+        let (en, zh) = zh();
+        let source = "Version 2.1.3 or above is supported.";
+        let p = plan(source);
+        assert_eq!(p.spans().len(), 1, "2.1.3 应被保护");
+
+        // 这个候选一旦被"格式修复"就会把 2.1.3 拆成 2.1以上.3
+        let candidate = "版本 以上2.1.3";
+        assert_ne!(
+            quality::repair_output(candidate),
+            candidate,
+            "该候选确实会被修复改动"
+        );
+
+        let finalized = c
+            .finalize_translation(source, candidate, &p, &en, &zh, TranslationMode::Precise)
+            .expect("退回原候选后应通过");
+        assert_eq!(finalized.repair, RepairOutcome::Rejected);
+        assert_eq!(
+            finalized.text, candidate,
+            "必须退回原候选而不是被改坏的文本"
+        );
+        assert!(finalized.text.contains("2.1.3"));
+    }
+
+    #[test]
+    fn 修复改动关键数字时不采用() {
+        let c = coordinator();
+        let (en, zh) = zh();
+        // 版本号在候选里出现两次：一次被保护，一次是模型自己写的。
+        // 修复会把模型那份 "2.1.3" 拆成 "2.1以上.3" —— 必须拒绝采用。
+        let source = "Version 2.1.3 or above is supported.";
+        let p = plan(source);
+        let candidate = "版本 以上2.1.3（2.1.3）";
+        assert_ne!(quality::repair_output(candidate), candidate);
+
+        let finalized = c
+            .finalize_translation(source, candidate, &p, &en, &zh, TranslationMode::Precise)
+            .expect("候选本身应通过");
+        assert_eq!(finalized.repair, RepairOutcome::Rejected);
+        assert_eq!(finalized.text, candidate);
+    }
+
+    #[test]
+    fn 候选与修复后都不通过时返回完整性错误() {
+        let c = coordinator();
+        let (en, zh) = zh();
+        let source = "Order #10248 has shipped.";
+        let p = plan(source);
+
+        let err = c
+            .finalize_translation(
+                source,
+                "订单 #99999 已发货。",
+                &p,
+                &en,
+                &zh,
+                TranslationMode::Precise,
+            )
+            .expect_err("编号被改必须拒绝");
+        assert_eq!(err.code, TranslationErrorCode::IntegrityFailure);
+    }
+
+    #[test]
+    fn 修复后退回候选时仍然校验候选本身() {
+        let c = coordinator();
+        let (en, zh) = zh();
+        // 候选既会被修复改动，又缺少受保护内容 → 两条路都不通
+        let source = "Open https://example.com and {file}.";
+        let p = plan(source);
+        let err = c
+            .finalize_translation(
+                source,
+                "打开 以上2.1.3",
+                &p,
+                &en,
+                &zh,
+                TranslationMode::Precise,
+            )
+            .expect_err("缺少受保护内容必须拒绝");
+        assert_eq!(err.code, TranslationErrorCode::IntegrityFailure);
+    }
+
+    #[test]
+    fn 严格术语在最终文本上重新核验() {
+        let glossary = Arc::new(
+            Glossary::from_json(
+                r#"{"schema_version":1,"id":"g","version":1,"entries":[
+                    {"id":"t1","source":"large language model","target":"大语言模型",
+                     "strict":true}]}"#,
+            )
+            .unwrap(),
+        );
+        let config = CoordinatorConfig {
+            glossary: Some(glossary),
+            term_policy: TermPolicy::Enforce,
+            ..CoordinatorConfig::default()
+        };
+        let mut registry = PluginRegistry::new();
+        registry.register_engine(MockNmtEngine::new()).unwrap();
+        let c = Coordinator::new(Arc::new(registry), config);
+
+        let (en, zh) = zh();
+        let source = "A large language model is useful.";
+        let p = plan(source);
+
+        let ok = c
+            .finalize_translation(
+                source,
+                "大语言模型很有用。",
+                &p,
+                &en,
+                &zh,
+                TranslationMode::Precise,
+            )
+            .expect("满足严格术语应通过");
+        assert!(ok.terms.as_ref().is_some_and(|t| t.strict_satisfied()));
+
+        let err = c
+            .finalize_translation(
+                source,
+                "大型语言模型很有用。",
+                &p,
+                &en,
+                &zh,
+                TranslationMode::Precise,
+            )
+            .expect_err("未满足严格术语必须失败");
+        assert_eq!(err.code, TranslationErrorCode::IntegrityFailure);
+        assert!(err.message.contains("术语"), "{}", err.message);
+    }
 }

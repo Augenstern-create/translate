@@ -64,6 +64,10 @@ pub struct TranslationDiagnostics {
     pub route_reason: String,
     /// 实际使用的保护策略（`marker` / `segment`）。
     pub protection_strategy: String,
+    /// 格式修复的处置结果（`unchanged` / `applied` / `rejected`）。
+    ///
+    /// `rejected` 表示"修复会破坏译文，已退回原候选"——排查质量问题时很有用。
+    pub repair: String,
     /// 受保护跨度（含用户原文片段，注意隐私）。
     pub protected_spans: Vec<ProtectedSpan>,
     pub glossary: Option<TermTrace>,
@@ -92,6 +96,7 @@ impl TranslationDiagnostics {
             resource_fingerprint: String::new(),
             route_reason: String::new(),
             protection_strategy: "none".to_string(),
+            repair: "unchanged".to_string(),
             protected_spans: Vec::new(),
             glossary: None,
             quality: None,
@@ -125,6 +130,9 @@ impl TranslationDiagnostics {
         }
         if self.attempts > 1 {
             parts.push(format!("尝试={}", self.attempts));
+        }
+        if self.repair == "rejected" {
+            parts.push("格式修复已回退".to_string());
         }
         parts.join("；")
     }

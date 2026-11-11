@@ -257,6 +257,59 @@ fn 保护彻底失败时报完整性错误且不写缓存() {
     assert_eq!(translator.cache_stats().len, 0, "失败的译文不得写缓存");
 }
 
+#[test]
+fn 缓存命中返回与首次一致的终检文本() {
+    // 候选会被格式修复：最终文本必须是"修复后且校验通过"的那一份
+    let engine = ScriptedEngine::new("scripted.repair", |_, _| Ok("温度在以上20度。".to_string()));
+    let translator = translator_with(Arc::clone(&engine) as Arc<dyn TranslationEngine>);
+
+    let first = pollster::block_on(
+        translator.translate_with_diagnostics(&request("The temperature is above 20 degrees.")),
+    )
+    .expect("应通过终检");
+    assert_eq!(first.result.text, "温度在20度以上。");
+    assert_eq!(first.diagnostics.repair, "applied");
+
+    let second = pollster::block_on(
+        translator.translate_with_diagnostics(&request("The temperature is above 20 degrees.")),
+    )
+    .expect("缓存命中");
+    assert_eq!(
+        second.result.text, first.result.text,
+        "缓存文本必须与首次一致"
+    );
+    assert!(second.diagnostics.cache_hit);
+    assert_eq!(second.diagnostics.repair, "applied", "诊断也要一起缓存");
+    assert_eq!(engine.calls(), 1);
+}
+
+#[test]
+fn 修复回退后的文本同样进入缓存且稳定() {
+    // 修复会把"以上2.1.3"拆成"2.1以上.3"→ 关键数字被改，必须退回原候选并缓存原候选
+    let engine = ScriptedEngine::new("scripted.repair2", |job, _| {
+        Ok(format!("版本 以上2.1.3（{}）", job.text))
+    });
+    let translator = translator_with(Arc::clone(&engine) as Arc<dyn TranslationEngine>);
+
+    let first = pollster::block_on(
+        translator.translate_with_diagnostics(&request("Version 2.1.3 or above is supported.")),
+    )
+    .expect("退回原候选后应成功");
+    assert_eq!(
+        first.result.text,
+        "版本 以上2.1.3（Version 2.1.3 or above is supported.）"
+    );
+    assert_eq!(first.diagnostics.repair, "rejected");
+
+    let second = pollster::block_on(
+        translator.translate_with_diagnostics(&request("Version 2.1.3 or above is supported.")),
+    )
+    .expect("缓存命中");
+    assert_eq!(second.result.text, first.result.text);
+    assert_eq!(second.diagnostics.repair, "rejected");
+    assert_eq!(engine.calls(), 1);
+}
+
 // ============================================================
 // 数字与完整性
 // ============================================================
@@ -619,6 +672,72 @@ fn 术语表冲突在装配期报错() {
     )
     .unwrap_err();
     assert!(matches!(err, translator_api::GlossaryError::Conflict(_)));
+}
+
+// ============================================================
+// S1-01：统一终检（模板与模型走同一套规则）
+// ============================================================
+
+#[test]
+fn 模板译文也必须通过术语终检() {
+    // 模板数据可能与术语表冲突：模板命中不是"免检"的理由。
+    let templates = TemplateTable::from_json(
+        r#"{"schema_version":2,"id":"templates.conflict","version":1,
+            "source":"en","target":"zh-CN",
+            "entries":[{"source":"A large language model",
+                        "target":"大型语言模型。"}]}"#,
+    )
+    .unwrap()
+    .as_arc();
+
+    let engine = ScriptedEngine::new("scripted.unused", |job, _| Ok(job.text.to_string()));
+    let translator = Translator::builder()
+        .engine(Arc::clone(&engine) as Arc<dyn TranslationEngine>)
+        .expect("注册失败")
+        .templates(templates)
+        .glossary(Arc::new(
+            translator_api::Glossary::from_json(&glossary_json(true)).unwrap(),
+        ))
+        .term_policy(TermPolicy::Enforce)
+        .build()
+        .unwrap();
+
+    let err = pollster::block_on(translator.translate(&request("A large language model")))
+        .expect_err("模板译文违反 strict 术语时不得返回成功");
+    assert_eq!(
+        err.code,
+        TranslationErrorCode::IntegrityFailure,
+        "{}",
+        err.message
+    );
+    assert!(err.message.contains("术语"), "{}", err.message);
+    assert_eq!(engine.calls(), 0, "模板命中不应调用模型");
+}
+
+#[test]
+fn 模板路径与模型路径的终检规则一致() {
+    // 同一条源文：模板命中与模型产出都必须过完整性校验
+    let templates = TemplateTable::from_json(
+        r#"{"schema_version":2,"id":"templates.bad","version":1,
+            "source":"en","target":"zh-CN",
+            "entries":[{"source":"Open {file}","target":"打开"}]}"#,
+    )
+    .unwrap()
+    .as_arc();
+    let translator = Translator::builder()
+        .engine(MockNmtEngine::new())
+        .expect("注册失败")
+        .templates(templates)
+        .build()
+        .unwrap();
+    let err = pollster::block_on(translator.translate(&request("Open {file}")))
+        .expect_err("模板丢失占位符必须被拒绝");
+    assert_eq!(
+        err.code,
+        TranslationErrorCode::IntegrityFailure,
+        "{}",
+        err.message
+    );
 }
 
 // ============================================================
