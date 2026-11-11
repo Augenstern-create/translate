@@ -285,25 +285,22 @@ fn 缓存命中返回与首次一致的终检文本() {
 
 #[test]
 fn 修复回退后的文本同样进入缓存且稳定() {
-    // 修复会把"以上2.1.3"拆成"2.1以上.3"→ 关键数字被改，必须退回原候选并缓存原候选
-    let engine = ScriptedEngine::new("scripted.repair2", |job, _| {
-        Ok(format!("版本 以上2.1.3（{}）", job.text))
-    });
-    let translator = translator_with(Arc::clone(&engine) as Arc<dyn TranslationEngine>);
+    // 关闭数字保护，让"修复会拆坏版本号"成为唯一的变化来源：
+    // 修复把 "以上2.1.3" 拆成 "2.1以上.3"，关键数字变了 → 必须退回原候选
+    let engine = ScriptedEngine::new("scripted.repair2", |_, _| Ok("版本 以上2.1.3".to_string()));
+    let translator =
+        translator_without_number_protection(Arc::clone(&engine) as Arc<dyn TranslationEngine>);
 
-    let first = pollster::block_on(
-        translator.translate_with_diagnostics(&request("Version 2.1.3 or above is supported.")),
-    )
+    let first = pollster::block_on(translator.translate_with_diagnostics(&request(
+        "Version 2.1.3 or above is supported.",
+    )))
     .expect("退回原候选后应成功");
-    assert_eq!(
-        first.result.text,
-        "版本 以上2.1.3（Version 2.1.3 or above is supported.）"
-    );
+    assert_eq!(first.result.text, "版本 以上2.1.3");
     assert_eq!(first.diagnostics.repair, "rejected");
 
-    let second = pollster::block_on(
-        translator.translate_with_diagnostics(&request("Version 2.1.3 or above is supported.")),
-    )
+    let second = pollster::block_on(translator.translate_with_diagnostics(&request(
+        "Version 2.1.3 or above is supported.",
+    )))
     .expect("缓存命中");
     assert_eq!(second.result.text, first.result.text);
     assert_eq!(second.diagnostics.repair, "rejected");

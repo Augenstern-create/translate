@@ -358,8 +358,9 @@ impl ProtectionPlan {
             return Err(ProtectionError::UnknownMarker(excerpt));
         }
 
-        // 标记策略允许语序调整，因此这里只校验"出现次数"，不校验顺序。
-        self.verify_presence(&out)?;
+        // 标记策略允许语序调整，因此这里只校验"出现次数"，不校验顺序；
+        // 但次数必须**恰好相等**：少了是丢失，多了是模型自己编了一份。
+        self.verify_counts(&out)?;
         Ok(out)
     }
 
@@ -443,11 +444,17 @@ impl ProtectionPlan {
             }
         }
         self.verify_content(&out)?;
+        self.verify_counts(&out)?;
         Ok(out)
     }
 
-    /// 出现次数自检（允许语序调整）。
-    fn verify_presence(&self, text: &str) -> Result<(), ProtectionError> {
+    /// 出现次数自检（允许语序调整，但次数必须与源文一致）。
+    ///
+    /// 只比较"该片段的原文在文本里出现几次"：源文里同一个字符串既可能作为受保护
+    /// 片段出现，也可能作为普通文本出现（例如代码片段里包含 `{id}`），
+    /// 因此基准是**源文中的总次数**，而不是"片段个数"。
+    /// 这样既不会漏掉"模型自己补了一份"，也不会把合法的重复判死。
+    fn verify_counts(&self, text: &str) -> Result<(), ProtectionError> {
         for span in &self.spans {
             let expected = self.source.matches(&span.original).count().max(1);
             let got = text.matches(&span.original).count();
@@ -455,6 +462,14 @@ impl ProtectionPlan {
                 return Err(ProtectionError::Missing {
                     id: span.id,
                     kind: span.kind_str(),
+                });
+            }
+            if got > expected {
+                return Err(ProtectionError::UnexpectedDuplicate {
+                    id: span.id,
+                    kind: span.kind_str(),
+                    expected,
+                    got,
                 });
             }
         }
@@ -495,6 +510,13 @@ pub enum ProtectionError {
         id: u32,
         count: usize,
     },
+    /// 还原后出现了**多于源文**的受保护内容（模型自行补了一份）。
+    UnexpectedDuplicate {
+        id: u32,
+        kind: &'static str,
+        expected: usize,
+        got: usize,
+    },
     /// 未知标记 / 半截标记 / 模型改写的标记。
     UnknownMarker(String),
     SegmentCount {
@@ -519,6 +541,15 @@ impl fmt::Display for ProtectionError {
             Self::Duplicated { id, count } => {
                 write!(f, "受保护片段 #{id} 在译文里出现了 {count} 次")
             }
+            Self::UnexpectedDuplicate {
+                id,
+                kind,
+                expected,
+                got,
+            } => write!(
+                f,
+                "受保护内容（{kind}，片段 #{id}）在译文里出现了 {got} 次，源文只有 {expected} 次"
+            ),
             Self::UnknownMarker(marker) => {
                 write!(f, "译文里出现未知/被破坏的标记：{marker}")
             }
@@ -982,6 +1013,48 @@ mod tests {
         let out = translate_with_markers(&plan);
         assert!(out.contains("#10248"), "{out}");
         assert!(out.contains("2026-11-11"), "{out}");
+    }
+
+    #[test]
+    fn sp21_模型多吐一份受保护内容被发现() {
+        // 源文只有一个 {name}，模型却在译文里又写了一个
+        let plan = marker_plan("Hello {name}, welcome.");
+        let fabricated = "\u{27E6}P1\u{27E7} 你好，{name}。";
+        let err = plan
+            .restore(fabricated)
+            .expect_err("多出的受保护内容必须被发现");
+        assert!(
+            matches!(err, ProtectionError::UnexpectedDuplicate { .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn sp22_同一占位符出现两次时两次都必须保留() {
+        let plan = marker_plan("Hello {name}, bye {name}.");
+        assert_eq!(plan.spans().len(), 2);
+        let ok = plan
+            .restore("\u{27E6}P1\u{27E7} 你好 \u{27E6}P2\u{27E7} 再见")
+            .expect("两个实例都在");
+        assert_eq!(ok.matches("{name}").count(), 2, "{ok}");
+
+        let extra = plan
+            .restore("\u{27E6}P1\u{27E7} 你好 {name} \u{27E6}P2\u{27E7} 再见")
+            .expect_err("多出一份必须被发现");
+        assert!(
+            matches!(extra, ProtectionError::UnexpectedDuplicate { .. }),
+            "{extra:?}"
+        );
+    }
+
+    #[test]
+    fn sp23_受保护内容与普通文本重叠时不误报() {
+        // 代码片段里包含 {id}，普通文本里也有一个 {id}：两个都来自源文，不应误报
+        let source = "Run `use {id}` then fill {id}.";
+        let plan = ProtectionPlan::prepare(source, &ProtectionPolicy::default()).unwrap();
+        let masked = plan.masked();
+        let out = plan.restore(masked).expect("原样还原不应误报");
+        assert_eq!(out, source);
     }
 
     #[test]
