@@ -17,7 +17,7 @@
 | 3 | 切断旧规则依赖（句法/语义/组合/管线/规划器全部退出产品构建） | ✅ 完成 |
 | 4 | 工作区清理、文档重构、AGENTS.md、CI 重写 | ✅ 完成 |
 | 5 | 本地模型接入 | ✅ 已实测（llama.cpp + Qwen2.5-1.5B，CPU；29/30 机器可判定项通过）。与远程基线对比仍 `PENDING_HUMAN` |
-| 6 | SDK 稳定 + 最小可用客户端 | ✅ CLI 可用（translate / lookup / config / doctor / usage） |
+| 6 | SDK 稳定 + 最小可用客户端 | ✅ CLI（translate / lookup / config / doctor / usage）+ 本地网页界面（`serve`） |
 
 ---
 
@@ -80,6 +80,10 @@ $ TRANSLATE_E2E_KEY=bad translator-cli translate "Hello, world."
 $ translator-cli lookup hello          # 未安装词典
 错误：查词失败：没有注册任何词典；请安装词典包或注册词典插件（DictionaryUnavailable）
 ```
+
+本地网页界面（`translator-cli serve`，指向本地 llama.cpp 后端）：
+
+![本地翻译界面](evidence/ui-local-translate.png)
 
 ---
 
@@ -173,7 +177,7 @@ p33-bench                 migrate-rules
 ```text
 cargo fmt --all -- --check                      通过（无差异）
 cargo clippy --workspace --all-targets          0 warning
-cargo test --workspace                          302 passed / 0 failed / 4 ignored
+cargo test --workspace                          305 passed / 0 failed / 4 ignored
 cargo xwin check --workspace                    Windows(MSVC) 全工作区 check 通过
 cargo xwin build -p translator-cli              Windows .exe 链接成功（7.3 MB）
 ```
@@ -250,7 +254,7 @@ smoke 30 条：通过 29，失败 1（术语未遵循）
 ## 8. 结论
 
 架构目标（唯一主链、可换后端、可测量质量、成本可控、保护不可绕过）**已达成**，
-并用 302 个自动化测试 + 真实 HTTP 端到端实跑 + Windows 交叉编译固定下来。
+并用 305 个自动化测试 + 真实 HTTP 端到端实跑 + Windows 交叉编译固定下来。
 
 产品质量目标（"译文是否准确自然"）**尚未验收**：缺真实后端评测与人工评审，
 状态为 `PENDING_HUMAN`。按方案要求，不以自动指标替代人工验收。

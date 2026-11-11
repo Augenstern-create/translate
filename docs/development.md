@@ -88,7 +88,14 @@ $CLI translate "Hello."      # 翻译
 $CLI translate --file in.txt --json
 $CLI lookup bank --limit 3   # 查词（需要词典包）
 $CLI usage                   # 本次会话的用量与估算费用
+$CLI serve --port 8765       # 本地翻译页面（仅监听 127.0.0.1）
 ```
+
+`serve` 是一个内嵌的单页界面（无外部资源、无前端构建链），提供翻译与查词两个功能框，
+并把引擎、耗时、保护策略、质量摘要显示在结果下方。
+
+**安全边界**：只绑定 `127.0.0.1`，没有鉴权，**不要**把它暴露到公网；
+页面会明确提示"文本会发送到已配置的后端"。
 
 退出码：`0` 成功、`1` 运行错误、`2` 用法错误。错误信息里给出错误码，
 例如 `（AuthenticationFailed）`、`（DictionaryUnavailable）`。

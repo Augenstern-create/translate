@@ -28,7 +28,7 @@ cargo test -p translator-api           # 端到端流水线（脚本化引擎）
 当前基线（Linux，`refactor/online-translation-v1`）：
 
 ```text
-passed = 302   failed = 0   ignored = 4
+passed = 305   failed = 0   ignored = 4
 ```
 
 覆盖的关键场景：

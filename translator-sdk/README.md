@@ -42,6 +42,10 @@ cargo run -p translator-cli -- doctor
 cargo run -p translator-cli -- translate "The file at {path} was not found."
 cargo run -p translator-cli -- translate --file input.txt --json
 cargo run -p translator-cli -- lookup bank
+
+# 4) 图形界面（本地网页，仅监听 127.0.0.1）
+cargo run -p translator-cli -- serve --port 8765
+# 浏览器打开 http://127.0.0.1:8765/
 ```
 
 作为库使用：
@@ -90,7 +94,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-当前基线：`302 passed / 0 failed / 4 ignored`（详见 [`../docs/testing.md`](../docs/testing.md)）。
+当前基线：`305 passed / 0 failed / 4 ignored`（详见 [`../docs/testing.md`](../docs/testing.md)）。
 
 ## 文档
 

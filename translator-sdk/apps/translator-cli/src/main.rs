@@ -32,6 +32,8 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+mod serve;
+
 use serde::Deserialize;
 use translator_api::{Translator, TranslatorBuilder};
 use translator_http::{BackendConfig, BackendsFile, HttpSettings};
@@ -96,6 +98,7 @@ fn run(args: &[String]) -> Result<u8, Failure> {
         "config" => cmd_config(&global, &args[1..]),
         "doctor" => cmd_doctor(&global),
         "usage" => cmd_usage(&global),
+        "serve" => cmd_serve(&global, &args[1..]),
         "help" | "--help" | "-h" => {
             print_help();
             Ok(EXIT_OK)
@@ -124,6 +127,7 @@ fn print_help() {
   config show                 显示生效配置（密钥永远不显示）
   doctor                      环境自检（配置/密钥/词典/提示词）
   usage                       显示本次会话的用量与估算费用
+  serve [--port 8765]         启动本地翻译页面（仅监听 127.0.0.1）
   help                        显示本帮助
 
 通用选项：
@@ -780,6 +784,32 @@ fn cmd_doctor(global: &GlobalArgs) -> Result<u8, Failure> {
         println!("结论：{problems} 个问题需要处理");
         Ok(EXIT_ERROR)
     }
+}
+
+fn cmd_serve(global: &GlobalArgs, args: &[String]) -> Result<u8, Failure> {
+    let mut port = 8765u16;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--port" => {
+                port = args
+                    .get(i + 1)
+                    .ok_or_else(|| Failure::Usage("--port 需要值".to_string()))?
+                    .parse()
+                    .map_err(|_| Failure::Usage("--port 必须是 1-65535".to_string()))?;
+                i += 2;
+            }
+            "--config" | "--json" => i += 2,
+            other if other.starts_with("--") => {
+                return Err(Failure::Usage(format!("未知选项 {other}")))
+            }
+            _ => i += 1,
+        }
+    }
+    let config = load_file_config(&global.config_path())?;
+    let translator = std::sync::Arc::new(build_translator(&config)?);
+    serve::serve(translator, port).map_err(Failure::App)?;
+    Ok(EXIT_OK)
 }
 
 fn cmd_usage(global: &GlobalArgs) -> Result<u8, Failure> {

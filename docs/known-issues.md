@@ -32,4 +32,4 @@
 | K-24 | 成本 | 客户端 token 计数只用于提醒，不是可信计费边界 | 低 | Accepted |
 | K-25 | 词典 | 词典释义质量继承 ECDICT 上游，未做逐条人工校对 | 中 | PENDING_HUMAN |
 | K-26 | 语言识别 | 内置启发式无法区分中文/日文，也无法细分拉丁语言 | 低 | Accepted（请求应显式给 source） |
-| K-27 | CLI | 只有命令行客户端，没有图形界面 | 中 | Open（Phase 6 的最小可用界面就是 CLI） |
+| K-27 | UI | 已有本地网页界面（`translator-cli serve`，仅回环、无鉴权、无外部资源）；仍没有桌面原生 GUI | 低 | Accepted（网页界面满足"最小可用"） |

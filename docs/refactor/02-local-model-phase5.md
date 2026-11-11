@@ -93,6 +93,27 @@ $ translator-cli translate "A large language model can summarize long documents.
 
 ---
 
+## 3.1 最小可用界面（Phase 6）
+
+`translator-cli serve --port 18085` 启动本地单页界面，指向同一个本地模型后端：
+
+```console
+$ curl -s http://127.0.0.1:18085/api/health
+{"backends":["http.local"],"mode":"Precise","status":"ok"}
+
+$ curl -s -X POST -H 'content-type: application/json' \
+    -d '{"text":"The file at {path} was not found."}' \
+    http://127.0.0.1:18085/api/translate
+{"text":"文件 {path} 未找到。","engine_id":"http.local","elapsed_ms":1053,
+ "protection":"marker","quality":{"fatal":false,"issues":0,...}}
+```
+
+界面截图：![本地翻译界面](evidence/ui-local-translate.png)
+
+（页面内嵌在二进制里，不引用任何外部资源；只监听回环地址，无鉴权。）
+
+---
+
 ## 4. 与远程基线的对比：**未做**
 
 按要求，"本地模型是否值得进入默认主链"必须与远程基线（转发站上的 DeepSeek）

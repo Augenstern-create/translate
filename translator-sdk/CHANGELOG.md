@@ -49,7 +49,7 @@
 ### 验收
 
 - `cargo fmt --check` / `cargo clippy -D warnings` / `cargo test --workspace` 全绿
-  （302 passed / 0 failed / 4 ignored）
+  （305 passed / 0 failed / 4 ignored）
 - Windows（MSVC）交叉编译：`cargo xwin check --workspace` + `translator-cli.exe` 链接成功
 - 端到端实跑：本地 llama.cpp + Qwen2.5-1.5B-Instruct 完成真实翻译
 - 人工质量评审：**PENDING_HUMAN**（详见 `docs/testing.md`）
