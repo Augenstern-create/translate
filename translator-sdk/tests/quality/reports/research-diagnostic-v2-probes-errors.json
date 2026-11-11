@@ -1,0 +1,2304 @@
+{
+  "audit": "tests/quality/reports/research-diagnostic-v2-probes.json",
+  "samples": 200,
+  "route_counts": {
+    "local_nmt": 157,
+    "rule": 43
+  },
+  "flag_by_category": {
+    "fluency": {
+      "ASCII_COMMA": 20,
+      "REPETITION_SUSPECT": 2,
+      "LENGTH_COMPRESSION_SUSPECT": 1
+    },
+    "nmt_fidelity": {
+      "ASCII_COMMA": 10
+    },
+    "realize": {
+      "REPETITION_SUSPECT": 5
+    },
+    "scope": {
+      "LENGTH_COMPRESSION_SUSPECT": 2
+    }
+  },
+  "quality_status": "PENDING_HUMAN",
+  "rows": [
+    {
+      "id": "probe-0001",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "The man saw the cat with a telescope.",
+      "translation": "那个人看到猫拿着望远镜",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0002",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "The woman saw the boy with a pen.",
+      "translation": "女人用笔看见男孩",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0003",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "The dog saw the girl with a bag.",
+      "translation": "狗看见那女孩拿着包",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0004",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "The cat saw the student with a report.",
+      "translation": "猫看到学生有报告",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0005",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "The boy saw the teacher with a letter.",
+      "translation": "男孩看到老师拿着一封信",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0006",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "The girl saw the doctor with a key.",
+      "translation": "女孩用钥匙看见医生了",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0007",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "The student saw the friend with a phone.",
+      "translation": "学生看见朋友拿着电话",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0008",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "The teacher saw the man with a book.",
+      "translation": "老师看见那个男人拿着书",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0009",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "The doctor saw the woman with a telescope.",
+      "translation": "医生看到那个女人拿着望远镜",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0010",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "The friend saw the dog with a pen.",
+      "translation": "朋友用笔看见狗",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0011",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "She went to the station in the morning.",
+      "translation": "她早上去车站了",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0012",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "She went to the market in the morning.",
+      "translation": "她早上去市场了",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0013",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "She went to the office in the morning.",
+      "translation": "她早上去办公室了",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0014",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "She went to the park in the morning.",
+      "translation": "她早上去公园了",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0015",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "She went to the library in the morning.",
+      "translation": "她早上去图书馆了",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0016",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "She went to the kitchen in the morning.",
+      "translation": "她早上去厨房了",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0017",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "She went to the school in the morning.",
+      "translation": "她早上去学校了",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0018",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "She went to the house in the morning.",
+      "translation": "她早上去家里了",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0019",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "She went to the station in the morning.",
+      "translation": "她早上去车站了",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0020",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "She went to the market in the morning.",
+      "translation": "她早上去市场了",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0021",
+      "category": "scope",
+      "route": "rule",
+      "source": "I don't want the man.",
+      "translation": "我不想男人。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0022",
+      "category": "scope",
+      "route": "rule",
+      "source": "I don't buy the woman.",
+      "translation": "我不买女人。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0023",
+      "category": "scope",
+      "route": "rule",
+      "source": "I don't open the dog.",
+      "translation": "我不打开狗。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0024",
+      "category": "scope",
+      "route": "rule",
+      "source": "I don't close the cat.",
+      "translation": "我不关猫。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0025",
+      "category": "scope",
+      "route": "rule",
+      "source": "I don't send the boy.",
+      "translation": "我不发送男孩。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0026",
+      "category": "scope",
+      "route": "rule",
+      "source": "I don't help the girl.",
+      "translation": "我不帮助女孩。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0027",
+      "category": "scope",
+      "route": "local_nmt",
+      "source": "I don't watch the student.",
+      "translation": "我不看学生。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0028",
+      "category": "scope",
+      "route": "rule",
+      "source": "I don't see the teacher.",
+      "translation": "我不看见老师。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0029",
+      "category": "scope",
+      "route": "local_nmt",
+      "source": "I don't read the doctor.",
+      "translation": "我不看医生",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0030",
+      "category": "scope",
+      "route": "rule",
+      "source": "I don't find the friend.",
+      "translation": "我不找到朋友。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0031",
+      "category": "scope",
+      "route": "rule",
+      "source": "If it doesn't buy, I close.",
+      "translation": "如果不买，我关。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0032",
+      "category": "scope",
+      "route": "rule",
+      "source": "If it doesn't open, I send.",
+      "translation": "如果不打开，我发送。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0033",
+      "category": "scope",
+      "route": "rule",
+      "source": "If it doesn't close, I help.",
+      "translation": "如果不关，我帮助。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0034",
+      "category": "scope",
+      "route": "rule",
+      "source": "If it doesn't send, I watch.",
+      "translation": "如果不发送，我看。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0035",
+      "category": "scope",
+      "route": "rule",
+      "source": "If it doesn't help, I see.",
+      "translation": "如果不帮助，我看见。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0036",
+      "category": "scope",
+      "route": "rule",
+      "source": "If it doesn't watch, I read.",
+      "translation": "如果不看，我读。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0037",
+      "category": "scope",
+      "route": "rule",
+      "source": "If it doesn't see, I find.",
+      "translation": "如果不看见，我找到。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0038",
+      "category": "scope",
+      "route": "rule",
+      "source": "If it doesn't read, I want.",
+      "translation": "如果不读，我想。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0039",
+      "category": "scope",
+      "route": "rule",
+      "source": "If it doesn't find, I buy.",
+      "translation": "如果不找到，我买。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0040",
+      "category": "scope",
+      "route": "rule",
+      "source": "If it doesn't want, I open.",
+      "translation": "如果不想，我打开。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0041",
+      "category": "relative",
+      "route": "local_nmt",
+      "source": "The man who open the cat send.",
+      "translation": "开猫门的人送来",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0042",
+      "category": "relative",
+      "route": "local_nmt",
+      "source": "The woman who close the boy help.",
+      "translation": "关上男孩的帮助的女人",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0043",
+      "category": "relative",
+      "route": "local_nmt",
+      "source": "The dog who send the girl watch.",
+      "translation": "送女孩表的狗",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0044",
+      "category": "relative",
+      "route": "local_nmt",
+      "source": "The cat who help the student see.",
+      "translation": "帮助学生看的猫",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0045",
+      "category": "relative",
+      "route": "local_nmt",
+      "source": "The boy who watch the teacher read.",
+      "translation": "看着老师念书的男孩",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0046",
+      "category": "relative",
+      "route": "local_nmt",
+      "source": "The girl who see the doctor find.",
+      "translation": "去看医生的女孩发现了",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0047",
+      "category": "relative",
+      "route": "local_nmt",
+      "source": "The student who read the friend want.",
+      "translation": "读朋友要读的学生",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0048",
+      "category": "relative",
+      "route": "local_nmt",
+      "source": "The teacher who find the man buy.",
+      "translation": "找到买男的老师",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0049",
+      "category": "relative",
+      "route": "local_nmt",
+      "source": "The doctor who want the woman open.",
+      "translation": "医生想要那个女人开张",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0050",
+      "category": "relative",
+      "route": "local_nmt",
+      "source": "The friend who buy the dog close.",
+      "translation": "买狗的朋友",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0051",
+      "category": "coordination",
+      "route": "local_nmt",
+      "source": "The man and the cat close.",
+      "translation": "男人和猫亲近。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0052",
+      "category": "coordination",
+      "route": "local_nmt",
+      "source": "The woman and the boy send.",
+      "translation": "女人和男孩送。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0053",
+      "category": "coordination",
+      "route": "local_nmt",
+      "source": "The dog and the girl help.",
+      "translation": "狗和女孩帮忙。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0054",
+      "category": "coordination",
+      "route": "local_nmt",
+      "source": "The cat and the student watch.",
+      "translation": "猫和学生表",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0055",
+      "category": "coordination",
+      "route": "local_nmt",
+      "source": "The boy and the teacher see.",
+      "translation": "男孩和老师看。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0056",
+      "category": "coordination",
+      "route": "local_nmt",
+      "source": "The girl and the doctor read.",
+      "translation": "女孩和医生读。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0057",
+      "category": "coordination",
+      "route": "local_nmt",
+      "source": "The student and the friend find.",
+      "translation": "学生和朋友发现。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0058",
+      "category": "coordination",
+      "route": "local_nmt",
+      "source": "The teacher and the man want.",
+      "translation": "老师和男人想要的。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0059",
+      "category": "coordination",
+      "route": "local_nmt",
+      "source": "The doctor and the woman buy.",
+      "translation": "医生和女人买的",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0060",
+      "category": "coordination",
+      "route": "local_nmt",
+      "source": "The friend and the dog open.",
+      "translation": "朋友和狗打开。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0061",
+      "category": "coordination",
+      "route": "rule",
+      "source": "I bought two mans and three cats.",
+      "translation": "我买了两个男人和三只猫。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0062",
+      "category": "coordination",
+      "route": "rule",
+      "source": "I bought two womans and three boys.",
+      "translation": "我买了两个女人和三个男孩。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0063",
+      "category": "coordination",
+      "route": "rule",
+      "source": "I bought two dogs and three girls.",
+      "translation": "我买了两只狗和三个女孩。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0064",
+      "category": "coordination",
+      "route": "local_nmt",
+      "source": "I bought two cats and three students.",
+      "translation": "我买了两只猫和三名学生",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0065",
+      "category": "coordination",
+      "route": "rule",
+      "source": "I bought two boys and three teachers.",
+      "translation": "我买了两个男孩和三位老师。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0066",
+      "category": "coordination",
+      "route": "local_nmt",
+      "source": "I bought two girls and three doctors.",
+      "translation": "我买了两个女孩和三个医生",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0067",
+      "category": "coordination",
+      "route": "local_nmt",
+      "source": "I bought two students and three friends.",
+      "translation": "我买了两个学生和三个朋友",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0068",
+      "category": "coordination",
+      "route": "rule",
+      "source": "I bought two teachers and three mans.",
+      "translation": "我买了两位老师和三个男人。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0069",
+      "category": "coordination",
+      "route": "local_nmt",
+      "source": "I bought two doctors and three womans.",
+      "translation": "我买了两个医生和三个女人",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0070",
+      "category": "coordination",
+      "route": "rule",
+      "source": "I bought two friends and three dogs.",
+      "translation": "我买了两个朋友和三只狗。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0071",
+      "category": "realize",
+      "route": "rule",
+      "source": "The man is not cold.",
+      "translation": "男人不冷。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0072",
+      "category": "realize",
+      "route": "rule",
+      "source": "The woman is not ready.",
+      "translation": "女人不准备好。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0073",
+      "category": "realize",
+      "route": "rule",
+      "source": "The dog is not tired.",
+      "translation": "狗不累。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0074",
+      "category": "realize",
+      "route": "rule",
+      "source": "The cat is not busy.",
+      "translation": "猫不忙。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0075",
+      "category": "realize",
+      "route": "local_nmt",
+      "source": "The boy is not quiet.",
+      "translation": "这孩子不安静",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0076",
+      "category": "realize",
+      "route": "local_nmt",
+      "source": "The girl is not careful.",
+      "translation": "女孩不小心。 女孩是不小心。",
+      "heuristic_flags": [
+        "REPETITION_SUSPECT"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0077",
+      "category": "realize",
+      "route": "local_nmt",
+      "source": "The student is not happy.",
+      "translation": "学生不高兴",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0078",
+      "category": "realize",
+      "route": "rule",
+      "source": "The teacher is not cold.",
+      "translation": "老师不冷。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0079",
+      "category": "realize",
+      "route": "local_nmt",
+      "source": "The doctor is not ready.",
+      "translation": "医生还没准备好",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0080",
+      "category": "realize",
+      "route": "rule",
+      "source": "The friend is not tired.",
+      "translation": "朋友不累。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0081",
+      "category": "realize",
+      "route": "rule",
+      "source": "He went to the house.",
+      "translation": "他去了房子房子。",
+      "heuristic_flags": [
+        "REPETITION_SUSPECT"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0082",
+      "category": "realize",
+      "route": "local_nmt",
+      "source": "He went to the station.",
+      "translation": "他去了车站",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0083",
+      "category": "realize",
+      "route": "local_nmt",
+      "source": "He went to the market.",
+      "translation": "他去了市场",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0084",
+      "category": "realize",
+      "route": "rule",
+      "source": "He went to the office.",
+      "translation": "他去了办公室办公室。",
+      "heuristic_flags": [
+        "REPETITION_SUSPECT"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0085",
+      "category": "realize",
+      "route": "local_nmt",
+      "source": "He went to the park.",
+      "translation": "他去了公园",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0086",
+      "category": "realize",
+      "route": "local_nmt",
+      "source": "He went to the library.",
+      "translation": "他去了图书馆",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0087",
+      "category": "realize",
+      "route": "local_nmt",
+      "source": "He went to the kitchen.",
+      "translation": "他去了厨房",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0088",
+      "category": "realize",
+      "route": "rule",
+      "source": "He went to the school.",
+      "translation": "他去了学校学校。",
+      "heuristic_flags": [
+        "REPETITION_SUSPECT"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0089",
+      "category": "realize",
+      "route": "rule",
+      "source": "He went to the house.",
+      "translation": "他去了房子房子。",
+      "heuristic_flags": [
+        "REPETITION_SUSPECT"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0090",
+      "category": "realize",
+      "route": "local_nmt",
+      "source": "He went to the station.",
+      "translation": "他去了车站",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0091",
+      "category": "sense",
+      "route": "local_nmt",
+      "source": "I left the bank at five.",
+      "translation": "我五点离开银行",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0092",
+      "category": "sense",
+      "route": "local_nmt",
+      "source": "I left the bank at five.",
+      "translation": "我五点离开银行",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0093",
+      "category": "sense",
+      "route": "local_nmt",
+      "source": "I left the bank at five.",
+      "translation": "我五点离开银行",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0094",
+      "category": "sense",
+      "route": "local_nmt",
+      "source": "I left the bank at five.",
+      "translation": "我五点离开银行",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0095",
+      "category": "sense",
+      "route": "local_nmt",
+      "source": "I left the bank at five.",
+      "translation": "我五点离开银行",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0096",
+      "category": "sense",
+      "route": "local_nmt",
+      "source": "I left the bank at five.",
+      "translation": "我五点离开银行",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0097",
+      "category": "sense",
+      "route": "local_nmt",
+      "source": "I left the bank at five.",
+      "translation": "我五点离开银行",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0098",
+      "category": "sense",
+      "route": "local_nmt",
+      "source": "I left the bank at five.",
+      "translation": "我五点离开银行",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0099",
+      "category": "sense",
+      "route": "local_nmt",
+      "source": "I left the bank at five.",
+      "translation": "我五点离开银行",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0100",
+      "category": "sense",
+      "route": "local_nmt",
+      "source": "I left the bank at five.",
+      "translation": "我五点离开银行",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0101",
+      "category": "fluency",
+      "route": "local_nmt",
+      "source": "The more you read, the better you become.",
+      "translation": "你越读越多,你就会越好",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0102",
+      "category": "fluency",
+      "route": "local_nmt",
+      "source": "The more you find, the better you become.",
+      "translation": "你越是发现越多,你就会越好",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0103",
+      "category": "fluency",
+      "route": "local_nmt",
+      "source": "The more you want, the better you become.",
+      "translation": "你想要越多,你就会越好",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0104",
+      "category": "fluency",
+      "route": "local_nmt",
+      "source": "The more you buy, the better you become.",
+      "translation": "你买得越多,越好",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0105",
+      "category": "fluency",
+      "route": "local_nmt",
+      "source": "The more you open, the better you become.",
+      "translation": "你越开开越好,你就会越好",
+      "heuristic_flags": [
+        "REPETITION_SUSPECT",
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0106",
+      "category": "fluency",
+      "route": "local_nmt",
+      "source": "The more you close, the better you become.",
+      "translation": "你越接近,你就会越好",
+      "heuristic_flags": [
+        "ASCII_COMMA",
+        "LENGTH_COMPRESSION_SUSPECT"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0107",
+      "category": "fluency",
+      "route": "local_nmt",
+      "source": "The more you send, the better you become.",
+      "translation": "你送的越多,你就会越好",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0108",
+      "category": "fluency",
+      "route": "local_nmt",
+      "source": "The more you help, the better you become.",
+      "translation": "你越帮越多,你就会越好",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0109",
+      "category": "fluency",
+      "route": "local_nmt",
+      "source": "The more you watch, the better you become.",
+      "translation": "你越看越好,你就会越好",
+      "heuristic_flags": [
+        "REPETITION_SUSPECT",
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0110",
+      "category": "fluency",
+      "route": "local_nmt",
+      "source": "The more you see, the better you become.",
+      "translation": "你越看越清楚,你就会越好",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0111",
+      "category": "nmt_fidelity",
+      "route": "local_nmt",
+      "source": "Please send the report by Friday.",
+      "translation": "请在星期五前递交报告。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0112",
+      "category": "nmt_fidelity",
+      "route": "local_nmt",
+      "source": "Please send the letter by Monday.",
+      "translation": "请在星期一前寄出这封信。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0113",
+      "category": "nmt_fidelity",
+      "route": "local_nmt",
+      "source": "Please send the key by Sunday.",
+      "translation": "请在星期天前把钥匙寄出去",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0114",
+      "category": "nmt_fidelity",
+      "route": "local_nmt",
+      "source": "Please send the phone by Tuesday.",
+      "translation": "请在周二前发电话",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0115",
+      "category": "nmt_fidelity",
+      "route": "local_nmt",
+      "source": "Please send the book by Friday.",
+      "translation": "请在星期五之前把书寄出去",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0116",
+      "category": "nmt_fidelity",
+      "route": "local_nmt",
+      "source": "Please send the telescope by Monday.",
+      "translation": "请在星期一前送望远镜",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0117",
+      "category": "nmt_fidelity",
+      "route": "local_nmt",
+      "source": "Please send the pen by Sunday.",
+      "translation": "请周日前寄笔",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0118",
+      "category": "nmt_fidelity",
+      "route": "local_nmt",
+      "source": "Please send the bag by Tuesday.",
+      "translation": "请在星期二前把包寄出去",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0119",
+      "category": "nmt_fidelity",
+      "route": "local_nmt",
+      "source": "Please send the report by Friday.",
+      "translation": "请在星期五前递交报告。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0120",
+      "category": "nmt_fidelity",
+      "route": "local_nmt",
+      "source": "Please send the letter by Monday.",
+      "translation": "请在星期一前寄出这封信。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0121",
+      "category": "role",
+      "route": "local_nmt",
+      "source": "The man gave the cat a letter.",
+      "translation": "那个人给猫一封信",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0122",
+      "category": "role",
+      "route": "local_nmt",
+      "source": "The woman gave the boy a key.",
+      "translation": "女人给了男孩一把钥匙",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0123",
+      "category": "role",
+      "route": "local_nmt",
+      "source": "The dog gave the girl a phone.",
+      "translation": "狗给了女孩一个电话。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0124",
+      "category": "role",
+      "route": "local_nmt",
+      "source": "The cat gave the student a book.",
+      "translation": "猫给了学生一本书",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0125",
+      "category": "role",
+      "route": "local_nmt",
+      "source": "The boy gave the teacher a telescope.",
+      "translation": "男孩给了老师望远镜",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0126",
+      "category": "role",
+      "route": "local_nmt",
+      "source": "The girl gave the doctor a pen.",
+      "translation": "女孩给医生一支笔。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0127",
+      "category": "role",
+      "route": "local_nmt",
+      "source": "The student gave the friend a bag.",
+      "translation": "学生给了朋友一个袋子",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0128",
+      "category": "role",
+      "route": "local_nmt",
+      "source": "The teacher gave the man a report.",
+      "translation": "老师给了他一份报告",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0129",
+      "category": "role",
+      "route": "local_nmt",
+      "source": "The doctor gave the woman a letter.",
+      "translation": "医生给该妇女一封信。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0130",
+      "category": "role",
+      "route": "local_nmt",
+      "source": "The friend gave the dog a key.",
+      "translation": "朋友给了狗一把钥匙",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0131",
+      "category": "realize",
+      "route": "rule",
+      "source": "They are buying the key.",
+      "translation": "他们正在买钥匙。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0132",
+      "category": "realize",
+      "route": "rule",
+      "source": "They are opening the phone.",
+      "translation": "他们正在打开手机。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0133",
+      "category": "realize",
+      "route": "rule",
+      "source": "They are closeing the book.",
+      "translation": "他们正在关书。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0134",
+      "category": "realize",
+      "route": "local_nmt",
+      "source": "They are sending the telescope.",
+      "translation": "他们正在发送望远镜。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0135",
+      "category": "realize",
+      "route": "rule",
+      "source": "They are helping the pen.",
+      "translation": "他们正在帮助笔。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0136",
+      "category": "realize",
+      "route": "rule",
+      "source": "They are watching the bag.",
+      "translation": "他们正在看包。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0137",
+      "category": "realize",
+      "route": "local_nmt",
+      "source": "They are seeing the report.",
+      "translation": "他们正在看到报告。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0138",
+      "category": "realize",
+      "route": "local_nmt",
+      "source": "They are reading the letter.",
+      "translation": "他们在读这封信",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0139",
+      "category": "realize",
+      "route": "rule",
+      "source": "They are finding the key.",
+      "translation": "他们正在找到钥匙。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0140",
+      "category": "realize",
+      "route": "rule",
+      "source": "They are wanting the phone.",
+      "translation": "他们正在想手机。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0141",
+      "category": "sense",
+      "route": "local_nmt",
+      "source": "He is reading a book about language.",
+      "translation": "他在读一本关于语言的书",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0142",
+      "category": "sense",
+      "route": "local_nmt",
+      "source": "He is reading a book about music.",
+      "translation": "他在读一本关于音乐的书",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0143",
+      "category": "sense",
+      "route": "local_nmt",
+      "source": "He is reading a book about health.",
+      "translation": "他在读一本关于健康的书",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0144",
+      "category": "sense",
+      "route": "local_nmt",
+      "source": "He is reading a book about AI.",
+      "translation": "他在读一本关于AI的书",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0145",
+      "category": "sense",
+      "route": "local_nmt",
+      "source": "He is reading a book about history.",
+      "translation": "他在读一本关于历史的书",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0146",
+      "category": "sense",
+      "route": "local_nmt",
+      "source": "He is reading a book about science.",
+      "translation": "他在读一本关于科学的书",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0147",
+      "category": "sense",
+      "route": "local_nmt",
+      "source": "He is reading a book about language.",
+      "translation": "他在读一本关于语言的书",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0148",
+      "category": "sense",
+      "route": "local_nmt",
+      "source": "He is reading a book about music.",
+      "translation": "他在读一本关于音乐的书",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0149",
+      "category": "sense",
+      "route": "local_nmt",
+      "source": "He is reading a book about health.",
+      "translation": "他在读一本关于健康的书",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0150",
+      "category": "sense",
+      "route": "local_nmt",
+      "source": "He is reading a book about AI.",
+      "translation": "他在读一本关于AI的书",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0151",
+      "category": "fluency",
+      "route": "local_nmt",
+      "source": "It is what it is, and that's fine.",
+      "translation": "就是这样,那很好",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0152",
+      "category": "fluency",
+      "route": "local_nmt",
+      "source": "It is what it is, and that's fine.",
+      "translation": "就是这样,那很好",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0153",
+      "category": "fluency",
+      "route": "local_nmt",
+      "source": "It is what it is, and that's fine.",
+      "translation": "就是这样,那很好",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0154",
+      "category": "fluency",
+      "route": "local_nmt",
+      "source": "It is what it is, and that's fine.",
+      "translation": "就是这样,那很好",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0155",
+      "category": "fluency",
+      "route": "local_nmt",
+      "source": "It is what it is, and that's fine.",
+      "translation": "就是这样,那很好",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0156",
+      "category": "fluency",
+      "route": "local_nmt",
+      "source": "It is what it is, and that's fine.",
+      "translation": "就是这样,那很好",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0157",
+      "category": "fluency",
+      "route": "local_nmt",
+      "source": "It is what it is, and that's fine.",
+      "translation": "就是这样,那很好",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0158",
+      "category": "fluency",
+      "route": "local_nmt",
+      "source": "It is what it is, and that's fine.",
+      "translation": "就是这样,那很好",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0159",
+      "category": "fluency",
+      "route": "local_nmt",
+      "source": "It is what it is, and that's fine.",
+      "translation": "就是这样,那很好",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0160",
+      "category": "fluency",
+      "route": "local_nmt",
+      "source": "It is what it is, and that's fine.",
+      "translation": "就是这样,那很好",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0161",
+      "category": "relative",
+      "route": "local_nmt",
+      "source": "The man who saw the cat ran.",
+      "translation": "看见猫跑的人",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0162",
+      "category": "relative",
+      "route": "local_nmt",
+      "source": "The woman who saw the boy ran.",
+      "translation": "看见男孩子跑的女人跑了",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0163",
+      "category": "relative",
+      "route": "local_nmt",
+      "source": "The dog who saw the girl ran.",
+      "translation": "看见那女孩跑的狗",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0164",
+      "category": "relative",
+      "route": "local_nmt",
+      "source": "The cat who saw the student ran.",
+      "translation": "看见学生跑的猫",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0165",
+      "category": "relative",
+      "route": "local_nmt",
+      "source": "The boy who saw the teacher ran.",
+      "translation": "看见老师跑的男孩",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0166",
+      "category": "relative",
+      "route": "local_nmt",
+      "source": "The girl who saw the doctor ran.",
+      "translation": "看见医生的那个女孩跑了",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0167",
+      "category": "relative",
+      "route": "local_nmt",
+      "source": "The student who saw the friend ran.",
+      "translation": "看见朋友跑的那个学生",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0168",
+      "category": "relative",
+      "route": "local_nmt",
+      "source": "The teacher who saw the man ran.",
+      "translation": "看见那个人逃跑的老师",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0169",
+      "category": "relative",
+      "route": "local_nmt",
+      "source": "The doctor who saw the woman ran.",
+      "translation": "看见那个女人跑的医生",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0170",
+      "category": "relative",
+      "route": "local_nmt",
+      "source": "The friend who saw the dog ran.",
+      "translation": "看见狗跑的朋友",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0171",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "The man in the station ran.",
+      "translation": "车站里的人跑了",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0172",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "The woman in the market ran.",
+      "translation": "市场里的女人跑掉了",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0173",
+      "category": "pp_attachment",
+      "route": "rule",
+      "source": "The dog in the office ran.",
+      "translation": "狗跑了。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0174",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "The cat in the park ran.",
+      "translation": "公园里的猫跑了",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0175",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "The boy in the library ran.",
+      "translation": "图书馆里那个男孩跑了",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0176",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "The girl in the kitchen ran.",
+      "translation": "厨房里的女孩跑了",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0177",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "The student in the school ran.",
+      "translation": "学校的学生跑掉了。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0178",
+      "category": "pp_attachment",
+      "route": "rule",
+      "source": "The teacher in the house ran.",
+      "translation": "老师跑了。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0179",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "The doctor in the station ran.",
+      "translation": "站里的医生跑了",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0180",
+      "category": "pp_attachment",
+      "route": "local_nmt",
+      "source": "The friend in the market ran.",
+      "translation": "市场里的朋友跑掉了",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0181",
+      "category": "scope",
+      "route": "local_nmt",
+      "source": "The man who didn't watch the cat ran.",
+      "translation": "那个人没看猫跑",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0182",
+      "category": "scope",
+      "route": "local_nmt",
+      "source": "The woman who didn't see the boy ran.",
+      "translation": "看不到男孩子跑的女人",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0183",
+      "category": "scope",
+      "route": "local_nmt",
+      "source": "The dog who didn't read the girl ran.",
+      "translation": "狗谁没看 女孩跑。",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0184",
+      "category": "scope",
+      "route": "local_nmt",
+      "source": "The cat who didn't find the student ran.",
+      "translation": "发现学生跑的猫",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0185",
+      "category": "scope",
+      "route": "local_nmt",
+      "source": "The boy who didn't want the teacher ran.",
+      "translation": "那个不想让老师跑掉的男孩",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0186",
+      "category": "scope",
+      "route": "local_nmt",
+      "source": "The girl who didn't buy the doctor ran.",
+      "translation": "买不起医生的女孩跑了",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0187",
+      "category": "scope",
+      "route": "local_nmt",
+      "source": "The student who didn't open the friend ran.",
+      "translation": "朋友没开开的同学跑了",
+      "heuristic_flags": [
+        "LENGTH_COMPRESSION_SUSPECT"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0188",
+      "category": "scope",
+      "route": "local_nmt",
+      "source": "The teacher who didn't close the man ran.",
+      "translation": "老师没有关上那男人的跑步",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0189",
+      "category": "scope",
+      "route": "local_nmt",
+      "source": "The doctor who didn't send the woman ran.",
+      "translation": "医生没有送那女人跑。",
+      "heuristic_flags": [
+        "LENGTH_COMPRESSION_SUSPECT"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0190",
+      "category": "scope",
+      "route": "local_nmt",
+      "source": "The friend who didn't help the dog ran.",
+      "translation": "那个不帮狗跑的朋友",
+      "heuristic_flags": [],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0191",
+      "category": "nmt_fidelity",
+      "route": "local_nmt",
+      "source": "The result is 42 and the URL is https://example.com/man.",
+      "translation": "结果为42, URL是https://example.com/man.",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0192",
+      "category": "nmt_fidelity",
+      "route": "local_nmt",
+      "source": "The result is 42 and the URL is https://example.com/woman.",
+      "translation": "结果为42, URL是https://example.com/woman.",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0193",
+      "category": "nmt_fidelity",
+      "route": "local_nmt",
+      "source": "The result is 42 and the URL is https://example.com/dog.",
+      "translation": "结果为42, URL是https://example.com/dog.",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0194",
+      "category": "nmt_fidelity",
+      "route": "local_nmt",
+      "source": "The result is 42 and the URL is https://example.com/cat.",
+      "translation": "结果为42, URL是https://example.com/cat.",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0195",
+      "category": "nmt_fidelity",
+      "route": "local_nmt",
+      "source": "The result is 42 and the URL is https://example.com/boy.",
+      "translation": "结果为42, URL是https://example.com/boy.",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0196",
+      "category": "nmt_fidelity",
+      "route": "local_nmt",
+      "source": "The result is 42 and the URL is https://example.com/girl.",
+      "translation": "结果为42, URL是https://example.com/girl.",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0197",
+      "category": "nmt_fidelity",
+      "route": "local_nmt",
+      "source": "The result is 42 and the URL is https://example.com/student.",
+      "translation": "结果为42, URL是https://example.com/student.",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0198",
+      "category": "nmt_fidelity",
+      "route": "local_nmt",
+      "source": "The result is 42 and the URL is https://example.com/teacher.",
+      "translation": "结果为42, URL是https://example.com/teacher.",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0199",
+      "category": "nmt_fidelity",
+      "route": "local_nmt",
+      "source": "The result is 42 and the URL is https://example.com/doctor.",
+      "translation": "结果为42, URL是https://example.com/doctor.",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    },
+    {
+      "id": "probe-0200",
+      "category": "nmt_fidelity",
+      "route": "local_nmt",
+      "source": "The result is 42 and the URL is https://example.com/friend.",
+      "translation": "结果为42, URL是https://example.com/friend.",
+      "heuristic_flags": [
+        "ASCII_COMMA"
+      ],
+      "human_review_status": "PENDING_HUMAN",
+      "final_error_codes": [],
+      "note": "Heuristic symptom only; final error code requires human review."
+    }
+  ]
+}

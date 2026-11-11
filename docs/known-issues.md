@@ -124,3 +124,24 @@
 - 重点 Critical/Major 样本：`en-zh-0002`（臆造）、`en-zh-0296`（十六进制数字丢位）、`en-zh-0309`（截断丢 11 PM）、`en-zh-0286`（丢 15%）、`en-zh-0151`（丢 50%）。
 - 规则实验：`fixtures/quality/rules-cases.jsonl`（12 条），其中 `rule-0001` 是缩写展开退化样本，实验包不得默认加载。
 - 任何新规则/新模型/新解码策略都必须与 `baseline` 在同一金样本上对照；新增 Critical 错误必须登记到本文件。
+
+## P21-R E0（2026-11-11，种子阶段）
+
+- 诊断集当前仅 27 条种子，未达到 200 条设计规模；统计结论不足以支持质量采用。
+- 冻结集 `frozen-v1` 尚未创建；不得把诊断集当独立验收集。
+- 所有研究样本人工评审状态为 `PENDING_HUMAN`。
+- 规则路径已观察到：
+  - `She went to school.` → `她去了学校学校。`（重复）
+  - `I saw her yesterday.` → `我昨天看见了她的。`（代词宾语目标错误）
+- NMT 路径已观察到：
+  - 嵌套关系输入出现重复；
+  - 习语/比较结构存在压缩和自然度问题；
+  - `clauses` 等词义需上下文消歧。
+- `candidate_score` 仍是启发式结构分数，不是经校准的解析概率。
+- Chart 仍拒绝嵌套关系从句；这是显式安全拒绝，不是已支持能力。
+- E0 症状分诊已加入 `tools/quality/analyze-errors.py`；`REPETITION_SUSPECT`、`ASCII_COMMA`、`LENGTH_COMPRESSION_SUSPECT` 等只是启发式症状，不是人工最终错误码。
+- E0 的 200 条 `diagnostic-v2-probes` 是确定性模板生成，不是独立人工语料；只能用于工程/路由/症状诊断，不能作为质量基准。
+- `frozen-v1.jsonl` 的 20 条参考译文为项目自编，`PROJECT_AUTHORED_PENDING_HUMAN`；创建后未运行、未用于开发，但也不能冒充独立人工金标准。
+- E0 人工评审包 `tests/quality/research/review/e0-diagnostic-v1-review.csv` 已生成，但 27 条均未评审；禁止模型代填后声称人工完成。
+- E0 初步错误归因 `e0-preliminary-attribution.json` 为 AI 辅助，不是人工评审；其中 14 条标为无显著错误，仍需人工确认。
+- 200 条探针评审包 `e0-probes-v2-review.csv` 已生成，但全部 `PENDING_HUMAN`；合成探针不能替代独立人工语料。
