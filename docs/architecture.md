@@ -205,8 +205,11 @@ HttpTransport（每个后端一个）
 执行顺序（每一步都检查取消与整体截止时间）：
 
 ```text
-取消 → 截止时间 → 预算扣减 → 全局配额 → 后端配额 → 发出请求
+取消 → 截止时间 → 全局配额 → 后端配额 → 再检查取消/截止时间 → 预算扣减 → 发出请求
 ```
+
+**预算扣减在取得配额之后**：排队超时、等待配额失败、未发送即取消都不消耗
+物理调用额度（这些路径本来就不会产生费用）。
 
 - **预算**：`max_http_calls_per_request`（默认 4）限制**物理调用**总数，
   分段回退、内容重试、传输重试共享同一份额度；超出返回 `BudgetExceeded`，
@@ -215,11 +218,19 @@ HttpTransport（每个后端一个）
   上限；每个后端另有 `max_concurrent_requests`。两者都通过 RAII Permit 归还，
   任何错误/取消/超时路径都不会泄漏配额。
 - **有界队列**：`[http] max_queue_size`（默认 16）。队列满立即返回 `QueueFull`，
-  不阻塞、不无限排队；线程总数恒定为 `workers + 1`。
+  不阻塞、不无限排队；线程总数恒定为 `workers + 1`（worker + 一个取消观察线程）。
+  观察线程只持有 `Weak`，最后一个运行时释放后自行退出，不会永久占用线程。
+- **装配路径**：`Translator::builder()` 的所有 HTTP 入口（TOML / 配置文件 /
+  `http_backend(engine)`）都只收集 `BackendConfig`，在 `build()` 时用**同一个**
+  `HttpRuntime` 构造，因此 `http_global_concurrency` / `http_queue_size` 对
+  多后端一律生效。
 - **取消**：排队中立即取消（不消耗预算）；已取得配额未发送则停止；
   已发出的请求由 worker 等待网络超时结束，但 Future 立即返回
   `Cancelled` 且不再重试/切换后端（见 `docs/known-issues.md` K-15）。
 - **Retry-After**：429/503 带 `Retry-After` 时遵守（上限 120 秒，且不超过截止时间）。
+- **重试分类**：只有 `RateLimited`（429）与 `Unavailable`（连接被拒/重置、DNS 临时失败、5xx）
+  会重试；TLS 证书/握手错误、非法 URI、HTTP 协议错误、鉴权、余额、超时、
+  未知传输错误一律不重试——确定性错误重发只会浪费配额，超时重发还有重复计费风险。
 
 ---
 

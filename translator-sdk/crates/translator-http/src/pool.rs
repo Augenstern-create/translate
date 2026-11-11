@@ -17,7 +17,7 @@
 //!
 //! 取消/超时由**一个**观察线程统一处理，线程总数恒定为 `workers + 1`。
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Condvar, Mutex, Weak};
 use std::task::{Context, Poll, Waker};
@@ -69,8 +69,18 @@ impl Slot {
         })
     }
 
+    /// 是否已经有结果（**只读**）。
+    ///
+    /// 早期实现用 `take_result()` 判断，导致观察线程会把待返回的结果取走，
+    /// Future 永远拿不到响应。这里只做检查，绝不消费。
     pub fn is_done(&self) -> bool {
-        self.done.load(Ordering::Acquire) || self.take_result().is_some()
+        if self.done.load(Ordering::Acquire) {
+            return true;
+        }
+        self.result
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_some()
     }
 
     fn take_result(&self) -> Option<Result<HttpOutcome, HttpError>> {
@@ -123,6 +133,37 @@ impl std::future::Future for Bridge {
     }
 }
 
+/// 当前存活的观察线程数（诊断与测试用）。
+static LIVE_WATCHERS: AtomicUsize = AtomicUsize::new(0);
+/// 当前存活的 worker 线程数。
+static LIVE_WORKERS: AtomicUsize = AtomicUsize::new(0);
+
+/// 存活的取消观察线程数。
+pub fn live_watcher_threads() -> usize {
+    LIVE_WATCHERS.load(Ordering::SeqCst)
+}
+
+/// 存活的 HTTP worker 线程数。
+pub fn live_worker_threads() -> usize {
+    LIVE_WORKERS.load(Ordering::SeqCst)
+}
+
+/// 退出时自动扣减计数器的守卫。
+struct LiveGuard(&'static AtomicUsize);
+
+impl LiveGuard {
+    fn new(counter: &'static AtomicUsize) -> Self {
+        counter.fetch_add(1, Ordering::SeqCst);
+        Self(counter)
+    }
+}
+
+impl Drop for LiveGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 /// 取消观察：一个线程服务所有在途请求。
 struct Watcher {
     entries: Mutex<Vec<(Weak<Slot>, CancelToken)>>,
@@ -131,10 +172,18 @@ struct Watcher {
 
 impl Watcher {
     fn new() -> Arc<Self> {
-        Arc::new(Self {
+        let watcher = Arc::new(Self {
             entries: Mutex::new(Vec::new()),
             wake: Condvar::new(),
-        })
+        });
+        // 线程只持有 Weak：最后一个 Pool 释放后，观察线程自行退出，
+        // 不会永久自持 Arc（否则每创建一个 Translator 就泄漏一个线程）。
+        let weak = Arc::downgrade(&watcher);
+        std::thread::Builder::new()
+            .name("translate-cancel-watch".to_string())
+            .spawn(move || watcher_loop(weak))
+            .ok();
+        watcher
     }
 
     fn register(&self, slot: &Arc<Slot>, cancel: &CancelToken) {
@@ -145,40 +194,55 @@ impl Watcher {
         self.wake.notify_one();
     }
 
-    fn run(self: Arc<Self>) {
-        loop {
-            let timeout = {
-                let entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
-                if entries.is_empty() {
-                    Duration::from_millis(200)
-                } else {
-                    Duration::from_millis(10)
-                }
+    /// 一个 tick：清理已完成的槽、处理取消。
+    fn tick(&self) {
+        let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+        entries.retain(|(slot, token)| {
+            let Some(slot) = slot.upgrade() else {
+                return false;
             };
-            {
-                let entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
-                let (guard, _) = self
-                    .wake
-                    .wait_timeout(entries, timeout)
-                    .unwrap_or_else(|e| e.into_inner());
-                drop(guard);
+            // is_done 只读：绝不能把待返回的结果消费掉
+            if slot.is_done() {
+                return false;
             }
+            if token.is_cancelled() {
+                slot.complete(Err(HttpError::cancelled()));
+                return false;
+            }
+            true
+        });
+    }
 
-            let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
-            entries.retain(|(slot, token)| {
-                let Some(slot) = slot.upgrade() else {
-                    return false;
-                };
-                if slot.is_done() {
-                    return false;
-                }
-                if token.is_cancelled() {
-                    slot.complete(Err(HttpError::cancelled()));
-                    return false;
-                }
-                true
-            });
-        }
+    fn idle(&self) -> bool {
+        self.entries
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty()
+    }
+
+    fn wait_for(&self, timeout: Duration) {
+        let entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = self
+            .wake
+            .wait_timeout(entries, timeout)
+            .unwrap_or_else(|e| e.into_inner());
+    }
+}
+
+/// 观察线程主循环：只持有 `Weak`，最后一个 `Pool` 释放后自行退出。
+///
+/// 早期实现用 `Arc<Watcher>` 作为线程主体，线程永不退出；
+/// 每创建一个 `Translator` 就永久泄漏一个线程。
+fn watcher_loop(weak: Weak<Watcher>) {
+    let _live = LiveGuard::new(&LIVE_WATCHERS);
+    loop {
+        let Some(watcher) = weak.upgrade() else {
+            return;
+        };
+        // 空闲时短睡（便于及时退出），有任务时每 10ms 检查一次取消
+        watcher.wait_for(Duration::from_millis(if watcher.idle() { 20 } else { 10 }));
+        watcher.tick();
+        drop(watcher);
     }
 }
 
@@ -187,7 +251,6 @@ pub struct Pool {
     tx: SyncSender<Job>,
     workers: usize,
     capacity: usize,
-    #[allow(dead_code)]
     watcher: Arc<Watcher>,
     meter: Arc<UsageMeter>,
 }
@@ -207,14 +270,8 @@ impl Pool {
         let capacity = capacity.max(1);
         let (tx, rx) = sync_channel::<Job>(capacity);
         let rx = Arc::new(Mutex::new(rx));
+        // Watcher::new 内部已经启动（只持 Weak 的）观察线程
         let watcher = Watcher::new();
-        {
-            let watcher = Arc::clone(&watcher);
-            std::thread::Builder::new()
-                .name("translate-cancel-watch".to_string())
-                .spawn(move || watcher.run())
-                .ok();
-        }
         let pool = Arc::new(Self {
             tx,
             workers,
@@ -264,6 +321,7 @@ impl Pool {
 }
 
 fn worker_loop(rx: Arc<Mutex<Receiver<Job>>>) {
+    let _live = LiveGuard::new(&LIVE_WORKERS);
     loop {
         let job = {
             // 只在取任务时持锁，执行期间不占用
@@ -315,22 +373,10 @@ fn run_job(job: Job) {
             return;
         }
 
-        // 2) 物理调用预算（只有真的要发请求时才扣）
-        if let Some(budget) = &budget {
-            if !budget.try_start_call() {
-                exec.meter.record_failure();
-                slot.complete(Err(HttpError::new(
-                    HttpErrorKind::BudgetExceededLocal,
-                    format!(
-                        "已达到本次请求的 HTTP 调用上限（{} 次）",
-                        budget.max_calls()
-                    ),
-                )));
-                return;
-            }
-        }
-
-        // 3) 并发配额：全局 + 后端，共享同一截止时间
+        // 2) 并发配额：全局 + 后端，共享同一截止时间
+        //
+        // 注意顺序：**先拿配额、再扣预算**。排队超时、等待配额失败、
+        // 未发送即取消都不应消耗物理调用额度。
         let permits = match acquire_dual(&exec.global, &exec.backend, deadline, cancel.as_ref()) {
             Ok(permits) => permits,
             Err(AcquireError::Cancelled) => {
@@ -344,7 +390,7 @@ fn run_job(job: Job) {
             }
         };
 
-        // 4) 拿到配额后再确认一次：排队期间可能被取消/超时
+        // 3) 拿到配额后再确认一次：排队期间可能被取消/超时
         if cancelled() {
             drop(permits);
             exec.meter.record_cancelled();
@@ -355,6 +401,22 @@ fn run_job(job: Job) {
             drop(permits);
             slot.complete(Err(HttpError::timeout("取得配额后已超过截止时间")));
             return;
+        }
+
+        // 4) 此刻确定真的要发请求，才扣除物理调用预算
+        if let Some(budget) = &budget {
+            if !budget.try_start_call() {
+                drop(permits);
+                exec.meter.record_failure();
+                slot.complete(Err(HttpError::new(
+                    HttpErrorKind::BudgetExceededLocal,
+                    format!(
+                        "已达到本次请求的 HTTP 调用上限（{} 次）",
+                        budget.max_calls()
+                    ),
+                )));
+                return;
+            }
         }
 
         exec.meter.record_call_started();

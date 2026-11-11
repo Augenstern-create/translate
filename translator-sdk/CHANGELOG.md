@@ -1,5 +1,25 @@
 # 变更记录
 
+## S2 审查收尾（2026-11-12）
+
+- **Builder 装配路径**：`http_backend()` 与 TOML/配置文件入口改为只收集
+  `BackendConfig`，在 `build()` 时用**同一个** `HttpRuntime` 构造所有后端；
+  `http_global_concurrency` / `http_queue_size` 对所有入口生效
+  （此前每个后端各建一个运行时，全局并发名不副实）。
+- **预算扣除时机**：改为取得全局+后端配额、并再次确认未取消/未超时之后才扣；
+  排队超时、等待配额失败、未发送即取消不再消耗物理调用额度。
+- **观察线程生命周期**：watcher 只持有 `Weak`，最后一个运行时释放后退出；
+  新增 `live_watcher_threads()` / `live_worker_threads()` 供诊断与测试。
+- **`Slot::is_done()` 不再消费结果**：改为只读检查，修复"观察线程把响应取走、
+  Future 永远拿不到结果"的竞态。
+- **重试分类收紧**：`Transport` 不再是可重试类别；TLS 证书/握手、非法 URI、
+  HTTP 协议错误一律不重试；连接被拒/重置、DNS 临时失败、5xx 仍有限重试。
+- **直连引擎入口**：`HttpTranslationEngine::translate()` 在没有协调器预算时
+  使用 `1 + max_retries` 的本地预算，避免形成"无预算调用通道"。
+
+测试：新增 4 个 HTTP 回归用例 + 3 个 Builder 共享并发/队列用例 + 3 个错误分类单测；
+总计 **370 passed / 0 failed / 4 ignored**。
+
 ## 稳定化 S2：HTTP 预算、并发、队列与成本统计（2026-11-12）
 
 ### 新增

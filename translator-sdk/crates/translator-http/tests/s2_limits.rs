@@ -443,9 +443,13 @@ fn 排队中的请求取消后不会执行() {
     // 第二个请求进入队列后被取消
     let token = CancelToken::new();
     let token_for_cancel = token.clone();
+    let budget = RequestBudget::shared(4, None);
+    let budget_for_second = Arc::clone(&budget);
     let engine_second = Arc::clone(&engine);
     let second = std::thread::spawn(move || {
-        let spec = JobSpec::new("Hello.").cancel(&token);
+        let spec = JobSpec::new("Hello.")
+            .cancel(&token)
+            .budget(budget_for_second);
         pollster::block_on(engine_second.translate_job(&spec.build()))
             .map(|_| ())
             .map_err(|e| e.code)
@@ -481,9 +485,13 @@ fn 排队中的请求超时后不会执行() {
     });
     std::thread::sleep(Duration::from_millis(60));
 
+    let budget = RequestBudget::shared(4, None);
+    let budget_for_second = Arc::clone(&budget);
     let engine_second = Arc::clone(&engine);
     let second = std::thread::spawn(move || {
-        let spec = JobSpec::new("Hello.").deadline(Instant::now() + Duration::from_millis(80));
+        let spec = JobSpec::new("Hello.")
+            .deadline(Instant::now() + Duration::from_millis(80))
+            .budget(budget_for_second);
         pollster::block_on(engine_second.translate_job(&spec.build()))
             .map(|_| ())
             .map_err(|e| e.code)
@@ -499,6 +507,11 @@ fn 排队中的请求超时后不会执行() {
     );
     assert!(first.join().unwrap().is_ok());
     assert_eq!(h.hits(), 1, "超时的排队请求不得发到服务端");
+    assert_eq!(
+        budget.calls_started(),
+        0,
+        "排队超时的请求不得扣除物理调用预算"
+    );
 }
 
 #[test]
@@ -624,4 +637,117 @@ fn 用量统计区分完成与未知计费() {
     assert_eq!(usage.http_calls_started, 1);
     assert_eq!(usage.http_calls_completed, 1);
     assert_eq!(usage.potentially_billable_unknown_calls, 0);
+}
+
+// ============================================================
+// 五、结果槽与线程生命周期（审查修复回归）
+// ============================================================
+
+#[test]
+fn 状态检查不得消费待返回的结果() {
+    use translator_http::Slot;
+
+    let slot = Slot::new();
+    slot.complete(Ok(translator_http::HttpOutcome {
+        status: 200,
+        body: "ok".to_string(),
+        retry_after: None,
+    }));
+    // 观察线程会反复调用 is_done()；它绝不能把结果取走
+    for _ in 0..5 {
+        assert!(slot.is_done(), "结果应已就绪");
+    }
+    let received = pollster::block_on(translator_http::pool::Bridge::new(Arc::clone(&slot), None));
+    assert!(received.is_ok(), "结果被状态检查消费掉了");
+}
+
+#[test]
+fn worker_完成与观察线程并发时响应不丢失() {
+    use translator_http::Slot;
+
+    let slot = Slot::new();
+    let completer = {
+        let slot = Arc::clone(&slot);
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(2));
+            slot.complete(Ok(translator_http::HttpOutcome {
+                status: 200,
+                body: "ok".to_string(),
+                retry_after: None,
+            }));
+        })
+    };
+    // 一边轮询 Future，一边让另一个线程检查 is_done（模拟观察线程）
+    let probe = {
+        let slot = Arc::clone(&slot);
+        std::thread::spawn(move || {
+            for _ in 0..50 {
+                let _ = slot.is_done();
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        })
+    };
+    let received = pollster::block_on(translator_http::pool::Bridge::new(slot, None));
+    completer.join().unwrap();
+    probe.join().unwrap();
+    assert!(received.is_ok(), "并发检查把响应吃掉了");
+}
+
+#[test]
+fn 运行时销毁后观察线程与_worker_全部退出() {
+    use translator_http::{live_watcher_threads, live_worker_threads};
+
+    // 先建立一个基线（等前面测试留下的线程收尾）
+    let baseline_watchers = live_watcher_threads();
+    let baseline_workers = live_worker_threads();
+
+    for _ in 0..5 {
+        let runtime = HttpRuntime::new(2, 4, UsageMeter::new());
+        // 触发一次真实请求，确保线程确实跑起来
+        let settings = HttpSettings::default();
+        let file =
+            BackendsFile::from_toml_str(&simple_config("http://127.0.0.1:9/v1", 0, 200)).unwrap();
+        let cfg = file.enabled_backends().unwrap()[0].1.clone();
+        let engine =
+            HttpTranslationEngine::with_runtime(cfg, &settings, Arc::clone(&runtime)).unwrap();
+        let _ = run(&engine, &JobSpec::new("Hello."));
+        drop(engine);
+        drop(runtime);
+    }
+
+    // 最多等 3 秒让线程退出
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while Instant::now() < deadline
+        && (live_watcher_threads() > baseline_watchers || live_worker_threads() > baseline_workers)
+    {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    assert!(
+        live_watcher_threads() <= baseline_watchers,
+        "观察线程未退出：baseline={baseline_watchers} now={}",
+        live_watcher_threads()
+    );
+    assert!(
+        live_worker_threads() <= baseline_workers,
+        "worker 线程未退出：baseline={baseline_workers} now={}",
+        live_worker_threads()
+    );
+}
+
+#[test]
+fn 直接调用引擎入口也有预算上限() {
+    // 不走协调器、直接 translate()：仍必须受"1 + max_retries"约束
+    let h = harness(|_| MockResponse::json(503, "busy"));
+    let engine = engine_from(&simple_config(&h.url(), 1, 3000));
+    let request = translator_types::TranslateRequest::new("Hello.", zh());
+
+    let err = pollster::block_on(engine.translate(&request)).unwrap_err();
+    assert_eq!(
+        err.code,
+        TranslationErrorCode::BackendUnavailable,
+        "{}",
+        err.message
+    );
+    assert_eq!(h.hits(), 2, "直连入口必须被 max_retries 限住");
 }

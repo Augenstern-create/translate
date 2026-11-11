@@ -46,7 +46,7 @@ pub use config::{BackendConfig, BackendsFile, HttpSettings, ThinkingStyle, DEFAU
 pub use engine::{engines_from_toml, HttpTranslationEngine};
 pub use errors::{HttpError, HttpErrorKind};
 pub use limiter::{AcquireError, Limiter, Permit};
-pub use pool::Pool;
+pub use pool::{live_watcher_threads, live_worker_threads, Pool, Slot};
 pub use prompt::{PromptInput, PromptTemplate, EMBEDDED_FAST_V1, EMBEDDED_PRECISE_V1};
 pub use protocol::{
     build_request_body, parse_response, sanitize_translation, ChatCompletion, PromptMessage,

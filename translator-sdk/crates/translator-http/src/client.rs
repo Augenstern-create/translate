@@ -264,16 +264,79 @@ fn parse_retry_after(value: &str) -> Option<u64> {
 
 fn classify_transport(err: ureq::Error) -> HttpError {
     match err {
+        // 超时：请求可能已发出，重发有重复计费风险 → 不重试
         ureq::Error::Timeout(_) => HttpError::timeout("后端请求超时"),
+        // DNS 临时失败 → 可重试
         ureq::Error::HostNotFound => HttpError::new(HttpErrorKind::Unavailable, "无法解析后端域名"),
-        ureq::Error::Io(io) if io.kind() == std::io::ErrorKind::TimedOut => {
-            HttpError::timeout(format!("后端请求超时：{io}"))
+        ureq::Error::Io(io) => classify_io_error(&io),
+        ureq::Error::StatusCode(code) => HttpError::from_status(code, ""),
+        // 以下都是确定性错误：地址/协议/代理配置写错了，重发不会变好
+        ureq::Error::BadUri(uri) => HttpError::config(format!("后端地址非法：{uri}")),
+        ureq::Error::Http(e) => HttpError::config(format!("HTTP 请求构造失败：{e}")),
+        ureq::Error::Protocol(e) => HttpError::new(
+            HttpErrorKind::Config,
+            format!("HTTP 协议错误（对端不是 HTTP 服务？）：{e}"),
+        ),
+        ureq::Error::InvalidProxyUrl => HttpError::config("代理地址非法"),
+        ureq::Error::RedirectFailed | ureq::Error::TooManyRedirects => {
+            HttpError::config("后端重定向过多或被拒绝")
         }
-        ureq::Error::Io(io) => {
+        ureq::Error::BodyExceedsLimit(limit) => {
+            HttpError::invalid_response(format!("响应体超过上限（{limit} 字节）"))
+        }
+        ureq::Error::ConnectionFailed => HttpError::new(HttpErrorKind::Unavailable, "连接后端失败"),
+        other => HttpError::new(HttpErrorKind::Transport, format!("HTTP 传输错误：{other}")),
+    }
+}
+
+/// 把 `io::Error` 分成"可能自愈"和"确定性失败"两类。
+///
+/// TLS 证书/握手问题在 `ureq` 里最终表现为 `io::Error`（rustls 的错误被包成 IO），
+/// 因此除了 `ErrorKind` 还要看消息里是否包含证书/握手关键词：
+/// 这类错误重试一万次也不会成功，只会浪费时间与配额。
+fn classify_io_error(io: &std::io::Error) -> HttpError {
+    use std::io::ErrorKind;
+    match io.kind() {
+        ErrorKind::TimedOut => HttpError::timeout(format!("后端请求超时：{io}")),
+        ErrorKind::ConnectionRefused
+        | ErrorKind::ConnectionReset
+        | ErrorKind::ConnectionAborted
+        | ErrorKind::BrokenPipe
+        | ErrorKind::NotConnected
+        | ErrorKind::UnexpectedEof
+        | ErrorKind::HostUnreachable
+        | ErrorKind::NetworkUnreachable
+        | ErrorKind::NetworkDown => {
             HttpError::new(HttpErrorKind::Unavailable, format!("连接后端失败：{io}"))
         }
-        ureq::Error::StatusCode(code) => HttpError::from_status(code, ""),
-        other => HttpError::new(HttpErrorKind::Transport, format!("HTTP 传输错误：{other}")),
+        // 非法数据/输入：TLS 握手、对端不是 HTTP、证书错误等
+        ErrorKind::InvalidData | ErrorKind::InvalidInput => HttpError::new(
+            HttpErrorKind::Config,
+            format!("与后端通信失败（可能是 TLS/证书或协议问题）：{io}"),
+        ),
+        _ => {
+            let text = io.to_string().to_ascii_lowercase();
+            let deterministic = [
+                "certificate",
+                "cert",
+                "tls",
+                "handshake",
+                "unknown issuer",
+                "invalid peer",
+                "self-signed",
+                "ssl",
+            ]
+            .iter()
+            .any(|needle| text.contains(needle));
+            if deterministic {
+                HttpError::new(
+                    HttpErrorKind::Config,
+                    format!("TLS/证书错误（不重试）：{io}"),
+                )
+            } else {
+                HttpError::new(HttpErrorKind::Unavailable, format!("连接后端失败：{io}"))
+            }
+        }
     }
 }
 
@@ -285,6 +348,49 @@ mod tests {
     fn 传输层异常分类() {
         let err = classify_transport(ureq::Error::HostNotFound);
         assert_eq!(err.kind, HttpErrorKind::Unavailable);
+        assert!(err.kind.is_retryable(), "DNS 临时失败可重试");
+    }
+
+    #[test]
+    fn 证书与协议错误不重试() {
+        // rustls 的错误会被包成 io::Error；按消息判定为确定性失败
+        let cert = std::io::Error::other("invalid peer certificate: UnknownIssuer");
+        let err = classify_io_error(&cert);
+        assert_eq!(err.kind, HttpErrorKind::Config, "证书错误应判为配置类");
+        assert!(!err.kind.is_retryable(), "证书错误不得重试");
+
+        let handshake = std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "received corrupt message (TLS handshake)",
+        );
+        let err = classify_io_error(&handshake);
+        assert!(!err.kind.is_retryable(), "握手错误不得重试");
+
+        // 地址非法同样是确定性错误（重发不会变好）
+        let bad_uri = classify_transport(ureq::Error::BadUri("ftp://x".to_string()));
+        assert_eq!(bad_uri.kind, HttpErrorKind::Config);
+        assert!(!bad_uri.kind.is_retryable(), "非法地址不得重试");
+    }
+
+    #[test]
+    fn 短暂网络故障仍可重试() {
+        for kind in [
+            std::io::ErrorKind::ConnectionReset,
+            std::io::ErrorKind::ConnectionRefused,
+            std::io::ErrorKind::BrokenPipe,
+            std::io::ErrorKind::UnexpectedEof,
+        ] {
+            let err = classify_io_error(&std::io::Error::new(kind, "transient"));
+            assert_eq!(err.kind, HttpErrorKind::Unavailable, "{kind:?}");
+            assert!(err.kind.is_retryable(), "{kind:?} 应可重试");
+        }
+
+        let timeout = classify_io_error(&std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "timed out",
+        ));
+        assert_eq!(timeout.kind, HttpErrorKind::Timeout);
+        assert!(!timeout.kind.is_retryable(), "超时不重试（可能已计费）");
     }
 
     #[test]

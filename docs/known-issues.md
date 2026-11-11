@@ -60,7 +60,8 @@
 
 | ID | 模块 | 问题 | 影响 | 计划 |
 |---|---|---|---|---|
-| K-15 | 后端 | 已发出的单次 HTTP 请求无法被 `ureq` 中断；取消只能让 Future 立即返回并阻止后续重试 | 低 | Accepted（已发布的传输层限制，见 §S2 说明） |
+| K-15 | 后端 | 已发出的单次 HTTP 请求无法被 `ureq` 中断；取消只能让 Future 立即返回并阻止后续重试 | 低 | Accepted（已发布的传输层限制） |
+| K-39 | 后端 | TLS 证书/握手错误的判定依赖 `io::Error` 的 kind 与消息关键词（rustls 会包成 IO 错误），可能存在漏判 | 低 | Accepted（漏判只会多一次重试，仍受预算约束） |
 | K-14 | 后端 | 响应中断可能重复计费 | 中 | Partially fixed：现在计入 `potentially_billable_unknown_calls`，但仍无法避免 |
 | K-18 | 段落 | `paragraph_strategy` 不改变执行方式 | 中 | S3 质量阶段评估 |
 | K-19 | 评测 | `fixtures/eval` 无人工参考译文 | 高 | S3（人工盲测） |

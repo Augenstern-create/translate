@@ -249,6 +249,8 @@ impl Translator {
 pub struct TranslatorBuilder {
     registry: PluginRegistry,
     config: CoordinatorConfig,
+    /// 待装配的 HTTP 后端配置。`build()` 时一次性用**共享** `HttpRuntime` 构造。
+    http_configs: Vec<BackendConfig>,
     http_engines: Vec<Arc<HttpTranslationEngine>>,
     default_mode: TranslationMode,
     default_text_kind: TextKind,
@@ -276,6 +278,7 @@ impl TranslatorBuilder {
         Self {
             registry: PluginRegistry::new(),
             config: CoordinatorConfig::default(),
+            http_configs: Vec::new(),
             http_engines: Vec::new(),
             default_mode: TranslationMode::Precise,
             default_text_kind: TextKind::Auto,
@@ -316,19 +319,33 @@ impl TranslatorBuilder {
     }
 
     fn http_backends_from(mut self, file: &BackendsFile) -> Result<Self, TranslationError> {
-        for (_, backend) in file.enabled_backends().map_err(http_config_error)? {
-            let engine = HttpTranslationEngine::new(backend.clone()).map_err(http_config_error)?;
-            self = self.http_backend(engine)?;
+        // 先合并配置：显式覆盖（`http_global_concurrency` / `http_queue_size`）
+        // 优先于 TOML 里的 `[http]`。
+        let mut effective = file.clone();
+        if self.http_overrides.0 {
+            effective.http.max_concurrent_requests = self.http_settings.max_concurrent_requests;
         }
+        if self.http_overrides.1 {
+            effective.http.max_queue_size = self.http_settings.max_queue_size;
+        }
+        effective.http.validate().map_err(http_config_error)?;
+
+        for (_, backend) in effective.enabled_backends().map_err(http_config_error)? {
+            self.http_configs.push(backend.clone());
+        }
+        self.http_settings = effective.http;
         Ok(self)
     }
 
     /// 挂载一个已构造的 HTTP 后端。
     pub fn http_backend(mut self, engine: HttpTranslationEngine) -> Result<Self, TranslationError> {
-        let engine = Arc::new(engine);
-        self.registry
-            .register_engine(engine.clone() as Arc<dyn TranslationEngine>)?;
-        self.http_engines.push(engine);
+        // 只收集配置：真正构造延到 `build()`，保证所有 HTTP 后端共享同一个
+        // `HttpRuntime`（否则每个后端各有一个运行时，"全局并发"名不副实）。
+        let config = engine.config().clone();
+        config
+            .validate()
+            .map_err(|e| TranslationError::new(e.kind.code(), e.to_string()))?;
+        self.http_configs.push(config);
         Ok(self)
     }
 
@@ -536,6 +553,29 @@ impl TranslatorBuilder {
 
     /// 装配。
     pub fn build(mut self) -> Result<Translator, TranslationError> {
+        // 先按最终配置构造 HTTP 后端：**一个** HttpRuntime 服务所有 HTTP 后端
+        if !self.http_configs.is_empty() {
+            self.http_settings
+                .validate()
+                .map_err(|e| TranslationError::new(e.kind.code(), e.to_string()))?;
+            let runtime = HttpRuntime::new(
+                self.http_settings.effective_max_concurrent(),
+                self.http_settings.effective_queue_size(),
+                translator_http::UsageMeter::new(),
+            );
+            for config in std::mem::take(&mut self.http_configs) {
+                let engine = HttpTranslationEngine::with_runtime(
+                    config,
+                    &self.http_settings,
+                    Arc::clone(&runtime),
+                )
+                .map_err(http_config_error)?;
+                let engine = Arc::new(engine);
+                self.registry.register_engine(engine.clone())?;
+                self.http_engines.push(engine);
+            }
+        }
+
         if self.registry.engines().is_empty() {
             return Err(TranslationError::new(
                 TranslationErrorCode::ConfigurationError,

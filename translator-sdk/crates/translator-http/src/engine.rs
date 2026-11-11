@@ -14,8 +14,8 @@ use std::time::{Duration, Instant};
 
 use translator_plugin_api::{EngineOutput, TranslationEngine, TranslationJob};
 use translator_types::{
-    CancelToken, Capability, EngineDescriptor, LanguageTag, TranslateRequest, TranslationError,
-    TranslationErrorCode, TranslationMode,
+    CancelToken, Capability, EngineDescriptor, LanguageTag, RequestBudget, TranslateRequest,
+    TranslationError, TranslationErrorCode, TranslationMode,
 };
 
 use crate::client::{HttpRequest, HttpRuntime, HttpTransport};
@@ -210,9 +210,15 @@ impl HttpTranslationEngine {
 
         let cancel = job.cancel.cloned();
         self.meter.record_logical_request();
+        // 没有协调器传入的预算时，用引擎自身的有界默认值兜底：
+        // 直接用 `translate()` 的宿主不能绕开"物理调用次数上限"。
+        let budget = job
+            .budget
+            .clone()
+            .unwrap_or_else(|| RequestBudget::shared(1 + self.config.max_retries, job.deadline));
         let outcome = self
             .transport
-            .send(request, cancel, job.deadline, job.budget.clone())
+            .send(request, cancel, job.deadline, Some(budget))
             .await?;
         let completion = parse_response(outcome.status, &outcome.body)?;
 

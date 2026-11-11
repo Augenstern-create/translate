@@ -58,13 +58,17 @@ impl HttpErrorKind {
 
     /// 传输层是否值得重试（**原样**重发）。
     ///
-    /// 配置错误、鉴权失败、余额不足、响应非法都**不**重试：
-    /// 原样重发只会重复失败并可能重复计费。
+    /// 只有"可能自愈"的类别才重试：
+    ///
+    /// - `RateLimited`（429）、`Unavailable`（连接被拒/重置、DNS 临时失败、5xx）；
+    /// - `Timeout` **不**重试：请求可能已经到达服务端，重发有重复计费风险
+    ///   （S2 的错误分类口径，见 docs/known-issues.md）。
+    ///
+    /// 确定性错误一律不重试：TLS 证书/握手失败、URI 非法、协议错误、鉴权、余额、
+    /// 响应格式非法、配置错误。`Transport` 表示"未知传输错误"，也不再重试——
+    /// 宁可失败得明确，也不要在未知状态下反复发请求。
     pub const fn is_retryable(self) -> bool {
-        matches!(
-            self,
-            Self::RateLimited | Self::Unavailable | Self::Transport
-        )
+        matches!(self, Self::RateLimited | Self::Unavailable)
     }
 
     pub const fn code(self) -> TranslationErrorCode {
