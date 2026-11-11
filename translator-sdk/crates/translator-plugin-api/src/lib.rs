@@ -14,8 +14,9 @@ use std::sync::Arc;
 use translator_types::{
     BackendDescriptor, CancelToken, Capability, CapabilityInfo, CompatibilityReport,
     DictionaryEntry, EngineDescriptor, LanguageTag, LookupRequest, ModelManifest, NmtInput,
-    NmtOutput, PluginApiVersion, ProviderDescriptor, ResourceLimits, TranslateRequest,
-    TranslationError, TranslationErrorCode, TranslationResult,
+    NmtOutput, PluginApiVersion, ProviderDescriptor, ResourceLimits, TermConstraint, TextKind,
+    TokenUsage, TranslateRequest, TranslationError, TranslationErrorCode, TranslationMode,
+    TranslationResult,
 };
 
 /// 插件异步返回类型。
@@ -27,6 +28,86 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 // ============================================================
 // 引擎契约
 // ============================================================
+
+// ============================================================
+// 执行任务（引擎看到的"这一次翻译"）
+// ============================================================
+
+/// 交给引擎的一次翻译任务。
+///
+/// 与 [`TranslateRequest`] 的区别：这是**协调器内部**的执行契约，带上了
+/// 协调器已经算好的东西（受保护文本、命中的术语约束、截止时间）。
+///
+/// 为什么不让引擎直接读 `TranslateRequest`：
+///
+/// - 术语约束必须在**生成之前**进入提示词（§6.1）。若只通过 `TranslateRequest`
+///   传递，就得给公开结构加字段，等于把内部策略暴露给宿主。
+/// - 截止时间必须是绝对时刻，否则每次重试都会重新计时，整体超时失效。
+pub struct TranslationJob<'a> {
+    /// 要翻译的文本。可能包含 `⟦P1⟧` 形式的保护标记。
+    pub text: &'a str,
+    /// 送进模型前的源文（未加保护标记），供后端做术语/上下文判断。
+    pub original_text: &'a str,
+    pub source: &'a LanguageTag,
+    pub target: &'a LanguageTag,
+    pub mode: TranslationMode,
+    pub text_kind: TextKind,
+    /// 本次源文**实际命中**的术语约束（已按优先级排好，可能为空）。
+    pub glossary: &'a [TermConstraint],
+    /// 文本中出现的保护标记（如 `⟦P1⟧`）。逐字告知模型比"让它自己发现"可靠得多。
+    pub placeholders: &'a [String],
+    /// 上一次尝试失败时的纠正提示（内容完整性重试时使用）。
+    pub retry_hint: Option<&'a str>,
+    /// 绝对截止时间：引擎必须在此时刻前返回或报 `Timeout`。
+    pub deadline: Option<std::time::Instant>,
+    /// 取消令牌。可在任意阶段检查，取消后不得继续重试。
+    pub cancel: Option<&'a CancelToken>,
+    /// 调用方要求的输出上限（token）。`None` 表示用后端默认值。
+    pub max_output_tokens: Option<u32>,
+}
+
+impl std::fmt::Debug for TranslationJob<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // 不打印原文：日志里不得出现用户文本（设计文档 §4.1）。
+        f.debug_struct("TranslationJob")
+            .field("text_chars", &self.text.chars().count())
+            .field("source", &self.source.as_str())
+            .field("target", &self.target.as_str())
+            .field("mode", &self.mode.as_str())
+            .field("glossary", &self.glossary.len())
+            .field("placeholders", &self.placeholders.len())
+            .field("retry_hint", &self.retry_hint.is_some())
+            .field("deadline", &self.deadline.is_some())
+            .finish()
+    }
+}
+
+/// 引擎产出的结果。
+///
+/// 比 [`TranslationResult`] 多了后端身份与用量：协调器要拿 `model_revision`
+/// 参与缓存身份，拿 `usage` 做成本统计。
+#[derive(Clone, Debug)]
+pub struct EngineOutput {
+    pub text: String,
+    pub model_id: Option<String>,
+    /// 模型/部署的**真实**版本标识。远程服务在别名不变时也可能替换模型，
+    /// 因此不能用 `model_id` 当作永久缓存身份（§11.2）。
+    pub model_revision: Option<String>,
+    pub usage: Option<TokenUsage>,
+    pub warnings: Vec<translator_types::TranslationWarning>,
+}
+
+impl EngineOutput {
+    pub fn new(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            model_id: None,
+            model_revision: None,
+            usage: None,
+            warnings: Vec::new(),
+        }
+    }
+}
 
 /// 翻译引擎。词典、本地 NMT、远程 LLM 都实现此 trait。
 pub trait TranslationEngine: Send + Sync {
@@ -51,6 +132,32 @@ pub trait TranslationEngine: Send + Sync {
     ) -> BoxFuture<'a, Result<TranslationResult, TranslationError>> {
         let _ = cancel;
         self.translate(req)
+    }
+
+    /// 带术语约束与截止时间的执行入口。协调器走这条路径。
+    ///
+    /// 默认实现把 job 退化成一个 [`TranslateRequest`] 再调用 [`Self::translate`]，
+    /// 因此已有引擎不需要改动；能利用术语约束的 LLM 后端应覆盖它。
+    fn translate_job<'a>(
+        &'a self,
+        job: &'a TranslationJob<'a>,
+    ) -> BoxFuture<'a, Result<EngineOutput, TranslationError>> {
+        let request = TranslateRequest {
+            text: job.text.to_string(),
+            source: Some(job.source.clone()),
+            target: job.target.clone(),
+            ..TranslateRequest::new(job.text.to_string(), job.target.clone())
+        };
+        Box::pin(async move {
+            let result = self.translate(&request).await?;
+            Ok(EngineOutput {
+                text: result.text,
+                model_id: result.model_id,
+                model_revision: None,
+                usage: None,
+                warnings: result.warnings,
+            })
+        })
     }
 
     /// 影响译文的执行身份（模型/词表/解码/保护策略的稳定摘要）。
@@ -237,7 +344,7 @@ impl PluginRegistry {
 
         found.sort_by(|a, b| {
             let (da, db) = (a.descriptor(), b.descriptor());
-            db.priority.cmp(&da.priority).then_with(|| da.id.cmp(db.id))
+            db.priority.cmp(&da.priority).then_with(|| da.id.cmp(&db.id))
         });
 
         found

@@ -509,6 +509,37 @@ impl TranslationPolicy {
     }
 }
 
+/// 一条**已命中源文**的术语约束。
+///
+/// 只把源文里真实出现的术语送进模型（§6.5）：把整个术语表塞进提示词既费钱，
+/// 也会让无关词条干扰模型。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TermConstraint {
+    /// 源文中的术语（原文大小写）。
+    pub source: String,
+    /// 要求使用的目标语言写法。
+    pub target: String,
+    /// `true` = 硬约束（译后必须满足），`false` = 偏好。
+    pub strict: bool,
+    /// 命中方式说明（`exact` / `phrase` / `case-insensitive`），用于提示词与诊断。
+    pub matched: String,
+}
+
+/// 后端报告的 token 用量。
+///
+/// 只做**辅助**成本统计：可信的计费边界在转发站/服务端，客户端计数只能用于提醒。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TokenUsage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+}
+
+impl TokenUsage {
+    pub const fn total(&self) -> u64 {
+        self.input_tokens + self.output_tokens
+    }
+}
+
 /// 一次翻译请求。
 #[derive(Clone, Debug)]
 pub struct TranslateRequest {
@@ -745,18 +776,37 @@ impl fmt::Display for PluginApiVersion {
 }
 
 /// 翻译引擎描述。
+///
+/// `id` 是 `String` 而不是 `&'static str`：远程/本地 HTTP 后端的 id 来自
+/// 配置文件（`backend.<name>.id`），编译期常量无法表达。禁止为了塞进
+/// `&'static str` 而 `Box::leak` 配置里的字符串。
 #[derive(Clone, Debug)]
 pub struct EngineDescriptor {
-    /// 全局唯一 id，形如 `org.example.nmt.mock`。
-    pub id: &'static str,
-    pub capabilities: &'static [Capability],
+    /// 全局唯一 id，形如 `http.remote.deepseek` 或 `dict.ecdict`。
+    pub id: String,
+    pub capabilities: Vec<Capability>,
     /// 仅在**可兼容**插件之间用于排序，不能绕过质量/内存要求。
     pub priority: i32,
     pub plugin_api: PluginApiVersion,
-    pub license: &'static str,
+    pub license: String,
 }
 
 impl EngineDescriptor {
+    pub fn new(
+        id: impl Into<String>,
+        capabilities: impl IntoIterator<Item = Capability>,
+        priority: i32,
+        license: impl Into<String>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            capabilities: capabilities.into_iter().collect(),
+            priority,
+            plugin_api: PluginApiVersion::CURRENT,
+            license: license.into(),
+        }
+    }
+
     pub fn supports(&self, capability: Capability) -> bool {
         self.capabilities.contains(&capability)
     }
@@ -765,17 +815,37 @@ impl EngineDescriptor {
 /// 词典/语言学提供者描述。
 #[derive(Clone, Debug)]
 pub struct ProviderDescriptor {
-    pub id: &'static str,
+    pub id: String,
     pub plugin_api: PluginApiVersion,
-    pub license: &'static str,
+    pub license: String,
+}
+
+impl ProviderDescriptor {
+    pub fn new(id: impl Into<String>, license: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            plugin_api: PluginApiVersion::CURRENT,
+            license: license.into(),
+        }
+    }
 }
 
 /// 推理后端描述。
 #[derive(Clone, Debug)]
 pub struct BackendDescriptor {
-    pub id: &'static str,
+    pub id: String,
     pub plugin_api: PluginApiVersion,
-    pub license: &'static str,
+    pub license: String,
+}
+
+impl BackendDescriptor {
+    pub fn new(id: impl Into<String>, license: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            plugin_api: PluginApiVersion::CURRENT,
+            license: license.into(),
+        }
+    }
 }
 
 /// 对外暴露的能力清单条目。
@@ -802,6 +872,12 @@ pub struct RouteDecision {
 // ============================================================
 
 /// 错误码。由设计文档 §4 固定，不得随意增删。
+/// 错误码。
+///
+/// 重构（v1）在 P0～P11 的旧码表上**新增**了后端/配置诊断所需的类别：
+/// 客户端必须能区分"密钥无效"、"被限流"、"余额不足"、"后端不可用"、
+/// "后端超时"、"响应格式非法"、"配置错误"与"词典不可用"，
+/// 而不是统一看到一句"翻译失败"。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TranslationErrorCode {
     InvalidRequest,
@@ -816,6 +892,22 @@ pub enum TranslationErrorCode {
     NetworkNotAuthorized,
     ProviderRejected,
     IntegrityFailure,
+    /// 密钥缺失/无效/被拒绝（HTTP 401/403）。
+    AuthenticationFailed,
+    /// 被对端限流（HTTP 429）。可退避重试。
+    RateLimited,
+    /// 费用/额度不足（HTTP 402 或转发站明确的余额错误）。
+    BudgetExceeded,
+    /// 后端不可用（连接失败、5xx、服务未启动）。
+    BackendUnavailable,
+    /// 后端在截止时间内没有返回。
+    BackendTimeout,
+    /// 后端返回了无法解析/不合契约的内容。
+    InvalidBackendResponse,
+    /// 配置缺失或非法（缺 base_url、未知模型、密钥环境变量未设置等）。
+    ConfigurationError,
+    /// 词典未安装或无法打开。
+    DictionaryUnavailable,
 }
 
 impl TranslationErrorCode {
@@ -833,6 +925,14 @@ impl TranslationErrorCode {
             Self::NetworkNotAuthorized => "NetworkNotAuthorized",
             Self::ProviderRejected => "ProviderRejected",
             Self::IntegrityFailure => "IntegrityFailure",
+            Self::AuthenticationFailed => "AuthenticationFailed",
+            Self::RateLimited => "RateLimited",
+            Self::BudgetExceeded => "BudgetExceeded",
+            Self::BackendUnavailable => "BackendUnavailable",
+            Self::BackendTimeout => "BackendTimeout",
+            Self::InvalidBackendResponse => "InvalidBackendResponse",
+            Self::ConfigurationError => "ConfigurationError",
+            Self::DictionaryUnavailable => "DictionaryUnavailable",
         }
     }
 }
@@ -852,6 +952,17 @@ pub struct TranslationError {
 }
 
 impl TranslationError {
+    /// 该错误是否值得在**传输层**重试（网络抖动/限流/5xx）。
+    ///
+    /// 内容完整性失败（`IntegrityFailure`）不在这里：它需要的是
+    /// "换一种提示重试一次"，不是原样重发。
+    pub const fn is_transport_retryable(&self) -> bool {
+        matches!(
+            self.code,
+            TranslationErrorCode::BackendUnavailable | TranslationErrorCode::RateLimited
+        )
+    }
+
     /// 取消错误（码固定为 `Cancelled`，不新增错误码）。
     pub fn cancelled() -> Self {
         Self::new(TranslationErrorCode::Cancelled, "请求已取消")

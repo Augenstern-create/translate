@@ -58,13 +58,7 @@ impl MockDictionaryEngine {
 
 impl TranslationEngine for MockDictionaryEngine {
     fn descriptor(&self) -> EngineDescriptor {
-        EngineDescriptor {
-            id: "mock.dictionary",
-            capabilities: &[Capability::Dictionary],
-            priority: 100,
-            plugin_api: API,
-            license: "MIT",
-        }
+        EngineDescriptor::new("mock.dictionary", &[Capability::Dictionary], 100, "MIT")
     }
 
     fn supports(&self, source: &LanguageTag, target: &LanguageTag) -> bool {
@@ -136,13 +130,7 @@ impl MockNmtEngine {
 
 impl TranslationEngine for MockNmtEngine {
     fn descriptor(&self) -> EngineDescriptor {
-        EngineDescriptor {
-            id: "mock.nmt",
-            capabilities: &[Capability::Nmt],
-            priority: self.priority,
-            plugin_api: API,
-            license: "MIT",
-        }
+        EngineDescriptor::new("mock.nmt", &[Capability::Nmt], self.priority, "MIT")
     }
 
     fn supports(&self, _source: &LanguageTag, _target: &LanguageTag) -> bool {
@@ -192,13 +180,7 @@ impl MockRemoteEngine {
 
 impl TranslationEngine for MockRemoteEngine {
     fn descriptor(&self) -> EngineDescriptor {
-        EngineDescriptor {
-            id: "mock.remote",
-            capabilities: &[Capability::Remote],
-            priority: 10,
-            plugin_api: API,
-            license: "MIT",
-        }
+        EngineDescriptor::new("mock.remote", &[Capability::Remote], 10, "MIT")
     }
 
     fn supports(&self, _source: &LanguageTag, _target: &LanguageTag) -> bool {
@@ -252,11 +234,7 @@ impl MockDictionaryProvider {
 
 impl DictionaryProvider for MockDictionaryProvider {
     fn descriptor(&self) -> ProviderDescriptor {
-        ProviderDescriptor {
-            id: "mock.dictionary-provider",
-            plugin_api: API,
-            license: "MIT",
-        }
+        ProviderDescriptor::new("mock.dictionary-provider", "MIT")
     }
 
     fn lookup<'a>(
@@ -312,11 +290,7 @@ impl MockBackend {
 
 impl InferenceBackend for MockBackend {
     fn descriptor(&self) -> BackendDescriptor {
-        BackendDescriptor {
-            id: "mock.backend",
-            plugin_api: API,
-            license: "MIT",
-        }
+        BackendDescriptor::new("mock.backend", "MIT")
     }
 
     fn supports_model(&self, model: &ModelManifest) -> CompatibilityReport {

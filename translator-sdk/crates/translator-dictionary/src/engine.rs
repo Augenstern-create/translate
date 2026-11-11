@@ -57,12 +57,12 @@ impl DictionaryEngine {
 impl TranslationEngine for DictionaryEngine {
     fn descriptor(&self) -> EngineDescriptor {
         EngineDescriptor {
-            id: self.id,
-            capabilities: &[Capability::Dictionary],
+            id: self.id.to_string(),
+            capabilities: vec![Capability::Dictionary],
             priority: self.priority,
             plugin_api: PluginApiVersion::CURRENT,
             // 引擎本身的许可是 SDK 的；数据许可在 manifest 里单独声明
-            license: "Apache-2.0 OR MIT",
+            license: "Apache-2.0 OR MIT".to_string(),
         }
     }
 
@@ -214,9 +214,9 @@ impl DictionaryProviderImpl {
 impl DictionaryProvider for DictionaryProviderImpl {
     fn descriptor(&self) -> ProviderDescriptor {
         ProviderDescriptor {
-            id: self.id,
+            id: self.id.to_string(),
             plugin_api: PluginApiVersion::CURRENT,
-            license: "Apache-2.0 OR MIT",
+            license: "Apache-2.0 OR MIT".to_string(),
         }
     }
 
