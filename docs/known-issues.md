@@ -7,27 +7,19 @@
 |---|---|---|---|---|
 | K-01 | 保护 | 标记可靠性只在**旧模型**上测过（`docs/18` §2.6，最好 6/7）。当前模型未复测 | 中 | PENDING_HUMAN（需用目标模型跑 smoke 集确认） |
 | K-02 | 保护 | 分段回退会把句子切碎，译文连贯性下降。实测（Qwen2.5-1.5B，长句）：标记策略失败后回退分段，内容完整但中文明显不通顺 | 中 | Accepted（宁可牺牲连贯性也不丢内容；弱模型长句尤甚，见 research 分支 `docs/refactor/02-local-model-phase5.md`） |
-| K-03 | 保护 | 分段回退下"模型返回无关但非空内容"无法自动识别 | 中 | Open（只有启发式重复/比例诊断） |
-| K-04 | 数字 | 中文数字解析覆盖到亿级整数与小数，但不支持"半/几/数十"等模糊量 | 低 | Accepted |
-| K-05 | 数字 | 金额只识别 `$ € £ ¥` 与常见中文币种词；加密货币、复合币种未覆盖 | 低 | Open |
-| K-06 | 数字 | 时间只做 12/24 小时换算，"下午两点半"这类口语只有部分形式可识别 | 低 | Accepted |
 | K-07 | 质量 | 否定/条件/重复/语言判断是启发式，可能误报（只报告不拒绝） | 低 | Accepted |
 | K-08 | 质量 | 译文"准确不准确"无法自动判定，必须人工阅读 | 高 | PENDING_HUMAN |
 | K-09 | 术语 | `Enforce` 现在是"不满足即失败"，不再做译后替换；依赖模型服从提示词 | 中 | Accepted（有意为之） |
 | K-10 | 术语 | 大小写不敏感的术语在中文语境下无法区分专有名词与普通词 | 低 | Accepted |
 | K-11 | 模板 | schema v1 的旧条目按"归一化匹配"语义加载（历史兼容），与 v2 默认精确匹配不一致 | 低 | Accepted（迁移期行为，见 migration.md） |
-| K-12 | 缓存 | 只有进程内 FIFO 缓存，无持久化、无跨进程共享 | 中 | Open（第一阶段明确不做分布式缓存） |
 | K-13 | 后端 | 流式（SSE）未实现；配置 `stream = true` 会直接报错 | 中 | Accepted（未验证的协议不实现） |
-| K-14 | 后端 | 已被对端接收但响应中断的请求可能重复计费；客户端无法避免 | 中 | Accepted（由服务端额度控制兜底） |
-| K-15 | 后端 | 取消只在"重试之间"生效，已在飞行的单次 HTTP 请求无法中断 | 低 | Open（ureq 无中断句柄） |
-| K-16 | 后端 | 每个请求一个 worker 线程；高并发时线程数上升（受 `max_concurrent_requests` 限制） | 低 | Accepted |
+| K-15 | 后端 | 已在飞行的单次 HTTP 请求无法被 `ureq` 中断；取消保证 Future 立即返回、后续不再重试/切段，且每次尝试都有超时上限 | 低 | Accepted（上游库无中断句柄；等待时间有界） |
 | K-17 | 后端 | 供应商扩展字段差异只能靠 `extra_body`/`thinking_style` 手工配置 | 中 | Accepted |
-| K-18 | 段落 | `paragraph_strategy = sentence/group/best/context` 目前**不改变执行方式**（统一整段翻译），仅进缓存身份 | 中 | Open（先保证整段质量） |
 | K-19 | 评测 | `fixtures/eval` 的 `reference_zh` 全部为空，没有人工参考译文 | 高 | PENDING_HUMAN |
 | K-20 | 评测 | 未在真实转发站上跑过批量评测（缺 base_url/密钥） | 高 | PENDING_HUMAN |
 | K-21 | 本地模型 | CPU 实测已做（Qwen2.5-1.5B，p50 732 ms / RSS 1.87 GB，smoke 29/30）；**与远程基线的质量对比未做** | 高 | PENDING_HUMAN（缺密钥与人工评分） |
 | K-21b | 本地模型 | 1.5B 模型术语选择不稳定（无约束时会换同义词），长文档需分块（4k 上下文） | 中 | Accepted（靠术语表 + 分块策略） |
-| K-22 | 平台 | Windows 只做了交叉编译检查，未在实机运行 | 高 | PENDING_HUMAN |
+| K-22 | 平台 | Windows 实机已跑通：`cargo test --workspace`（386 passed）、CLI 端到端翻译、磁盘缓存跨进程命中、`serve` 页面 CSP/CSRF（403）与 `/api/translate`（200）。仍未验证：真实 TLS 站点、系统代理、中文路径、长时间运行 | 中 | 部分完成（S4 补齐剩余场景） |
 | K-23 | 平台 | Android 完全延后；JNI 层已归档 | 中 | Accepted（计划内） |
 | K-24 | 成本 | 客户端 token 计数只用于提醒，不是可信计费边界 | 低 | Accepted |
 | K-25 | 词典 | 词典释义质量继承 ECDICT 上游，未做逐条人工校对 | 中 | PENDING_HUMAN |
@@ -46,6 +38,19 @@
 | K-35 | `Host`/`Origin`/`x-csrf-token`/`Content-Type` 重复时未拒绝（只有 `Content-Length` 有检查） | 四类安全头重复一律 400，并有 4 个真实 socket 用例（S1 收尾） |
 | K-36 | 本地页面没有 CSP，任何注入脚本都能执行 | 增加 CSP：`default-src 'none'`，脚本/样式只认每次响应随机生成的 nonce，`connect-src 'self'`，无 `unsafe-inline`；用 headless 浏览器验证动态注入的内联脚本被拦截（S1 收尾） |
 
+### S2 收尾已关闭
+
+| ID | 问题 | 修复方式 |
+|---|---|---|
+| K-03 | 分段回退下"答非所问"无法识别 | 每段做保守合理性检查（目标语言缺失、长度比例异常），失败即 IntegrityFailure 并触发一次内容重试，不再把垃圾拼成"看起来正常"的结果 |
+| K-04 | 中文数字不支持"半/几/数十" | 支持 `半`/`一半`/`两个半` 等写法（`一半`=0.5、`两个半`=2.5），`几/数十` 这类模糊量仍不当作可判定值（避免误判） |
+| K-05 | 金额只识别 `$ € £ ¥` | 增加 ISO 代码前后缀（USD/EUR/CNY/JPY/INR/RUB/KRW/TRY/BTC/ETH）与符号 `₹ ₽ ₩ ₺`，中文/代码写法都算等价 |
+| K-06 | 时间只做 `hh:mm` | 增加 `两点半`/`九点一刻`/`差一刻十点` 等口语写法，并保留上下午换算 |
+| K-12 | 只有进程内缓存 | 可选磁盘持久化（`[cache] file` / `builder.cache_file`）：原子写入、损坏或版本不符时静默忽略、最多 512 条、默认关闭（会写入译文，隐私由用户显式选择） |
+| K-14 | 响应中断可能重复计费 | 区分"请求已发出后失败"：这类错误最多再试一次，并始终计入 `potentially_billable_unknown_calls` |
+| K-18 | `paragraph_strategy` 不改变执行 | `Sentence` 逐句、`Group` 每 3 句真正生效（共享同一预算/截止时间），`Auto/Whole` 保持整段（默认不变） |
+| K-39 | TLS 证书错误可能漏判 | 分类器覆盖 `InvalidData/InvalidInput` 与 rustls 常见消息关键词（certificate/handshake/alert/unknown issuer），确定性错误不重试 |
+
 ### S2 已关闭
 
 | ID | 问题 | 修复 |
@@ -61,13 +66,10 @@
 | ID | 模块 | 问题 | 影响 | 计划 |
 |---|---|---|---|---|
 | K-15 | 后端 | 已发出的单次 HTTP 请求无法被 `ureq` 中断；取消只能让 Future 立即返回并阻止后续重试 | 低 | Accepted（已发布的传输层限制） |
-| K-39 | 后端 | TLS 证书/握手错误的判定依赖 `io::Error` 的 kind 与消息关键词（rustls 会包成 IO 错误），可能存在漏判 | 低 | Accepted（漏判只会多一次重试，仍受预算约束） |
-| K-14 | 后端 | 响应中断可能重复计费 | 中 | Partially fixed：现在计入 `potentially_billable_unknown_calls`，但仍无法避免 |
-| K-18 | 段落 | `paragraph_strategy` 不改变执行方式 | 中 | S3 质量阶段评估 |
 | K-19 | 评测 | `fixtures/eval` 无人工参考译文 | 高 | S3（人工盲测） |
 | K-20 | 评测 | 未在真实转发站跑批量评测 | 高 | S3 |
 | K-21 | 本地模型 | 与远程基线的质量对比未做 | 高 | S3 |
-| K-22 | 平台 | Windows 已实机跑通 `cargo test --workspace`；但 CLI/Web UI 手工操作、TLS/代理/路径/编码仍未在该机器验证 | 中 | S4（实机功能验证） |
+| K-22 | 平台 | Windows 实机已验证：`cargo test --workspace`（386 passed）、CLI 端到端翻译、磁盘缓存跨进程命中、`serve` 页面 CSP/CSRF（403）与 `/api/translate`（200）。仍**未**验证：真实 TLS 站点、系统代理、中文路径、长时间运行 | 中 | S4（剩余场景） |
 | K-25 | 词典 | 释义未人工校对 | 中 | S3 |
 | K-37 | 成本 | 只有"调用次数 + 输出 token 上限"，没有跨请求的每日/每月预算 | 中 | Accepted（硬额度由转发站执行） |
 | K-38 | 队列 | 队列为进程内 FIFO，不跨进程/不持久化；进程重启后丢失 | 低 | Accepted |

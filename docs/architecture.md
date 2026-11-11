@@ -228,6 +228,9 @@ HttpTransport（每个后端一个）
   已发出的请求由 worker 等待网络超时结束，但 Future 立即返回
   `Cancelled` 且不再重试/切换后端（见 `docs/known-issues.md` K-15）。
 - **Retry-After**：429/503 带 `Retry-After` 时遵守（上限 120 秒，且不超过截止时间）。
+- **请求已发出后的失败**：读取响应体时连接中断说明请求一定已到达服务端，
+  这类错误最多再试一次（避免重复计费），并始终计入
+  `potentially_billable_unknown_calls`。
 - **重试分类**：只有 `RateLimited`（429）与 `Unavailable`（连接被拒/重置、DNS 临时失败、5xx）
   会重试；TLS 证书/握手错误、非法 URI、HTTP 协议错误、鉴权、余额、超时、
   未知传输错误一律不重试——确定性错误重发只会浪费配额，超时重发还有重复计费风险。

@@ -28,7 +28,7 @@ cargo test -p translator-api           # 端到端流水线（脚本化引擎）
 当前基线（Linux，`refactor/online-translation-v1`）：
 
 ```text
-passed = 372   failed = 0   ignored = 4
+passed = 386   failed = 0   ignored = 4
 ```
 
 覆盖的关键场景：
@@ -104,6 +104,11 @@ passed = 372   failed = 0   ignored = 4
 - 直接调用 `engine.translate()`（绕过协调器）也受 `1 + max_retries` 预算约束
 - 证书/协议类确定性错误不重试；连接重置/被拒仍可重试
 - Builder 装配的两个后端共享全局并发（峰值 ≤2）与队列上限（队列 1 时出现 `QueueFull`）
+- 分段回退：答非所问的片段返回 `IntegrityFailure` 且不写缓存
+- 段落策略：`Sentence` 三句 → 三次调用、拼接正确；预算 2 时第三句被拒
+- 数字/时间/币种：`两点半`、`九点一刻`、`USD 39.99`、`39.99 EUR`、`0.5 BTC`、`₹500` 均判等价
+- 响应中断：请求已发出后失败最多重试一次，且计入疑似计费
+- 磁盘缓存：写盘后用新实例加载即命中（引擎只被调用一次）；损坏/版本不符的文件被忽略
 
 **流水线（`translator-api`）**
 
@@ -216,7 +221,17 @@ node browser_check.mjs http://127.0.0.1:18096/
 |---|---|---|
 | 全工作区编译（含测试目标） | `cargo xwin check --workspace --all-targets --target x86_64-pc-windows-msvc` | 通过 |
 | CLI 二进制链接 | `cargo xwin build -p translator-cli --target x86_64-pc-windows-msvc` | 生成 `translator-cli.exe` |
-| 单元 + 集成测试 | Windows 实机 `cargo test --workspace --no-fail-fast` | **372 passed / 0 failed / 4 ignored**（S2 审查收尾后复跑） |
+| 单元 + 集成测试 | Windows 实机 `cargo test --workspace --no-fail-fast` | **386 passed / 0 failed / 4 ignored**（S2 遗留问题补齐后复跑） |
+
+**Windows 端到端（2026-11-12 实测）**
+
+| 场景 | 结果 |
+|---|---|
+| `translator-cli translate "Hello." --config ... --json` | `"text": "你好，世界。"`，`attempts=1` |
+| 第二次运行（新进程） | `cached=true`、`http_calls=0`、`warnings=["CacheHit"]`（磁盘缓存） |
+| `serve` 页面 | 200；`Content-Security-Policy` 含 per-response nonce，无 `unsafe-inline`；token 长度 64 |
+| `POST /api/translate`（带令牌+Origin） | 200，`cached=true` |
+| `POST /api/translate`（无令牌） | 403 |
 
 **仍未做（S4）**
 
