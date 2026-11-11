@@ -1,3 +1,0 @@
-$ translator-cli --store /tmp/p9repo resource install corrupt
-安装失败：资源已安装：dictionary.kaikki.zh-wiktionary.en-zh@0.1.0-p9sample（未覆盖，请先卸载或用新版本号）
-EXIT=1

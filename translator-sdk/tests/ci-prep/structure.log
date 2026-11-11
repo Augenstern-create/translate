@@ -1,5 +1,0 @@
-$ dependency tree checks
-PASS-no-runtime
-PASS-no-nmt
-$ docs numbering
-bad= [] dup= [] files= 45

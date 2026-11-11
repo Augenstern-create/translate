@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "glossary.example",
+  "version": 1,
+  "domain": "software",
+  "entries": [
+    {
+      "id": "term_001",
+      "source": "large language model",
+      "target": "大语言模型",
+      "source_language": "en",
+      "target_language": "zh-CN",
+      "case_sensitive": false,
+      "match_type": "phrase",
+      "domain": "software",
+      "priority": 100,
+      "strict": true
+    },
+    {
+      "id": "term_002",
+      "source": "pull request",
+      "target": "拉取请求",
+      "strict": true
+    }
+  ]
+}

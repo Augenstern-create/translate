@@ -1,6 +1,0 @@
-$ cargo tree -p translator-api --no-default-features -e normal | grep -cE "ort|onnx|reqwest|hyper|tauri|tokio"
-0
-$ cargo tree -p translator-api -i --depth 1
-translator-api v0.1.0 (/home/nan/deepseek-harness/translate-workspace/translator-sdk/crates/translator-api)
-$ python3 tools/license-audit.py --check
-PASS 第三方许可清单与依赖树一致（172 个包，全部通过策略）

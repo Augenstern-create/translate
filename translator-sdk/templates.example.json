@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "id": "templates.ui",
+  "version": 1,
+  "source": "en",
+  "target": "zh-CN",
+  "entries": [
+    { "source": "Save", "target": "保存" },
+    { "source": "Cancel", "target": "取消", "match": "normalized" },
+    { "source": "Settings", "target": "设置" },
+    { "source": "File not found", "target": "找不到文件" },
+    { "source": "Connection failed", "target": "连接失败" },
+    { "source": "Retry", "target": "重试" }
+  ]
+}

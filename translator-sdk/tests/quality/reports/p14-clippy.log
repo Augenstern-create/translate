@@ -1,4 +1,0 @@
-    Checking translator-jni v0.1.0 (/home/nan/deepseek-harness/translate-workspace/translator-sdk/bindings/translator-jni)
-    Checking quality-runner v0.1.0 (/home/nan/deepseek-harness/translate-workspace/translator-sdk/tools/quality-runner)
-    Checking translator-runtime v0.1.0 (/home/nan/deepseek-harness/translate-workspace/translator-sdk/crates/translator-runtime)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.28s

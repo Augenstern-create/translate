@@ -1,9 +1,0 @@
-{
-  "cache_hits": 0,
-  "errors": 0,
-  "label": "terms-enforce",
-  "mode": "precise",
-  "resource_fingerprint": "terms.en-zh.technical@1#5cf4c974fdaa9e18ee5b14f7627f42ba282c7d4af764675ed398164a67694830",
-  "success": 320,
-  "total_wall_ms": 59804
-}

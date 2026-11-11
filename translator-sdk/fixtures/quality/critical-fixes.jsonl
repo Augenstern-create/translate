@@ -1,4 +1,0 @@
-{"id":"en-zh-0151","source":"The CPU usage stayed below 50%.","reference":"CPU 使用率保持在 50% 以下。","category":"numbers_units","critical_constraints":["target_language_zh","number_preserved"],"review_status":"pending"}
-{"id":"en-zh-0286","source":"The discount is 15% for orders over $100.","reference":"订单超过100美元可享受15%的折扣。","category":"numbers_units","critical_constraints":["target_language_zh","number_preserved"],"review_status":"pending"}
-{"id":"en-zh-0296","source":"The error code is 0x80070005.","reference":"错误代码是0x80070005。","category":"numbers_units","critical_constraints":["target_language_zh","number_preserved"],"review_status":"pending"}
-{"id":"en-zh-0309","source":"The event starts at 8 PM and ends at 11 PM.","reference":"活动晚上8点开始，11点结束。","category":"numbers_units","critical_constraints":["target_language_zh","number_preserved"],"review_status":"pending"}
