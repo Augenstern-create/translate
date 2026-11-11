@@ -209,7 +209,7 @@ node browser_check.mjs http://127.0.0.1:18096/
 |---|---|---|
 | 全工作区编译（含测试目标） | `cargo xwin check --workspace --all-targets --target x86_64-pc-windows-msvc` | 通过 |
 | CLI 二进制链接 | `cargo xwin build -p translator-cli --target x86_64-pc-windows-msvc` | 生成 `translator-cli.exe` |
-| 单元 + 集成测试 | Windows 实机 `cargo test --workspace --no-fail-fast` | **335 passed / 0 failed / 4 ignored** |
+| 单元 + 集成测试 | Windows 实机 `cargo test --workspace --no-fail-fast` | **361 passed / 0 failed / 4 ignored**（S2 后复跑） |
 
 **仍未做（S4）**
 
