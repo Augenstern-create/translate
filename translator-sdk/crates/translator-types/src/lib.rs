@@ -548,7 +548,6 @@ pub struct TranslateRequest {
     pub source: Option<LanguageTag>,
     pub target: LanguageTag,
     pub policy: TranslationPolicy,
-    pub glossary_id: Option<String>,
     pub timeout_ms: Option<u64>,
 }
 
@@ -560,7 +559,6 @@ impl TranslateRequest {
             source: None,
             target,
             policy: TranslationPolicy::default(),
-            glossary_id: None,
             timeout_ms: None,
         }
     }
@@ -572,11 +570,6 @@ impl TranslateRequest {
 
     pub fn with_policy(mut self, policy: TranslationPolicy) -> Self {
         self.policy = policy;
-        self
-    }
-
-    pub fn with_glossary(mut self, glossary_id: impl Into<String>) -> Self {
-        self.glossary_id = Some(glossary_id.into());
         self
     }
 

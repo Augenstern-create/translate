@@ -121,15 +121,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
-name = "fasttext-pure-rs"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7eec6d842b339de477c0824b9cdac9ca7bc8900fe23646e5a67226286c9fd9f7"
-dependencies = [
- "thiserror",
-]
-
-[[package]]
 name = "find-msvc-tools"
 version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -541,26 +532,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "thiserror"
-version = "2.0.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09e52cb86a36cede5cb101bf8908837b3e4c6e5e59fe7fd85c23fb56200d189e"
-dependencies = [
- "thiserror-impl",
-]
-
-[[package]]
-name = "thiserror-impl"
-version = "2.0.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe5197923287db20a58125f0bc85c062f7f2c892de97b18c356f9efb14b28524"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.9",
-]
-
-[[package]]
 name = "tinyvec"
 version = "1.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -608,16 +579,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
 
 [[package]]
-name = "translator-analysis"
-version = "0.1.0"
-dependencies = [
- "fasttext-pure-rs",
- "serde",
- "serde_json",
- "translator-types",
-]
-
-[[package]]
 name = "translator-api"
 version = "0.1.0"
 dependencies = [
@@ -643,7 +604,6 @@ dependencies = [
  "toml",
  "translator-api",
  "translator-http",
- "translator-plugin-api",
  "translator-types",
 ]
 
@@ -654,7 +614,6 @@ dependencies = [
  "pollster",
  "serde",
  "serde_json",
- "sha2",
  "translator-plugin-api",
  "translator-types",
 ]

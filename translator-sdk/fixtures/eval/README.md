@@ -38,7 +38,7 @@
 - **金额/时间不要放进 `must_preserve`**：那是语义约束，放进 `must_keep_numbers`，否则会把正确的本地化（`39.99美元`、`凌晨2点`）误判成失败。
 
 > 2026-11-11 修订：`smoke-021` / `smoke-022` 的金额、`smoke-029` 的时间原先被写进 `must_preserve`，
-> 用真实模型跑评测时产生了 3 个假失败，已按上面的口径改正（详见 `docs/refactor/02-local-model-phase5.md` §3）。
+> 用真实模型跑评测时产生了 3 个假失败，已按上面的口径改正（详见 `research/traditional-engine` 分支的 `docs/refactor/02-local-model-phase5.md` §3）。
 - 新增用例时同步更新本 README 的统计，并保持 `reference_zh` 为 `null`。
 
 ## 自检

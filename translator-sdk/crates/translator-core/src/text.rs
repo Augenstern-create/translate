@@ -727,68 +727,6 @@ fn identifier_end(chars: &[(usize, char)], i: usize) -> Option<usize> {
     Some(j)
 }
 
-// ============================================================
-// 旧式"整段替换成 ⟦Pn⟧"API（保留给不需要严格校验的内部调用）
-// ============================================================
-
-/// 保护后的文本。
-#[derive(Clone, Debug)]
-pub struct ProtectedText {
-    pub text: String,
-    pub segments: Vec<String>,
-}
-
-impl ProtectedText {
-    pub fn is_empty(&self) -> bool {
-        self.segments.is_empty()
-    }
-
-    fn marker(index: usize) -> String {
-        format!("\u{27E6}P{index}\u{27E7}")
-    }
-}
-
-/// 保护 URL、邮箱、`{占位符}`、格式化占位符与反引号代码。
-///
-/// ⚠️ 这个 API **不做**严格还原校验（缺标记只会进 `missing` 列表）。
-/// 真正的翻译主链必须走 [`crate::protection::ProtectionPlan`]。
-pub fn protect(input: &str) -> ProtectedText {
-    let mut segments: Vec<String> = Vec::new();
-    let mut out = String::with_capacity(input.len());
-
-    for segment in split_protected(input) {
-        match segment {
-            Segment::Plain(text) => out.push_str(text),
-            Segment::Protected(text) => {
-                out.push_str(&ProtectedText::marker(segments.len()));
-                segments.push(text.to_string());
-            }
-        }
-    }
-
-    ProtectedText {
-        text: out,
-        segments,
-    }
-}
-
-/// 还原占位符。返回 `(还原后的文本, 未能还原的占位符列表)`。
-pub fn restore(protected: &ProtectedText, translated: &str) -> (String, Vec<String>) {
-    let mut out = translated.to_string();
-    let mut missing = Vec::new();
-
-    for (idx, seg) in protected.segments.iter().enumerate() {
-        let marker = ProtectedText::marker(idx);
-        if out.contains(&marker) {
-            out = out.replace(&marker, seg);
-        } else {
-            missing.push(seg.clone());
-        }
-    }
-
-    (out, missing)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

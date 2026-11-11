@@ -137,9 +137,8 @@ fn print_help() {
 
 translate 选项：
   --text-kind sentence|word|paragraph|auto   文本类型
-  --glossary <id>             术语表标识（仅记录，术语表由配置决定）
   --timeout <毫秒>            超时覆盖
-  --no-cache                  本次禁用缓存命中（默认仍会写缓存）
+  （术语表/模板/词典由配置文件决定，不通过命令行临时指定）
 
 lookup 选项：
   --limit <n>                 最多返回条目数（默认 5）
@@ -412,9 +411,7 @@ fn cmd_translate(global: &GlobalArgs, args: &[String]) -> Result<u8, Failure> {
     let mut stdin = false;
     let mut mode: Option<TranslationMode> = None;
     let mut kind = TextKind::Sentence;
-    let mut glossary: Option<String> = None;
     let mut timeout: Option<u64> = None;
-    let mut no_cache = false;
 
     let mut i = 0;
     while i < args.len() {
@@ -444,14 +441,6 @@ fn cmd_translate(global: &GlobalArgs, args: &[String]) -> Result<u8, Failure> {
                 )?;
                 i += 2;
             }
-            "--glossary" => {
-                glossary = Some(
-                    args.get(i + 1)
-                        .ok_or_else(|| Failure::Usage("--glossary 需要值".to_string()))?
-                        .clone(),
-                );
-                i += 2;
-            }
             "--timeout" => {
                 timeout = Some(
                     args.get(i + 1)
@@ -460,10 +449,6 @@ fn cmd_translate(global: &GlobalArgs, args: &[String]) -> Result<u8, Failure> {
                         .map_err(|_| Failure::Usage("--timeout 必须是毫秒整数".to_string()))?,
                 );
                 i += 2;
-            }
-            "--no-cache" => {
-                no_cache = true;
-                i += 1;
             }
             "--config" | "--json" => i += 2, // 已在全局参数里处理
             other if other.starts_with("--") => {
@@ -500,9 +485,6 @@ fn cmd_translate(global: &GlobalArgs, args: &[String]) -> Result<u8, Failure> {
     let zh = LanguageTag::new("zh-CN")?;
     let mut request =
         TranslateRequest::new(source_text, zh.clone()).with_source(LanguageTag::new("en")?);
-    if let Some(glossary) = glossary {
-        request = request.with_glossary(glossary);
-    }
     if let Some(timeout) = timeout {
         request = request.with_timeout_ms(timeout);
     }
@@ -511,10 +493,6 @@ fn cmd_translate(global: &GlobalArgs, args: &[String]) -> Result<u8, Failure> {
     options.text_kind = kind;
     if let Some(mode) = mode {
         options.mode = mode;
-    }
-
-    if no_cache {
-        translator.clear_cache();
     }
 
     let started = std::time::Instant::now();

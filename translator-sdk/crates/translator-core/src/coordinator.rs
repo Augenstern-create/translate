@@ -49,7 +49,7 @@ use crate::quality::{self, QualityReport};
 use crate::routing::{BackendRouter, RouteOutcome, RoutingConfig};
 use crate::rules::{RuleOutcome, TextRules};
 use crate::templates::{SentenceTemplates, TemplateScope};
-use crate::terms::{Glossary, TermOutcome, TermPolicy};
+use crate::terms::{Glossary, TermPolicy, TermVerification};
 use crate::text;
 
 /// 协调器配置。
@@ -440,19 +440,16 @@ impl Coordinator {
         text: &str,
         source: &LanguageTag,
         target: &LanguageTag,
-    ) -> Option<TermOutcome> {
+    ) -> Option<TermVerification> {
         let glossary = self.config.glossary.as_ref()?;
-        let verification = glossary.verify(
+        // 没有译文时只能做"源文命中"预览，满足情况一律记为未满足
+        Some(glossary.verify(
             text,
-            text,
+            "",
             source.as_str(),
             target.as_str(),
             self.config.domain.as_deref(),
-        );
-        Some(TermOutcome {
-            text: text.to_string(),
-            violations: verification.violations,
-        })
+        ))
     }
 
     // ---------------- 流水线 ----------------

@@ -9,8 +9,6 @@ publish.workspace = true
 [dependencies]
 translator-types.workspace = true
 translator-plugin-api.workspace = true
-# 执行计划 digest（P3.1-D）：纯 Rust、无 native 依赖
-sha2.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

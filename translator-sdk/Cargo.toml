@@ -7,7 +7,6 @@ members = [
     "crates/translator-core",
     "crates/translator-api",
     "crates/translator-dictionary",
-    "crates/translator-analysis",
     "crates/translator-rules",
     "tools/pack-dictionary",
     "tools/quality-runner",
@@ -32,7 +31,6 @@ translator-http = { path = "crates/translator-http" }
 translator-core = { path = "crates/translator-core" }
 translator-api = { path = "crates/translator-api" }
 translator-dictionary = { path = "crates/translator-dictionary" }
-translator-analysis = { path = "crates/translator-analysis" }
 translator-rules = { path = "crates/translator-rules" }
 pack-dictionary = { path = "tools/pack-dictionary" }
 quality-runner = { path = "tools/quality-runner" }

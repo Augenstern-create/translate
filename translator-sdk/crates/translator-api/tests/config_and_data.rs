@@ -104,10 +104,14 @@ timeout_millis = 1000
 // ============================================================
 
 fn pack_test_dictionary() -> tempfile::TempDir {
-    let jsonl = concat!(
+    pack_dictionary_with(concat!(
         "{\"headword\":\"bank\",\"pos\":\"noun\",\"definitions\":[\"银行, 堤, 岸\"]}\n",
         "{\"headword\":\"memory leak\",\"pos\":\"noun\",\"definitions\":[\"内存泄漏\"]}\n",
-    );
+        "{\"headword\":\"run\",\"pos\":\"verb\",\"definitions\":[\"跑, 运行\"]}\n",
+    ))
+}
+
+fn pack_dictionary_with(jsonl: &str) -> tempfile::TempDir {
     let entries = pack_dictionary::parse_jsonl(std::io::Cursor::new(jsonl), None).unwrap();
     let dir = tempfile::tempdir().unwrap();
     let opts = pack_dictionary::PackOptions {
@@ -147,6 +151,33 @@ fn 挂载词典包后可以查词() {
         .senses
         .iter()
         .any(|s| s.definition.contains("银行")));
+}
+
+#[test]
+fn 查词默认做大小写与词形回退() {
+    let dir = pack_test_dictionary();
+    let translator = Translator::builder()
+        .engine(MockNmtEngine::new())
+        .expect("注册引擎失败")
+        .dictionary_package(dir.path())
+        .expect("挂载词典失败")
+        .build()
+        .unwrap();
+
+    // 句首大写：词典以小写 headword 建索引
+    let upper = pollster::block_on(translator.lookup(&LookupRequest::new("Bank"))).unwrap();
+    assert!(!upper.is_empty(), "Bank 应回退到 bank");
+
+    // 词形：running → run（内置轻量 lemmatizer，无需宿主配置）
+    let running = pollster::block_on(translator.lookup(&LookupRequest::new("running"))).unwrap();
+    assert!(
+        running.iter().any(|e| e.headword == "run"),
+        "running 应回退到 run，实际：{:?}",
+        running
+            .iter()
+            .map(|e| e.headword.clone())
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]

@@ -45,34 +45,6 @@ impl RuleOutcome {
     }
 }
 
-/// 规则包预览（`Translator::explain_rules` 的返回值）。
-#[derive(Clone, Debug)]
-pub struct RulePreview {
-    /// 规则包 id；未配置规则时为 `None`。
-    pub rules_id: Option<String>,
-    /// 规则包版本（参与缓存键）。
-    pub version: u32,
-    /// 规则处理后的文本。
-    pub text: String,
-    /// 实际改变了文本的规则 id。
-    pub applied: Vec<String>,
-    /// 规则包里的规则总数。
-    pub rule_count: usize,
-}
-
-impl RulePreview {
-    /// 未配置规则时的预览。
-    pub fn none(text: impl Into<String>) -> Self {
-        Self {
-            rules_id: None,
-            version: 0,
-            text: text.into(),
-            applied: Vec::new(),
-            rule_count: 0,
-        }
-    }
-}
-
 /// 文本规则包。
 ///
 /// 实现必须满足：

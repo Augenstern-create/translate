@@ -35,7 +35,7 @@
   `translator-resource`、`translator-learning`、`translator-jni`、`p33-bench`、`migrate-rules`
 - core 模块：`semantic`、`composer`、`pipeline`、`context_sense`、`planner`、`evidence`、
   `plan`、`plan_cache`、`budget`（约 13,000 行）
-- `translator-analysis` 退出产品依赖（仅作为研究 crate 保留）
+- `translator-analysis` 从产品主干移除（词形还原的最小能力迁入 `translator-core::language`）
 - 旧文档 82 篇、旧 fixtures（约 5.5 MB）、旧 Android/NMT 验证脚手架、旧 Python 工具链
 
 ### 行为变化

@@ -78,7 +78,6 @@ crates/translator-http         OpenAI 兼容后端（远程/本地同一实现�
 crates/translator-core         流水线：保护/质量/术语/模板/缓存/路由/协调器
 crates/translator-dictionary   离线词典
 crates/translator-rules        确定性规则包
-crates/translator-analysis     研究线（不参与产品构建）
 apps/translator-cli            命令行客户端
 tools/pack-dictionary          词典打包
 tools/quality-runner           评测运行器
@@ -105,7 +104,7 @@ cargo test --workspace
 | [`../docs/testing.md`](../docs/testing.md) | 测试分层、评测集、验收门禁、人工评审清单 |
 | [`../docs/known-issues.md`](../docs/known-issues.md) | 已知问题与 PENDING_HUMAN 清单 |
 | [`../docs/migration.md`](../docs/migration.md) | 从旧架构迁移 |
-| [`../docs/refactor/`](../docs/refactor/) | 本轮重构的基线与验收报告 |
+| `research/traditional-engine` 分支的 `docs/refactor/` | 重构过程报告与本地模型实测记录（不随产品主干发布） |
 
 ## 许可
 

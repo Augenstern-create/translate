@@ -52,17 +52,34 @@ impl std::fmt::Debug for HttpTranslationEngine {
 impl HttpTranslationEngine {
     /// 由配置构造（会立刻校验配置与提示词，而不是等到第一次翻译）。
     pub fn new(config: BackendConfig) -> Result<Self, HttpError> {
+        Self::with_settings(config, &HttpSettings::default())
+    }
+
+    /// 由配置 + 全局 HTTP 设置构造。
+    ///
+    /// `[http]` 段（User-Agent、全局并发上限）此前被忽略，是配置文件里的一个死字段；
+    /// 现在真正生效：全局并发上限会对每个后端取更严格者。
+    pub fn with_settings(
+        config: BackendConfig,
+        settings: &HttpSettings,
+    ) -> Result<Self, HttpError> {
         config.validate()?;
         let id = config.engine_id(&config.id);
         let precise = PromptTemplate::for_mode(&config, TranslationMode::Precise)?;
         let fast = PromptTemplate::for_mode(&config, TranslationMode::Fast)?;
 
-        let settings = HttpSettings::default();
         let meter = UsageMeter::new();
+        let concurrency = if settings.max_concurrent_requests > 0 {
+            config
+                .max_concurrent_requests
+                .min(settings.max_concurrent_requests)
+        } else {
+            config.max_concurrent_requests
+        };
         let transport = HttpTransport::new(
-            &settings,
+            settings,
             config.max_retries,
-            config.max_concurrent_requests,
+            concurrency,
             Duration::from_millis(config.connect_timeout_ms),
             Arc::clone(&meter),
         );
@@ -88,7 +105,7 @@ impl HttpTranslationEngine {
     pub fn from_file(file: &BackendsFile) -> Result<Vec<Self>, HttpError> {
         let mut engines = Vec::new();
         for (_, backend) in file.enabled_backends()? {
-            engines.push(Self::new(backend.clone())?);
+            engines.push(Self::with_settings(backend.clone(), &file.http)?);
         }
         Ok(engines)
     }

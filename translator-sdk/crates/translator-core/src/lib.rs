@@ -37,17 +37,19 @@ pub mod text;
 pub use cache::{CacheEntry, CacheIdentity, CacheKey, CacheStats, QueryCache};
 pub use coordinator::{Coordinator, CoordinatorConfig};
 pub use diagnostics::{RuleTrace, TermTrace, TranslateOutput, TranslationDiagnostics};
-pub use language::{guess, HeuristicIdentifier, LanguageIdentifier, MorphologyAnalyzer};
+pub use language::{
+    guess, EnglishLemmatizer, HeuristicIdentifier, LanguageIdentifier, MorphologyAnalyzer,
+};
 pub use protection::{
     Piece, ProtectedSpan, ProtectionError, ProtectionPlan, ProtectionPolicy, ProtectionStrategy,
     StrategyPreference, PROTECTION_VERSION,
 };
 pub use quality::{QualityIssue, QualityIssueKind, QualityReport, QualitySeverity};
 pub use routing::{BackendRouter, RouteOutcome, RoutingConfig};
-pub use rules::{NoRules, RuleOutcome, RulePreview, TextRules};
+pub use rules::{NoRules, RuleOutcome, TextRules};
 pub use templates::{MatchMode, SentenceTemplates, TemplateScope, TemplateTable};
 pub use terms::{
-    Glossary, GlossaryError, MatchType, NoTermGuard, TargetTermGuard, TermContext, TermEntry,
-    TermHit, TermOrigin, TermOutcome, TermPolicy, TermVerification, TermViolation,
+    Glossary, GlossaryError, MatchType, TermEntry, TermHit, TermOrigin, TermPolicy,
+    TermVerification, TermViolation,
 };
 pub use text::{ProtectedKind, SpanPolicy};

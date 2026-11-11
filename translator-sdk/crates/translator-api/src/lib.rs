@@ -38,12 +38,11 @@
 //! 构建期就会校验配置与数据文件：错在装配阶段暴露，而不是第一次翻译时。
 
 pub use translator_core::{
-    BackendRouter, CacheStats, Coordinator, CoordinatorConfig, Glossary, GlossaryError, MatchMode,
-    NoRules, NoTermGuard, Piece, ProtectedKind, ProtectedSpan, ProtectionPolicy,
+    BackendRouter, CacheStats, Coordinator, CoordinatorConfig, EnglishLemmatizer, Glossary,
+    GlossaryError, MatchMode, NoRules, Piece, ProtectedKind, ProtectedSpan, ProtectionPolicy,
     ProtectionStrategy, QualityIssue, QualityIssueKind, QualityReport, QualitySeverity,
-    RuleOutcome, RulePreview, SentenceTemplates, SpanPolicy, StrategyPreference, TemplateScope,
-    TemplateTable, TermEntry, TermPolicy, TermVerification, TextRules, TranslateOutput,
-    TranslationDiagnostics,
+    RuleOutcome, SentenceTemplates, SpanPolicy, StrategyPreference, TemplateScope, TemplateTable,
+    TermEntry, TermPolicy, TermVerification, TextRules, TranslateOutput, TranslationDiagnostics,
 };
 pub use translator_dictionary as dictionary;
 pub use translator_http::{
@@ -281,7 +280,9 @@ impl TranslatorBuilder {
             glossary: None,
             templates: None,
             rules: None,
-            lemmatizer: None,
+            // 词典查词默认启用轻量词形还原：只在"精确未命中"时作为候选，
+            // 不会改写翻译输入。宿主可用 `.lemmatizer(...)` 覆盖或置空。
+            lemmatizer: Some(Arc::new(EnglishLemmatizer::new())),
             language_identifier: None,
         }
     }

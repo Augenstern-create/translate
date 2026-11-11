@@ -411,6 +411,54 @@ max_concurrent_requests = 1
 }
 
 #[test]
+fn 全局并发上限对每个后端取更严格者() {
+    let _env = env_lock();
+    std::env::set_var("TRANSLATOR_HTTP_TEST_KEY", "k");
+    let current = Arc::new(AtomicUsize::new(0));
+    let peak = Arc::new(AtomicUsize::new(0));
+    let (cur, hi) = (Arc::clone(&current), Arc::clone(&peak));
+    let server = MockServer::start(move |_| {
+        let now = cur.fetch_add(1, Ordering::SeqCst) + 1;
+        hi.fetch_max(now, Ordering::SeqCst);
+        std::thread::sleep(Duration::from_millis(120));
+        cur.fetch_sub(1, Ordering::SeqCst);
+        MockResponse::completion("好的")
+    });
+
+    // [http] 全局 1，后端自身 4 → 实际应压到 1
+    let toml = format!(
+        r#"
+[http]
+max_concurrent_requests = 1
+
+[backend.test]
+base_url = "{}"
+model = "m"
+api_key_env = "TRANSLATOR_HTTP_TEST_KEY"
+max_retries = 0
+max_concurrent_requests = 4
+"#,
+        server.base_url()
+    );
+    let file = BackendsFile::from_toml_str(&toml).unwrap();
+    assert_eq!(file.http.max_concurrent_requests, 1);
+    let engine = Arc::new(HttpTranslationEngine::from_file(&file).unwrap().remove(0));
+
+    let mut handles = Vec::new();
+    for _ in 0..3 {
+        let engine = Arc::clone(&engine);
+        handles.push(std::thread::spawn(move || {
+            let r = run_engine(&engine, &JobSpec::new("Hello.").build());
+            assert!(r.is_ok(), "{r:?}");
+        }));
+    }
+    for h in handles {
+        h.join().unwrap();
+    }
+    assert_eq!(peak.load(Ordering::SeqCst), 1, "全局并发上限必须生效");
+}
+
+#[test]
 fn 术语与占位符进入系统消息而原文只出现一次() {
     let _env = env_lock();
     std::env::set_var("TRANSLATOR_HTTP_TEST_KEY", "k");

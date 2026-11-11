@@ -17,7 +17,6 @@
 | 组件 | 许可 |
 |---|---|
 | translator-types / plugin-api / core / http / dictionary / rules / api | Apache-2.0 OR MIT |
-| translator-analysis（研究线） | Apache-2.0 OR MIT |
 | apps/translator-cli / tools/pack-dictionary / tools/quality-runner | Apache-2.0 OR MIT |
 
 ## 2. 直接依赖（首个非 dev 依赖版本）

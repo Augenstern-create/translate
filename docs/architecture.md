@@ -1,7 +1,7 @@
 # 架构说明（v1：在线翻译主线）
 
 **版本：** 1.0
-**状态：** 已实施（Phase 0–4），Phase 5/6 见 `docs/refactor/01-online-refactor-report.md`
+**状态：** 已实施并合并到 `main`。重构过程报告与本地模型实测记录保存在 `research/traditional-engine` 分支的 `docs/refactor/` 下（不在产品主分支保留）。
 **基准：** `refactor/online-translation-v1`
 
 ---
@@ -40,7 +40,6 @@ crates/
                            coordinator 固定顺序的流水线
   translator-dictionary   FST + SQLite 离线词典（查词，与句子翻译分开）
   translator-rules        声明式确定性规则包（NFKC、术语替换）
-  translator-analysis     研究线（不参与产品构建）
 apps/
   translator-cli          命令行客户端（最小可用界面）
 tools/

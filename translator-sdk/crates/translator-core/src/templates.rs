@@ -25,7 +25,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use serde::Deserialize;
-use translator_types::{LanguageTag, TranslationError, TranslationErrorCode};
+use translator_types::LanguageTag;
 
 /// 匹配方式。
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
@@ -374,14 +374,6 @@ pub fn normalize_key(text: &str) -> String {
     out.trim_end_matches(['.', '!', '?', '。', '！', '？'])
         .trim()
         .to_string()
-}
-
-/// 把模板加载错误转成 SDK 统一错误（构建期失败，不静默退化）。
-pub fn template_error_to_translation(err: TemplateError) -> TranslationError {
-    TranslationError::new(
-        TranslationErrorCode::InvalidRequest,
-        format!("模板加载失败：{err}"),
-    )
 }
 
 #[cfg(test)]

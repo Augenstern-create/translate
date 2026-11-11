@@ -101,6 +101,255 @@ impl LanguageIdentifier for HeuristicIdentifier {
     }
 }
 
+/// 英语轻量 lemmatizer（规则 + 高频不规则词表）。
+///
+/// 只产生**候选**，不替换用户原文：候选交给 `DictionaryProvider` 查询。
+/// 词典包通常以小写 headword 建索引，因此 `Hello` 也应该能查到 `hello`。
+///
+/// 从已归档的 `translator-analysis` 迁移而来：这是查词真正需要的**最小**能力，
+/// 其余形态学/语言识别研究仍留在 `research/traditional-engine` 分支。
+#[derive(Debug, Default, Clone)]
+pub struct EnglishLemmatizer {
+    irregular: std::collections::HashMap<&'static str, &'static str>,
+}
+
+impl EnglishLemmatizer {
+    pub fn new() -> Self {
+        let mut irregular = std::collections::HashMap::new();
+        for (form, lemma) in [
+            ("went", "go"),
+            ("gone", "go"),
+            ("children", "child"),
+            ("mice", "mouse"),
+            ("men", "man"),
+            ("women", "woman"),
+            ("teeth", "tooth"),
+            ("feet", "foot"),
+            ("better", "good"),
+            ("best", "good"),
+            ("worse", "bad"),
+            ("worst", "bad"),
+            ("was", "be"),
+            ("were", "be"),
+            ("been", "be"),
+            ("has", "have"),
+            ("had", "have"),
+            ("did", "do"),
+            ("done", "do"),
+            ("saw", "see"),
+            ("seen", "see"),
+            ("made", "make"),
+            ("took", "take"),
+            ("taken", "take"),
+            ("gave", "give"),
+            ("given", "give"),
+            ("found", "find"),
+            ("thought", "think"),
+            ("bought", "buy"),
+            ("brought", "bring"),
+            ("caught", "catch"),
+            ("taught", "teach"),
+            ("flew", "fly"),
+            ("flown", "fly"),
+            ("sang", "sing"),
+            ("sung", "sing"),
+            ("swam", "swim"),
+            ("swum", "swim"),
+            ("began", "begin"),
+            ("begun", "begin"),
+            ("drank", "drink"),
+            ("drunk", "drink"),
+            ("ate", "eat"),
+            ("eaten", "eat"),
+            ("ran", "run"),
+            ("came", "come"),
+            ("knew", "know"),
+            ("known", "know"),
+            ("wrote", "write"),
+            ("written", "write"),
+            ("spoke", "speak"),
+            ("spoken", "speak"),
+            ("broke", "break"),
+            ("broken", "break"),
+            ("chose", "choose"),
+            ("chosen", "choose"),
+            ("forgot", "forget"),
+            ("forgotten", "forget"),
+            ("got", "get"),
+            ("gotten", "get"),
+            ("lost", "lose"),
+            ("paid", "pay"),
+            ("sold", "sell"),
+            ("sent", "send"),
+            ("spent", "spend"),
+            ("built", "build"),
+            ("heard", "hear"),
+            ("held", "hold"),
+            ("kept", "keep"),
+            ("left", "leave"),
+            ("met", "meet"),
+            ("slept", "sleep"),
+            ("stood", "stand"),
+            ("told", "tell"),
+            ("understood", "understand"),
+            ("won", "win"),
+            ("wore", "wear"),
+            ("worn", "wear"),
+            ("threw", "throw"),
+            ("thrown", "throw"),
+            ("grew", "grow"),
+            ("grown", "grow"),
+            ("drew", "draw"),
+            ("drawn", "draw"),
+            ("fell", "fall"),
+            ("fallen", "fall"),
+            ("felt", "feel"),
+            ("led", "lead"),
+        ] {
+            irregular.insert(form, lemma);
+        }
+        Self { irregular }
+    }
+
+    fn rule_candidates(lower: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut push = |s: String| {
+            if !s.is_empty() && !out.contains(&s) {
+                out.push(s);
+            }
+        };
+
+        if lower.ends_with("ies") && lower.len() > 4 {
+            push(format!("{}y", &lower[..lower.len() - 3]));
+        }
+        if lower.ends_with("ves") && lower.len() > 4 {
+            // wolves -> wolf / knives -> knife（两类都作为候选）
+            push(format!("{}f", &lower[..lower.len() - 3]));
+            push(format!("{}fe", &lower[..lower.len() - 3]));
+        }
+        if lower.ends_with("es") && lower.len() > 3 {
+            push(lower[..lower.len() - 2].to_string());
+            push(lower[..lower.len() - 1].to_string());
+        }
+        if lower.ends_with('s')
+            && !lower.ends_with("ss")
+            && !lower.ends_with("us")
+            && !lower.ends_with("is")
+            && lower.len() > 2
+        {
+            push(lower[..lower.len() - 1].to_string());
+        }
+
+        // 比较级/最高级：happier -> happy, biggest -> big, faster -> fast。
+        if lower.ends_with("ier") && lower.len() > 4 {
+            push(format!("{}y", &lower[..lower.len() - 3]));
+        }
+        if lower.ends_with("iest") && lower.len() > 5 {
+            push(format!("{}y", &lower[..lower.len() - 4]));
+        }
+        for suffix in ["er", "est"] {
+            if lower.ends_with(suffix) && lower.len() > suffix.len() + 2 {
+                let stem = &lower[..lower.len() - suffix.len()];
+                push(stem.to_string());
+                push(format!("{stem}e"));
+                let chars: Vec<char> = stem.chars().collect();
+                if chars.len() >= 2 {
+                    let last = chars[chars.len() - 1];
+                    let prev = chars[chars.len() - 2];
+                    if last == prev && !matches!(last, 'a' | 'e' | 'i' | 'o' | 'u') {
+                        push(chars[..chars.len() - 1].iter().collect());
+                    }
+                }
+            }
+        }
+
+        for suffix in ["ing", "ed"] {
+            if lower.ends_with(suffix) && lower.len() > suffix.len() + 1 {
+                let stem = &lower[..lower.len() - suffix.len()];
+                push(stem.to_string());
+                push(format!("{stem}e"));
+                // running -> run, stopped -> stop（双写辅音）
+                let chars: Vec<char> = stem.chars().collect();
+                if chars.len() >= 2 {
+                    let last = chars[chars.len() - 1];
+                    let prev = chars[chars.len() - 2];
+                    if last == prev && !matches!(last, 'a' | 'e' | 'i' | 'o' | 'u') {
+                        push(chars[..chars.len() - 1].iter().collect());
+                    }
+                }
+            }
+        }
+
+        out
+    }
+}
+
+impl MorphologyAnalyzer for EnglishLemmatizer {
+    fn lemmas(&self, word: &str) -> Vec<String> {
+        let lower = word.trim().to_lowercase();
+        if lower.is_empty() {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        // 大小写归一本身就是一个候选：词典包通常以小写 headword 建索引，
+        // "Hello" 不应因为句首大写就查不到 "hello"。
+        if lower != word.trim() {
+            out.push(lower.clone());
+        }
+        if let Some(lemma) = self.irregular.get(lower.as_str()) {
+            out.push((*lemma).to_string());
+        }
+        for candidate in Self::rule_candidates(&lower) {
+            if candidate != lower && !out.contains(&candidate) {
+                out.push(candidate);
+            }
+        }
+        out
+    }
+
+    fn name(&self) -> &'static str {
+        "english-rule-lemmatizer-v1"
+    }
+}
+
+#[cfg(test)]
+mod lemmatizer_tests {
+    use super::*;
+
+    #[test]
+    fn 规则与不规则词形() {
+        let l = EnglishLemmatizer::new();
+        for (word, expected) in [
+            ("running", "run"),
+            ("walked", "walk"),
+            ("children", "child"),
+            ("mice", "mouse"),
+            ("went", "go"),
+            ("studies", "study"),
+            ("boxes", "box"),
+            ("making", "make"),
+            ("stopped", "stop"),
+            ("happier", "happy"),
+            ("biggest", "big"),
+            ("faster", "fast"),
+            ("flew", "fly"),
+            ("sang", "sing"),
+            ("swum", "swim"),
+        ] {
+            assert!(
+                l.lemmas(word).iter().any(|x| x == expected),
+                "{word} -> {:?}，缺 {expected}",
+                l.lemmas(word)
+            );
+        }
+        assert!(l.lemmas("better").contains(&"good".to_string()));
+        // 不做过度的去 s：glass / bus 不应变成 glas/bu
+        assert!(!l.lemmas("glass").iter().any(|x| x == "glas"));
+        assert!(!l.lemmas("bus").iter().any(|x| x == "bu"));
+        assert!(l.lemmas("").is_empty());
+    }
+}
+
 /// 便捷函数：返回置信度最高的语言。
 pub fn guess(text: &str) -> Option<LanguageTag> {
     HeuristicIdentifier

@@ -31,7 +31,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde::Deserialize;
-use translator_types::{LanguageTag, TermConstraint};
+use translator_types::TermConstraint;
 
 /// 术语匹配方式。
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
@@ -421,99 +421,6 @@ fn count_matches(source: &str, entry: &TermEntry) -> usize {
     }
 }
 
-// ============================================================
-// 兼容层：旧的"输出侧术语守卫"接口
-// ============================================================
-
-/// 术语检查的完整上下文。
-#[derive(Clone, Copy, Debug)]
-pub struct TermContext<'a> {
-    pub source_text: &'a str,
-    pub target_text: &'a str,
-    pub source: &'a LanguageTag,
-    pub target: &'a LanguageTag,
-}
-
-/// 术语检查结果（旧接口）。
-#[derive(Clone, Debug, Default)]
-pub struct TermOutcome {
-    /// 处理后的文本。**重构后不再改写文本**，永远等于输入。
-    pub text: String,
-    pub violations: Vec<TermViolation>,
-}
-
-impl TermOutcome {
-    pub fn unchanged(text: impl Into<String>) -> Self {
-        Self {
-            text: text.into(),
-            violations: Vec::new(),
-        }
-    }
-}
-
-/// 输出侧术语约束契约。
-///
-/// 保留它是为了让宿主仍能"预览术语会怎么判"，但**不再**用来改写译文。
-pub trait TargetTermGuard: Send + Sync {
-    fn id(&self) -> &str;
-    fn version(&self) -> u32;
-    fn apply(&self, text: &str, source: &LanguageTag, target: &LanguageTag) -> TermOutcome;
-
-    fn apply_with_context(&self, ctx: &TermContext<'_>) -> TermOutcome {
-        self.apply(ctx.target_text, ctx.source, ctx.target)
-    }
-}
-
-impl TargetTermGuard for Glossary {
-    fn id(&self) -> &str {
-        &self.id
-    }
-
-    fn version(&self) -> u32 {
-        self.version
-    }
-
-    fn apply(&self, text: &str, source: &LanguageTag, target: &LanguageTag) -> TermOutcome {
-        // 没有源文时无法判断"这个术语是否真的出现"，因此按"源文 = 译文"处理会误报。
-        // 这里只做纯文本层面的目标词缺失检查，并明确标注这是简化预览。
-        let verification = self.verify(text, text, source.as_str(), target.as_str(), None);
-        TermOutcome {
-            text: text.to_string(),
-            violations: verification.violations,
-        }
-    }
-
-    fn apply_with_context(&self, ctx: &TermContext<'_>) -> TermOutcome {
-        let verification = self.verify(
-            ctx.source_text,
-            ctx.target_text,
-            ctx.source.as_str(),
-            ctx.target.as_str(),
-            None,
-        );
-        TermOutcome {
-            text: ctx.target_text.to_string(),
-            violations: verification.violations,
-        }
-    }
-}
-
-/// 空实现：没配术语表时的默认路径。
-#[derive(Debug, Default, Clone, Copy)]
-pub struct NoTermGuard;
-
-impl TargetTermGuard for NoTermGuard {
-    fn id(&self) -> &str {
-        "terms.none"
-    }
-    fn version(&self) -> u32 {
-        0
-    }
-    fn apply(&self, text: &str, _source: &LanguageTag, _target: &LanguageTag) -> TermOutcome {
-        TermOutcome::unchanged(text)
-    }
-}
-
 /// 术语约束策略。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum TermPolicy {
@@ -727,21 +634,6 @@ mod tests {
         assert!(!TermPolicy::default().applies_text());
         assert!(!TermPolicy::Warn.rejects_unmet_strict());
         assert!(TermPolicy::Enforce.rejects_unmet_strict());
-    }
-
-    #[test]
-    fn 守卫接口不再改写文本() {
-        let g = glossary(SAMPLE);
-        let en = LanguageTag::new("en").unwrap();
-        let zh = LanguageTag::new("zh-CN").unwrap();
-        let outcome = g.apply_with_context(&TermContext {
-            source_text: "Open a pull request.",
-            target_text: "请开一个 PR。",
-            source: &en,
-            target: &zh,
-        });
-        assert_eq!(outcome.text, "请开一个 PR。", "不得替换用户译文");
-        assert_eq!(outcome.violations.len(), 1);
     }
 
     #[test]
