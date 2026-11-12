@@ -1,5 +1,30 @@
 # 变更记录
 
+## v0.2.0-rc.1 — S4 发布候选（2026-11-12）
+
+### 构建与发布
+
+- 工作区版本 0.1.0 → **0.2.0-rc.1**；`translator-cli --version` 同步。
+- 新增 `scripts/package-release.sh` / `.ps1`：release 构建（`--locked`）+ 打包 +
+  `SHA256SUMS.txt`；CI 增加 Windows/Linux 双平台测试与产物 Job。
+- 新增 `docs/release.md`（运行环境、快速开始、配置、故障排查、已知限制）。
+
+### 稳定性与跨平台
+
+- **磁盘缓存原子替换**：`rename` 失败时先备份再替换，任一步失败都保留旧缓存；
+  目标不是普通文件时直接失败，不会"挪走再写"。新增 2 条测试。
+- **本地 Web UI 连接上限**：默认 64，超限立即 `503`，不再无限创建线程；
+  新增 1 条测试（连接上限 2 时第 3 个连接收到 503）。
+- **环境变量代理**：HTTP agent 读取 `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`/`NO_PROXY`
+  （ureq 实现 CONNECT 与 no_proxy 匹配）；不支持系统代理与 PAC。
+- 新增 `crates/translator-http/tests/stress.rs`（默认 `#[ignore]`）：10 000 次
+  Mock 压力测试报告 requests/ok/failed/cancelled/queue_full/http_calls/peak_threads/RSS。
+
+### 验证
+
+- 发布包在 Linux 上解压运行通过（中文路径配置 + 中文缓存文件名 + Emoji 输入）。
+- 真实浏览器（Chromium 156）验证 CSP：注入脚本与 style 属性均被拦截。
+
 ## S3 公开基准首轮跑分（2026-11-12）
 
 - `quality-runner` 新增 `--jobs N`：并发跑同一数据集（`Translator` 线程安全），

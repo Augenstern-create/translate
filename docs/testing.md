@@ -294,7 +294,23 @@ p50 2.3 s、$0.0898；glm-5.3-flash 2 211/2 213、chrF++ 30.12、p50 3.6 s、$0.
 
 人工评审状态：`PENDING_HUMAN`（评审包见 `docs/eval/`）。
 
-**仍未做（S4）**
+**S4 发布验证（2026-11-12）**
+
+| 项 | 方式 | 结果 |
+|---|---|---|
+| 压力（16 调用方） | 本地 Mock，`STRESS_REQUESTS=2000 STRESS_CALLERS=16` | ok 1 476、QueueFull 492、取消 32、峰值线程 25、16.4 s |
+| 压力（8 调用方） | `STRESS_CALLERS=8` | ok 1 976、QueueFull 0、22.0 s |
+| 压力（10 000） | `STRESS_REQUESTS=10000 STRESS_CALLERS=8` | ok 9 896、失败 104（均为主动取消）、HTTP 10 416 次、峰值线程 21、RSS +2.3 MB、110 s |
+| 线程生命周期 | 压力测试后断言 | worker 恒为 4（= 全局并发），无泄漏 |
+| TLS 不受信任证书 | openssl 自签 + `s_server` | `ConfigurationError`，不重试，错误信息不含密钥 |
+| TLS 域名不匹配 | 自签 CN=example.com，连 127.0.0.1 | `ConfigurationError`（UnknownIssuer） |
+| HTTP 代理 | 本地代理 + `HTTP_PROXY` | 走代理（`CONNECT` 由 ureq 发起）；代理不可用时明确报错，不静默直连 |
+| NO_PROXY | `NO_PROXY` 覆盖内网网段 | 直连（代理计数不增加） |
+| 浏览器 CSP | headless Chromium 156 + CDP | 页面可用、令牌 64 位、注入脚本被拦、style 属性被拦、0 CSP 违规 |
+| 发布包 | `scripts/package-release.sh` | `tar.gz` 2.8 MB，`sha256sum -c` 通过，解压后 `--version` 正常、中文路径配置/缓存可用 |
+| 磁盘缓存 | 反复写入 + 目标不可写 | 旧文件保留、临时文件清理；损坏文件被忽略 |
+
+**仍未做（S4 以外的部分）**
 
 - 在该机器上手工运行 CLI 与 Web UI（TLS 证书、系统代理、中文路径、防火墙提示）；
 - 词典 mmap 在大文件上的行为、长时间连续运行；

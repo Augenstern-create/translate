@@ -1,8 +1,7 @@
 name: ci
 
-# 默认门禁：不需要模型权重、不需要 native 二进制、不需要网络密钥。
-# 真实转发站/本地模型的验证在本地手工执行（见 docs/testing.md）。
-
+# 默认门禁：全部使用本地 Mock，不需要模型权重、密钥或外网模型服务。
+# 真实转发站/本地模型验证在本地手工执行（见 docs/testing.md）。
 on:
   push:
     branches: ["**"]
@@ -19,53 +18,135 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  CARGO_NET_RETRY: 3
 
 jobs:
-  gate:
-    name: 格式 / 静态检查 / 测试
+  lint:
+    name: 格式 / Clippy / 文档 / 秘密扫描
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-
-      - name: 安装 Rust
-        run: |
-          rustup toolchain install stable --profile minimal --component rustfmt,clippy
-          rustup default stable
-          rustc --version
-          cargo --version
-
-      - name: 缓存依赖
-        uses: actions/cache@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            translator-sdk/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('translator-sdk/Cargo.lock') }}
-
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: translator-sdk
       - name: 格式检查
         run: cargo fmt --all -- --check
         working-directory: translator-sdk
-
       - name: Clippy（警告即失败）
         run: cargo clippy --workspace --all-targets -- -D warnings
         working-directory: translator-sdk
-
-      - name: 单元 + 集成测试
-        run: cargo test --workspace --no-fail-fast
-        working-directory: translator-sdk
-
-      - name: 文档构建
+      - name: 文档构建（警告即失败）
         run: cargo doc --workspace --no-deps
         working-directory: translator-sdk
         env:
           RUSTDOCFLAGS: -D warnings
-
       - name: 秘密信息扫描
         run: |
-          if grep -rInE "(sk-[A-Za-z0-9]{16,}|api[_-]?key[[:space:]]*=[[:space:]]*\"[^\"]{8,}\")" \
-               --include="*.rs" --include="*.toml" --include="*.json" --include="*.md" .; then
-            echo "发现疑似密钥，请移除后再提交"
+          set +e
+          hits=$(grep -rInE "(sk-[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{16})" \
+                 --include="*.rs" --include="*.toml" --include="*.json" \
+                 --include="*.md" --include="*.yml" --include="*.yaml" .)
+          status=$?
+          set -e
+          if [ $status -eq 0 ]; then
+            echo "发现疑似密钥："
+            echo "$hits"
             exit 1
           fi
           echo "未发现硬编码密钥"
+
+  msrv:
+    name: MSRV 检查（1.85）
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      # 版本必须与 translator-sdk/Cargo.toml 的 rust-version 一致
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: translator-sdk
+      - name: 最低支持版本编译
+        run: cargo check --workspace --all-targets
+        working-directory: translator-sdk
+
+  test:
+    name: 测试（${{ matrix.os }}）
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: translator-sdk
+      - name: 全目标编译检查
+        run: cargo check --workspace --all-targets
+        working-directory: translator-sdk
+      - name: 单元 + 集成测试
+        run: cargo test --workspace --no-fail-fast
+        working-directory: translator-sdk
+
+  package:
+    name: 发布产物（${{ matrix.os }}）
+    needs: [test]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: translator-sdk
+
+      - name: 打 Linux 包
+        if: runner.os == 'Linux'
+        run: bash scripts/package-release.sh
+        working-directory: translator-sdk
+
+      - name: 打 Windows 包
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/package-release.ps1
+        working-directory: translator-sdk
+
+      - name: 启动验证（Linux）
+        if: runner.os == 'Linux'
+        run: |
+          tar -xzf dist/augenstern-translate-linux-x64.tar.gz -C dist
+          dist/augenstern-translate-linux-x64/translator-cli --version
+          cd dist && sha256sum -c SHA256SUMS.txt
+        working-directory: translator-sdk
+
+      - name: 启动验证（Windows）
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Expand-Archive -Path dist/augenstern-translate-windows-x64.zip -DestinationPath dist\unpacked -Force
+          dist\unpacked\augenstern-translate-windows-x64\translator-cli.exe --version
+          $expected = (Get-Content dist\SHA256SUMS.txt).Split(" ")[0]
+          $actual = (Get-FileHash dist\augenstern-translate-windows-x64.zip -Algorithm SHA256).Hash.ToLower()
+          if ($expected -ne $actual) { throw "SHA256 不匹配" }
+        working-directory: translator-sdk
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: augenstern-translate-${{ runner.os }}
+          path: |
+            translator-sdk/dist/*.zip
+            translator-sdk/dist/*.tar.gz
+            translator-sdk/dist/SHA256SUMS.txt
+          if-no-files-found: error

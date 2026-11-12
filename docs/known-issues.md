@@ -73,5 +73,9 @@
 | K-21 | 本地模型 | 与远程基线的质量对比未做 | 高 | S3 |
 | K-22 | 平台 | Windows 实机已验证：`cargo test --workspace`（386 passed）、CLI 端到端翻译、磁盘缓存跨进程命中、`serve` 页面 CSP/CSRF（403）与 `/api/translate`（200）。仍**未**验证：真实 TLS 站点、系统代理、中文路径、长时间运行 | 中 | S4（剩余场景） |
 | K-25 | 词典 | 释义未人工校对 | 中 | S3 |
+| K-42 | 发布 | 代理只支持 `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`/`NO_PROXY` 环境变量，且要求代理支持 CONNECT；不支持系统代理设置、PAC、代理自动发现 | 中 | Accepted（见 docs/release.md） |
+| K-43 | 发布 | Linux 产物在 Ubuntu 24.04（glibc 2.39）上构建，未提供 musl 静态版本，老发行版可能无法运行 | 中 | Accepted（发布说明已标注兼容边界） |
+| K-44 | 发布 | 词典包（ECdict ≈ 5.5 MB）不随二进制打包，需要单独分发并用 `dictionary` 配置指向 | 低 | Accepted（发布说明已写明） |
+| K-45 | 构建 | 声明 MSRV 1.85，但本机只有 1.99.1；MSRV 由 CI 的 1.85 Job 验证，本地未实跑 | 低 | 待 CI 验证 |
 | K-37 | 成本 | 只有"调用次数 + 输出 token 上限"，没有跨请求的每日/每月预算 | 中 | Accepted（硬额度由转发站执行） |
 | K-38 | 队列 | 队列为进程内 FIFO，不跨进程/不持久化；进程重启后丢失 | 低 | Accepted |

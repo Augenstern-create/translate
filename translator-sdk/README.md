@@ -25,6 +25,22 @@
 
 ---
 
+## 发布产物（Release Candidate）
+
+当前版本 **v0.2.0-rc.1**。产物由 `scripts/package-release.sh`（Linux）/
+`scripts/package-release.ps1`（Windows）生成，含 `SHA256SUMS.txt`：
+
+```text
+augenstern-translate-linux-x64.tar.gz
+augenstern-translate-windows-x64.zip
+```
+
+解压后直接运行 `translator-cli --version`；配置与密钥说明见
+[`../docs/release.md`](../docs/release.md)。词典包体积较大（ECdict ≈ 5.5 MB），
+**单独分发**，解压到任意目录后用配置项 `dictionary = "<目录>"` 指向即可。
+
+---
+
 ## 快速开始
 
 ```bash

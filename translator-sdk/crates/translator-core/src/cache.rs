@@ -411,11 +411,43 @@ impl QueryCache {
                 std::fs::create_dir_all(parent)?;
             }
         }
-        // 先写临时文件再 rename：进程中断也不会留下半个文件
+        // 先写临时文件再替换：进程中断也不会留下半个文件。
+        //
+        // Windows 上目标文件可能被杀毒/索引服务短暂占用，`rename` 会失败；
+        // 这时先备份旧文件再替换，任何一步失败都恢复旧文件——
+        // **绝不允许**出现"缓存写坏且旧数据也丢了"的情况。
         let tmp = path.with_extension("tmp");
-        std::fs::write(&tmp, json)?;
-        std::fs::rename(&tmp, path)?;
-        Ok(())
+        std::fs::write(&tmp, &json)?;
+        let first_error = match std::fs::rename(&tmp, path) {
+            Ok(()) => return Ok(()),
+            Err(err) => err,
+        };
+
+        // 目标不是普通文件（目录/设备等）时不要"挪走再写"，直接失败
+        if path.exists() && !path.is_file() {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(first_error);
+        }
+
+        let backup = path.with_extension("bak");
+        let had_old = path.is_file();
+        if had_old {
+            std::fs::rename(path, &backup)?;
+        }
+        match std::fs::rename(&tmp, path) {
+            Ok(()) => {
+                let _ = std::fs::remove_file(&backup);
+                Ok(())
+            }
+            Err(err) => {
+                if had_old {
+                    // 尽力恢复旧缓存；恢复失败也要把错误报出去
+                    let _ = std::fs::rename(&backup, path);
+                }
+                let _ = std::fs::remove_file(&tmp);
+                Err(err)
+            }
+        }
     }
 
     /// 从文件加载。文件缺失/损坏/版本不符时返回空缓存（不 panic、不阻塞启动）。
@@ -747,6 +779,48 @@ mod tests {
         let (loaded, count) = QueryCache::load_from_file(&path, 8);
         assert_eq!(count, 0, "语言标签非法的条目必须被丢弃");
         assert!(loaded.is_empty());
+    }
+
+    #[test]
+    fn 反复写入缓存不会破坏旧文件() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.json");
+
+        for round in 0..3 {
+            let mut cache = QueryCache::new(8);
+            let key = CacheKey::new("hello", identity());
+            cache.insert(key.clone(), entry(&format!("译文{round}")));
+            cache.save_to_file(&path).unwrap();
+
+            let (loaded, count) = QueryCache::load_from_file(&path, 8);
+            assert_eq!(count, 1, "第 {round} 轮应能读回一条");
+            assert_eq!(
+                loaded.map.get(&key).map(|e| e.result.text.as_str()),
+                Some(format!("译文{round}").as_str())
+            );
+            // 临时文件不得残留
+            assert!(!path.with_extension("tmp").exists(), "临时文件应被清理");
+        }
+    }
+
+    #[test]
+    fn 写入失败时保留旧缓存() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.json");
+        let mut cache = QueryCache::new(8);
+        cache.insert(CacheKey::new("hello", identity()), entry("旧译文"));
+        cache.save_to_file(&path).unwrap();
+        let before = std::fs::read_to_string(&path).unwrap();
+
+        // 把目标变成一个目录：rename 一定失败
+        let blocked = dir.path().join("blocked");
+        std::fs::create_dir(&blocked).unwrap();
+        let mut cache2 = QueryCache::new(8);
+        cache2.insert(CacheKey::new("hello", identity()), entry("新译文"));
+        assert!(cache2.save_to_file(&blocked).is_err(), "写入目录应失败");
+
+        // 旧缓存不受影响
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
     }
 
     #[test]

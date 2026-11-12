@@ -104,7 +104,7 @@ dependencies = [
 
 [[package]]
 name = "eval-import"
-version = "0.1.0"
+version = "0.2.0-rc.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -293,7 +293,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "pack-dictionary"
-version = "0.1.0"
+version = "0.2.0-rc.1"
 dependencies = [
  "fst",
  "rusqlite",
@@ -333,7 +333,7 @@ dependencies = [
 
 [[package]]
 name = "quality-runner"
-version = "0.1.0"
+version = "0.2.0-rc.1"
 dependencies = [
  "pollster",
  "serde",
@@ -607,7 +607,7 @@ checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
 
 [[package]]
 name = "translator-api"
-version = "0.1.0"
+version = "0.2.0-rc.1"
 dependencies = [
  "pack-dictionary",
  "pollster",
@@ -623,7 +623,7 @@ dependencies = [
 
 [[package]]
 name = "translator-cli"
-version = "0.1.0"
+version = "0.2.0-rc.1"
 dependencies = [
  "getrandom 0.3.4",
  "pollster",
@@ -637,7 +637,7 @@ dependencies = [
 
 [[package]]
 name = "translator-core"
-version = "0.1.0"
+version = "0.2.0-rc.1"
 dependencies = [
  "pollster",
  "serde",
@@ -649,7 +649,7 @@ dependencies = [
 
 [[package]]
 name = "translator-dictionary"
-version = "0.1.0"
+version = "0.2.0-rc.1"
 dependencies = [
  "fst",
  "memmap2",
@@ -666,7 +666,7 @@ dependencies = [
 
 [[package]]
 name = "translator-http"
-version = "0.1.0"
+version = "0.2.0-rc.1"
 dependencies = [
  "pollster",
  "serde",
@@ -680,7 +680,7 @@ dependencies = [
 
 [[package]]
 name = "translator-plugin-api"
-version = "0.1.0"
+version = "0.2.0-rc.1"
 dependencies = [
  "pollster",
  "translator-types",
@@ -688,7 +688,7 @@ dependencies = [
 
 [[package]]
 name = "translator-rules"
-version = "0.1.0"
+version = "0.2.0-rc.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -701,7 +701,7 @@ dependencies = [
 
 [[package]]
 name = "translator-types"
-version = "0.1.0"
+version = "0.2.0-rc.1"
 
 [[package]]
 name = "typenum"

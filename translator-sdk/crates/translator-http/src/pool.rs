@@ -509,6 +509,11 @@ fn sleep_within(wait: Duration, deadline: Option<Instant>, cancel: Option<&Cance
 }
 
 /// 让引擎复用同一份 HTTP 配置（agent、超时、上限）。
+///
+/// 代理：只读取标准环境变量（`HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` /
+/// `NO_PROXY`），由 `ureq` 自己实现 CONNECT 与 no_proxy 匹配。
+/// 不读取系统代理设置（Windows 注册表 / macOS 网络偏好），也不支持 PAC 脚本——
+/// 这两项需要额外的平台 API，属于已知限制（见 docs/release.md）。
 pub fn build_agent(settings: &HttpSettings, connect_timeout: Duration) -> ureq::Agent {
     let config = ureq::Agent::config_builder()
         // 状态码不当作错误：错误体里有对端说明，拿不到就无法区分
@@ -516,6 +521,8 @@ pub fn build_agent(settings: &HttpSettings, connect_timeout: Duration) -> ureq::
         .http_status_as_error(false)
         .timeout_connect(Some(connect_timeout))
         .user_agent(settings.user_agent.clone())
+        // 环境变量代理（含 NO_PROXY 回环例外）；没有设置时不改变行为
+        .proxy(ureq::Proxy::try_from_env())
         .build();
     config.into()
 }

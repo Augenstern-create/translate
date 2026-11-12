@@ -93,6 +93,40 @@ fn read_full_request(stream: &mut TcpStream) -> std::io::Result<()> {
     Ok(())
 }
 
+/// 启动待测的 UI 服务端（可指定连接上限），返回端口。
+fn start_ui_with_limit(max_connections: usize) -> u16 {
+    let model = MockModel::start();
+    let toml = format!(
+        r#"
+[backend.local]
+base_url = "{}"
+model = "mock-model"
+model_revision = "test-1"
+api_key_env = ""
+max_retries = 0
+timeout_ms = 5000
+"#,
+        model.base_url()
+    );
+    let translator = Translator::builder()
+        .http_config_toml(&toml)
+        .expect("配置应可解析")
+        .build()
+        .expect("应可构造 Translator");
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("绑定 UI 端口失败");
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        let _ = translator_cli::serve::serve_listener_with(
+            listener,
+            Arc::new(translator),
+            max_connections,
+        );
+    });
+    std::thread::sleep(Duration::from_millis(80));
+    port
+}
+
 /// 启动待测的 UI 服务端，返回端口。
 fn start_ui() -> u16 {
     let model = MockModel::start();
@@ -430,6 +464,25 @@ fn 重复的安全请求头被拒绝() {
             "错误信息应说明重复的头：{response}"
         );
     }
+}
+
+#[test]
+fn 连接数超过上限时返回_503() {
+    // 上限设为 2：第 3 个连接必须立刻收到 503，而不是被排队或新建线程
+    let port = start_ui_with_limit(2);
+    let _first = TcpStream::connect(("127.0.0.1", port)).expect("第 1 个连接");
+    let _second = TcpStream::connect(("127.0.0.1", port)).expect("第 2 个连接");
+    std::thread::sleep(Duration::from_millis(150));
+
+    let response = raw_request(
+        port,
+        "GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n",
+    );
+    assert!(
+        response.starts_with("HTTP/1.1 503"),
+        "超过连接上限应返回 503，实际：{response}"
+    );
+    assert!(response.contains("服务繁忙"), "{response}");
 }
 
 #[test]

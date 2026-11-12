@@ -31,6 +31,7 @@
 
 use std::io::{BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -58,8 +59,20 @@ pub fn serve(translator: Arc<Translator>, port: u16) -> Result<(), String> {
     serve_listener(listener, translator)
 }
 
+/// 默认最大并发连接数（本地单用户界面足够，同时防止资源被打满）。
+pub const MAX_CONNECTIONS: usize = 64;
+
 /// 在已绑定的监听器上提供服务（测试用，端口可以是 0）。
 pub fn serve_listener(listener: TcpListener, translator: Arc<Translator>) -> Result<(), String> {
+    serve_listener_with(listener, translator, MAX_CONNECTIONS)
+}
+
+/// 带连接上限的版本（测试用小上限验证拒绝行为）。
+pub fn serve_listener_with(
+    listener: TcpListener,
+    translator: Arc<Translator>,
+    max_connections: usize,
+) -> Result<(), String> {
     let addr = listener
         .local_addr()
         .map_err(|e| format!("读取监听地址失败：{e}"))?;
@@ -75,16 +88,47 @@ pub fn serve_listener(listener: TcpListener, translator: Arc<Translator>) -> Res
         state.translator.backend_ids()
     );
 
+    // 连接上限：每连接一个线程，但线程数必须**有界**，
+    // 否则本地界面也能被大量连接打满内存/句柄。
+    let active = Arc::new(AtomicUsize::new(0));
+    let max_connections = max_connections.max(1);
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };
+        if active.fetch_add(1, Ordering::SeqCst) >= max_connections {
+            active.fetch_sub(1, Ordering::SeqCst);
+            let _ = reject_busy(stream);
+            continue;
+        }
         let state = Arc::clone(&state);
+        let active = Arc::clone(&active);
         std::thread::spawn(move || {
+            // 守卫保证任何返回路径都会归还配额
+            struct Guard(Arc<AtomicUsize>);
+            impl Drop for Guard {
+                fn drop(&mut self) {
+                    self.0.fetch_sub(1, Ordering::SeqCst);
+                }
+            }
+            let _guard = Guard(active);
             if let Err(err) = handle(stream, &state, port) {
                 eprintln!("请求处理失败：{err}");
             }
         });
     }
     Ok(())
+}
+
+/// 连接数超限时立即回复 503 并关闭，不排队、不创建新线程。
+fn reject_busy(mut stream: TcpStream) -> std::io::Result<()> {
+    stream.set_write_timeout(Some(Duration::from_secs(5)))?;
+    let body = r#"{"error":"服务繁忙，请稍后重试"}"#;
+    let response = format!(
+        "HTTP/1.1 503 Service Unavailable\r\ncontent-type: application/json; charset=utf-8\r\ncontent-length: {}\r\nconnection: close\r\ncache-control: no-store\r\n\r\n{}",
+        body.len(),
+        body
+    );
+    stream.write_all(response.as_bytes())?;
+    stream.flush()
 }
 
 struct ServerState {
