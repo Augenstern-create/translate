@@ -201,6 +201,27 @@ impl HttpTransport {
     }
 }
 
+/// 目标是不是本机回环地址。
+///
+/// 回环请求**永不**走代理：本地模型服务、本地 UI、mock 测试都依赖这一行为，
+/// 而环境里残留 `ALL_PROXY`/`HTTP_PROXY` 指向一个不可用的代理时，
+/// 把所有回环流量也转发过去只会得到"连接被重置"。
+pub fn is_loopback_url(url: &str) -> bool {
+    let rest = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host = if let Some(stripped) = authority.strip_prefix('[') {
+        // IPv6 字面量：[::1]:8080
+        stripped.split(']').next().unwrap_or("")
+    } else {
+        authority.split(':').next().unwrap_or("")
+    };
+    let host = host.to_ascii_lowercase();
+    host == "localhost"
+        || host == "::1"
+        || host == "0.0.0.0"
+        || host.starts_with("127.")
+}
+
 /// 执行一次 HTTP 往返（同步，只在 worker 线程里调用）。
 pub fn execute_once(
     agent: &ureq::Agent,
@@ -220,10 +241,15 @@ pub fn execute_once(
     let body = serde_json::to_string(&request.body)
         .map_err(|e| HttpError::config(format!("请求体序列化失败：{e}")))?;
 
-    let mut builder = agent
-        .post(&request.url)
-        .config()
-        .timeout_global(Some(timeout))
+    let base = agent.post(&request.url);
+    let config = base.config().timeout_global(Some(timeout));
+    // 回环地址强制直连（见 is_loopback_url 的说明）
+    let config = if is_loopback_url(&request.url) {
+        config.proxy(None)
+    } else {
+        config
+    };
+    let mut builder = config
         .build()
         .header("content-type", "application/json")
         .header("accept", "application/json");
@@ -346,6 +372,26 @@ fn classify_io_error(io: &std::io::Error) -> HttpError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn 回环地址识别() {
+        for url in [
+            "http://127.0.0.1:8080/v1",
+            "https://127.0.0.1/v1",
+            "http://localhost:1234/v1",
+            "http://[::1]:8080/v1",
+            "http://127.10.20.30/v1",
+        ] {
+            assert!(is_loopback_url(url), "{url} 应判为回环");
+        }
+        for url in [
+            "https://api.example.com/v1",
+            "http://192.168.1.10:8080/v1",
+            "https://example.com",
+        ] {
+            assert!(!is_loopback_url(url), "{url} 不应判为回环");
+        }
+    }
 
     #[test]
     fn 传输层异常分类() {
