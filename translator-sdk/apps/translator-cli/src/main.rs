@@ -284,7 +284,7 @@ fn load_file_config(path: &Path) -> Result<FileConfig, Failure> {
     Ok(config)
 }
 
-fn build_translator(config: &FileConfig) -> Result<Translator, Failure> {
+fn build_translator(config: &FileConfig, config_path: &Path) -> Result<Translator, Failure> {
     let mut builder = Translator::builder();
 
     let backends = BackendsFile {
@@ -340,7 +340,17 @@ fn build_translator(config: &FileConfig) -> Result<Translator, Failure> {
         builder = builder.cache_capacity(capacity);
     }
     if let Some(path) = &config.cache.file {
-        builder = builder.cache_file(path.clone());
+        // 相对路径按**配置文件所在目录**解析：缓存是数据文件，
+        // 跟着配置走比跟着当前工作目录走更符合直觉（Windows 上尤其明显）。
+        let resolved = if path.is_absolute() {
+            path.clone()
+        } else {
+            config_path
+                .parent()
+                .map(|dir| dir.join(path))
+                .unwrap_or_else(|| path.clone())
+        };
+        builder = builder.cache_file(resolved);
     }
     if let Some(path) = &config.glossary {
         builder = builder.glossary_file(path)?;
@@ -498,7 +508,7 @@ fn cmd_translate(global: &GlobalArgs, args: &[String]) -> Result<u8, Failure> {
     }
 
     let config = load_file_config(&global.config_path())?;
-    let translator = build_translator(&config)?;
+    let translator = build_translator(&config, &global.config_path())?;
 
     let zh = LanguageTag::new("zh-CN")?;
     let mut request =
@@ -608,7 +618,7 @@ fn cmd_lookup(global: &GlobalArgs, args: &[String]) -> Result<u8, Failure> {
 
     let term = term.ok_or_else(|| Failure::Usage("缺少要查询的词".to_string()))?;
     let config = load_file_config(&global.config_path())?;
-    let translator = build_translator(&config)?;
+    let translator = build_translator(&config, &global.config_path())?;
 
     let mut request = LookupRequest::new(term.clone());
     if let Ok(tag) = LanguageTag::new(&lang) {
@@ -665,7 +675,7 @@ fn cmd_config(global: &GlobalArgs, args: &[String]) -> Result<u8, Failure> {
             let path = global.config_path();
             let config = load_file_config(&path)?;
             // 真正走一遍装配：配置错误、密钥缺失、提示词缺失都会在这里暴露
-            let translator = build_translator(&config)?;
+            let translator = build_translator(&config, &global.config_path())?;
             if global.json {
                 println!(
                     "{}",
@@ -804,14 +814,14 @@ fn cmd_serve(global: &GlobalArgs, args: &[String]) -> Result<u8, Failure> {
         }
     }
     let config = load_file_config(&global.config_path())?;
-    let translator = std::sync::Arc::new(build_translator(&config)?);
+    let translator = std::sync::Arc::new(build_translator(&config, &global.config_path())?);
     serve::serve(translator, port).map_err(Failure::App)?;
     Ok(EXIT_OK)
 }
 
 fn cmd_usage(global: &GlobalArgs) -> Result<u8, Failure> {
     let config = load_file_config(&global.config_path())?;
-    let translator = build_translator(&config)?;
+    let translator = build_translator(&config, &global.config_path())?;
     let usage = translator.usage();
     if global.json {
         let value: Vec<serde_json::Value> = usage
@@ -861,9 +871,11 @@ pub fn build_from_toml(text: &str) -> Result<Translator, String> {
             backend.id = name.clone();
         }
     }
-    build_translator(&config).map_err(|e| match e {
-        Failure::App(msg) | Failure::Usage(msg) => msg,
-    })
+    // 测试入口没有配置文件路径：相对缓存路径按当前工作目录解析
+    build_translator(&config, &std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
+        .map_err(|e| match e {
+            Failure::App(msg) | Failure::Usage(msg) => msg,
+        })
 }
 
 #[allow(dead_code)]
