@@ -1,5 +1,18 @@
 # 变更记录
 
+## S3 外部评测集（2026-11-12）
+
+- 新增 `tools/eval-import`：把 WMT24++（Apache-2.0）与 NTREX-128（CC-BY-SA-4.0）
+  转成统一评测格式（`dataset_id`/`source`/`reference`/`domain`/`document_id`/
+  `segment_id`/`split`），带去重、语言方向与"源=参考"过滤、文档级切分。
+  共 2 954 条：dev 383、test 2 213、private/blind 358（不入库）。
+- 新增 `scripts/fetch-eval-data.sh`：只下载允许再分发的数据，记录 URL/版本/许可证/
+  日期/sha256 到 `fixtures/eval/external/SOURCES.json`；FLORES+/FLORES-200 gated、
+  WMT26 无参考译文，均**未绕过限制**，只记录。
+- `quality-runner` 新增 chrF++（字符 1–6gram + 词 1–2gram）与 BLEU-4
+  （CJK 按字混排分词、有效阶），以及 `--compare` 多配置对照表。
+- 原始语料与转换结果分离：`fixtures/eval/external/` 与 `fixtures/eval/private/` 均已 git 忽略。
+
 ## S3 评测基线（2026-11-12）
 
 ### blind 集与费用

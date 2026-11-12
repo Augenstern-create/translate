@@ -10,6 +10,7 @@ members = [
     "crates/translator-rules",
     "tools/pack-dictionary",
     "tools/quality-runner",
+    "tools/eval-import",
     "apps/translator-cli",
 ]
 

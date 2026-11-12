@@ -56,3 +56,13 @@ cargo deny check licenses        # 若安装了 cargo-deny
 ```
 
 本文件不替代各依赖自带 LICENSE 文件；分发二进制时应同时附带依赖的许可文本。
+
+## 评测数据
+
+- **WMT24++**（Apache-2.0）— https://huggingface.co/datasets/google/wmt24pp
+  派生文件：`fixtures/eval/bench/{dev,test}.jsonl` 中 `dataset_id=wmt24pp` 的行。
+- **NTREX-128**（CC-BY-SA-4.0）— https://github.com/MicrosoftTranslator/NTREX
+  派生文件：`fixtures/eval/bench/{dev,test}.jsonl` 中 `dataset_id=ntrex128` 的行，
+  按 CC-BY-SA-4.0 相同方式共享。
+
+详见 `docs/eval/DATASETS.md`。

@@ -21,6 +21,8 @@
 //!
 //! 退出码：0 = 所有机器可判定项通过；1 = 有失败；2 = 用法/配置错误。
 
+mod metrics;
+
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -53,36 +55,235 @@ fn run() -> Result<u8, String> {
         return Err(format!("数据集为空：{}", args.dataset.display()));
     }
 
-    let translator = if args.mock {
-        mock_translator()
-    } else {
-        let path = args
-            .config
-            .clone()
-            .ok_or_else(|| "需要 --config <translate.toml>（或用 --mock 跑通链路）".to_string())?;
-        let dataset_glossary = if args.glossary_from_dataset {
-            Some(write_dataset_glossary(&cases)?)
-        } else {
-            None
-        };
-        build_translator(&path, dataset_glossary)?
-    };
-
     let cases = match args.limit {
         Some(limit) => cases.into_iter().take(limit).collect(),
         None => cases,
     };
 
+    let mut reports: Vec<(String, Report)> = Vec::new();
+    let labels: Vec<(String, Option<PathBuf>)> = match &args.compare {
+        Some(list) => list
+            .split(',')
+            .map(|item| {
+                let item = item.trim();
+                let label = PathBuf::from(item)
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_else(|| item.to_string());
+                (label, Some(PathBuf::from(item)))
+            })
+            .collect(),
+        None => vec![(
+            args.config
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "mock".to_string()),
+            args.config.clone(),
+        )],
+    };
+
+    for (label, config) in &labels {
+        let translator = if args.mock {
+            mock_translator()
+        } else {
+            let path = config.clone().ok_or_else(|| {
+                "需要 --config <translate.toml>（或用 --mock 跑通链路）".to_string()
+            })?;
+            let dataset_glossary = if args.glossary_from_dataset {
+                Some(write_dataset_glossary(&cases)?)
+            } else {
+                None
+            };
+            build_translator(&path, dataset_glossary)?
+        };
+        let report = evaluate(&cases, &translator, &args)?;
+        reports.push((label.clone(), report));
+    }
+
+    // 单配置：沿用原来的输出行为
+    if reports.len() == 1 {
+        let (_, report) = reports.pop().expect("至少一个报告");
+        write_outputs(&report, &cases, &args)?;
+        println!(
+            "评测完成：{} 条，通过 {}，失败 {}；报告写入 {}",
+            report.total,
+            report.passed,
+            report.failed,
+            args.out.display()
+        );
+        return Ok(if report.failed == 0 {
+            EXIT_OK
+        } else {
+            EXIT_FAIL
+        });
+    }
+
+    // 多配置：每个配置写一份 JSON，另出一份对照表
+    let stem = args
+        .out
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "compare".to_string());
+    let mut table = String::from("# 多模型对照\n\n");
+    table.push_str(&format!(
+        "数据集：`{}`（{} 条）\n\n",
+        args.dataset.display(),
+        cases.len()
+    ));
+    table.push_str("| 配置 | 通过 | chrF++ | BLEU-4 | p50 | p95 | HTTP 调用 | 输入/输出 token |\n|---|---|---|---|---|---|---|---|\n");
+    for (label, report) in &reports {
+        let chrf = report
+            .metrics
+            .as_ref()
+            .map(|m| format!("{:.2}", m.chrf_pp))
+            .unwrap_or_else(|| "—".to_string());
+        let bleu = report
+            .metrics
+            .as_ref()
+            .map(|m| format!("{:.2}", m.bleu4))
+            .unwrap_or_else(|| "—".to_string());
+        table.push_str(&format!(
+            "| {} | {}/{} | {} | {} | {} ms | {} ms | {} | {}/{} |\n",
+            label,
+            report.passed,
+            report.total,
+            chrf,
+            bleu,
+            report.latency_p50_ms,
+            report.latency_p95_ms,
+            report.http_calls,
+            report.tokens_input,
+            report.tokens_output
+        ));
+        let path = args.out.with_file_name(format!("{stem}-{label}.json"));
+        let text = serde_json::to_string_pretty(report).map_err(|e| e.to_string())?;
+        std::fs::write(&path, text).map_err(|e| format!("写入 {} 失败：{e}", path.display()))?;
+    }
+    table.push_str("\n> 人工评审：**PENDING_HUMAN**；自动指标不替代人工验收。\n");
+    let md_path = args.out.with_file_name(format!("{stem}-compare.md"));
+    std::fs::write(&md_path, &table)
+        .map_err(|e| format!("写入 {} 失败：{e}", md_path.display()))?;
+    println!("{table}");
+    println!("对照表：{}", md_path.display());
+    let failed: usize = reports.iter().map(|(_, r)| r.failed).sum();
+    Ok(if failed == 0 { EXIT_OK } else { EXIT_FAIL })
+}
+
+fn write_outputs(report: &Report, cases: &[EvalCase], args: &Args) -> Result<(), String> {
+    if let Some(path) = &args.out_md {
+        let markdown = render_markdown(report, cases);
+        std::fs::write(path, markdown)
+            .map_err(|e| format!("写入 Markdown 报告失败（{}）：{e}", path.display()))?;
+        eprintln!("评审包（Markdown）：{}", path.display());
+    }
+    let text = serde_json::to_string_pretty(report).map_err(|e| e.to_string())?;
+    std::fs::write(&args.out, text).map_err(|e| format!("写入报告失败：{e}"))?;
+    Ok(())
+}
+
+/// 延迟百分位（排序后取最近秩）。
+fn percentile(values: &[u64], p: usize) -> u64 {
+    if values.is_empty() {
+        return 0;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_unstable();
+    let rank = (sorted.len() - 1) * p / 100;
+    sorted[rank]
+}
+
+/// 生成人工评审包：原文/译文对照 + 机器判定的失败项。
+///
+/// 明确标注 `PENDING_HUMAN`：自动指标通过不等于质量验收通过。
+fn render_markdown(report: &Report, cases: &[EvalCase]) -> String {
+    let mut out = String::new();
+    out.push_str("# 翻译质量评审包\n\n");
+    out.push_str(&format!("- 数据集：`{}`\n", report.dataset));
+    out.push_str(&format!(
+        "- 模式：{}（mock={}）\n",
+        report.mode, report.mock
+    ));
+    out.push_str(&format!(
+        "- 机器可判定项：{} / {} 通过（失败 {}）\n",
+        report.passed, report.total, report.failed
+    ));
+    out.push_str(&format!(
+        "- 延迟：p50 {} ms / p95 {} ms / max {} ms\n",
+        report.latency_p50_ms, report.latency_p95_ms, report.latency_max_ms
+    ));
+    out.push_str(&format!(
+        "- HTTP 调用 {} 次，内容重试 {} 次，token {}/{}\n",
+        report.http_calls, report.content_retries, report.tokens_input, report.tokens_output
+    ));
+    match report.estimated_cost_usd {
+        Some(cost) => out.push_str(&format!(
+            "- 估算费用：${cost:.6}（按配置单价，最终以服务端账单为准）\n"
+        )),
+        None => out.push_str("- 估算费用：未配置单价（不做估算）\n"),
+    }
+    out.push_str(&format!("- 人工评审：**{}**\n\n", report.human_review));
+    out.push_str("> 自动指标只覆盖\"必须保留的内容\"，不代表译文准确、自然。\n\n");
+
+    out.push_str("| id | 数据集/文档 | 类别 | 结果 | 原文 | 译文 | 机器判定 |\n");
+    out.push_str("|---|---|---|---|---|---|---|\n");
+    for case in &report.cases {
+        let source = cases
+            .iter()
+            .find(|c| c.id == case.id)
+            .map(|c| c.source_text())
+            .unwrap_or("");
+        let verdict = if case.ok { "✅" } else { "❌" };
+        let notes = if case.failures.is_empty() {
+            case.notes.clone()
+        } else {
+            case.failures.join("；")
+        };
+        let dataset = cases
+            .iter()
+            .find(|c| c.id == case.id)
+            .map(|c| {
+                let dataset = if c.dataset_id.is_empty() {
+                    "handcrafted"
+                } else {
+                    &c.dataset_id
+                };
+                if c.document_id.is_empty() {
+                    dataset.to_string()
+                } else {
+                    format!("{dataset}/{}", c.document_id)
+                }
+            })
+            .unwrap_or_else(|| "—".to_string());
+        out.push_str(&format!(
+            "| {} | {} | {} | {} | {} | {} | {} |\n",
+            case.id,
+            dataset,
+            case.category,
+            verdict,
+            escape_table(source),
+            escape_table(&case.output),
+            escape_table(&notes)
+        ));
+    }
+    out
+}
+
+fn escape_table(text: &str) -> String {
+    text.replace('|', "\\|").replace('\n', " ")
+}
+
+/// 在给定 translator 上跑一遍数据集，产出报告（不做 I/O）。
+fn evaluate(cases: &[EvalCase], translator: &Translator, args: &Args) -> Result<Report, String> {
     let mut results = Vec::new();
     let mut passed = 0usize;
     let mut failed = 0usize;
     let mut latencies = Vec::new();
     let usage_before = translator.usage();
 
-    for case in &cases {
+    for case in cases {
         let started = std::time::Instant::now();
         let request = TranslateRequest::new(
-            case.text.clone(),
+            case.source_text().to_string(),
             LanguageTag::new(&case.target_lang).map_err(|e| e.message)?,
         )
         .with_source(LanguageTag::new(&case.source_lang).map_err(|e| e.message)?)
@@ -170,7 +371,7 @@ fn run() -> Result<u8, String> {
                 let ok = failures.is_empty();
                 CaseResult {
                     id: case.id.clone(),
-                    category: case.category.clone(),
+                    category: case.effective_category().to_string(),
                     ok,
                     output: result.text.clone(),
                     engine_id: result.engine_id.clone(),
@@ -182,7 +383,7 @@ fn run() -> Result<u8, String> {
             }
             Err(err) => CaseResult {
                 id: case.id.clone(),
-                category: case.category.clone(),
+                category: case.effective_category().to_string(),
                 ok: false,
                 output: String::new(),
                 engine_id: String::new(),
@@ -214,6 +415,28 @@ fn run() -> Result<u8, String> {
     let latency_p50 = latencies.get(latencies.len() / 2).copied().unwrap_or(0);
     let latency_max = latencies.last().copied().unwrap_or(0);
 
+    let with_reference: Vec<(String, String)> = results
+        .iter()
+        .zip(cases.iter())
+        .filter_map(|(result, case)| {
+            case.reference
+                .as_ref()
+                .filter(|r| !r.trim().is_empty())
+                .map(|r| (result.output.clone(), r.clone()))
+        })
+        .collect();
+    let metrics = if with_reference.is_empty() {
+        None
+    } else {
+        let (chrf, bleu) = metrics::corpus_average(&with_reference);
+        Some(Metrics {
+            with_reference: with_reference.len(),
+            chrf_pp: (chrf * 100.0).round() / 100.0,
+            bleu4: (bleu * 100.0).round() / 100.0,
+            note: "逐句平均；chrF++ 为字符 1-6gram + 词 1-2gram（β=2）；BLEU-4 用空白分词，与 sacrebleu 不可直接比较".to_string(),
+        })
+    };
+
     let usage_after = translator.usage();
     let _ = &usage_before;
     let report = Report {
@@ -242,109 +465,13 @@ fn run() -> Result<u8, String> {
                 failed: bad,
             })
             .collect(),
+        metrics,
         // 人工质量测评**没有**执行；不要用自动指标替代它（§16.4）
         human_review: "PENDING_HUMAN".to_string(),
         cases: results,
     };
 
-    if let Some(path) = &args.out_md {
-        let markdown = render_markdown(&report, &cases);
-        std::fs::write(path, markdown)
-            .map_err(|e| format!("写入 Markdown 报告失败（{}）：{e}", path.display()))?;
-        eprintln!("评审包（Markdown）：{}", path.display());
-    }
-
-    let text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
-    std::fs::write(&args.out, text).map_err(|e| format!("写入报告失败：{e}"))?;
-
-    println!(
-        "评测完成：{} 条，通过 {}，失败 {}；报告写入 {}",
-        report.total,
-        report.passed,
-        report.failed,
-        args.out.display()
-    );
-    println!("注意：人工质量评审状态 = PENDING_HUMAN（自动指标不能替代人工验收）");
-
-    Ok(if report.failed == 0 {
-        EXIT_OK
-    } else {
-        EXIT_FAIL
-    })
-}
-
-/// 延迟百分位（排序后取最近秩）。
-fn percentile(values: &[u64], p: usize) -> u64 {
-    if values.is_empty() {
-        return 0;
-    }
-    let mut sorted = values.to_vec();
-    sorted.sort_unstable();
-    let rank = (sorted.len() - 1) * p / 100;
-    sorted[rank]
-}
-
-/// 生成人工评审包：原文/译文对照 + 机器判定的失败项。
-///
-/// 明确标注 `PENDING_HUMAN`：自动指标通过不等于质量验收通过。
-fn render_markdown(report: &Report, cases: &[EvalCase]) -> String {
-    let mut out = String::new();
-    out.push_str("# 翻译质量评审包\n\n");
-    out.push_str(&format!("- 数据集：`{}`\n", report.dataset));
-    out.push_str(&format!(
-        "- 模式：{}（mock={}）\n",
-        report.mode, report.mock
-    ));
-    out.push_str(&format!(
-        "- 机器可判定项：{} / {} 通过（失败 {}）\n",
-        report.passed, report.total, report.failed
-    ));
-    out.push_str(&format!(
-        "- 延迟：p50 {} ms / p95 {} ms / max {} ms\n",
-        report.latency_p50_ms, report.latency_p95_ms, report.latency_max_ms
-    ));
-    out.push_str(&format!(
-        "- HTTP 调用 {} 次，内容重试 {} 次，token {}/{}\n",
-        report.http_calls, report.content_retries, report.tokens_input, report.tokens_output
-    ));
-    match report.estimated_cost_usd {
-        Some(cost) => out.push_str(&format!(
-            "- 估算费用：${cost:.6}（按配置单价，最终以服务端账单为准）\n"
-        )),
-        None => out.push_str("- 估算费用：未配置单价（不做估算）\n"),
-    }
-    out.push_str(&format!("- 人工评审：**{}**\n\n", report.human_review));
-    out.push_str("> 自动指标只覆盖\"必须保留的内容\"，不代表译文准确、自然。\n\n");
-
-    out.push_str("| id | 类别 | 结果 | 原文 | 译文 | 机器判定 |\n");
-    out.push_str("|---|---|---|---|---|---|\n");
-    for case in &report.cases {
-        let source = cases
-            .iter()
-            .find(|c| c.id == case.id)
-            .map(|c| c.text.as_str())
-            .unwrap_or("");
-        let verdict = if case.ok { "✅" } else { "❌" };
-        let notes = if case.failures.is_empty() {
-            case.notes.clone()
-        } else {
-            case.failures.join("；")
-        };
-        out.push_str(&format!(
-            "| {} | {} | {} | {} | {} | {} |\n",
-            case.id,
-            case.category,
-            verdict,
-            escape_table(source),
-            escape_table(&case.output),
-            escape_table(&notes)
-        ));
-    }
-    out
-}
-
-fn escape_table(text: &str) -> String {
-    text.replace('|', "\\|").replace('\n', " ")
+    Ok(report)
 }
 
 fn mock_translator() -> Translator {
@@ -390,7 +517,21 @@ struct EvalCase {
     id: String,
     #[serde(default)]
     category: String,
+    /// 旧格式（自建用例）用 `text`；外部导入用 `source`。
+    #[serde(default)]
     text: String,
+    /// 外部数据集字段（与 `text` 二选一）。
+    #[serde(default)]
+    source: String,
+    /// 参考译文；没有时为 `null`（人工评审待办）。
+    #[serde(default)]
+    reference: Option<String>,
+    #[serde(default)]
+    dataset_id: String,
+    #[serde(default)]
+    domain: String,
+    #[serde(default)]
+    document_id: String,
     #[serde(default = "default_source")]
     source_lang: String,
     #[serde(default = "default_target")]
@@ -486,6 +627,30 @@ struct RunnerConfig {
     page: Option<String>,
 }
 
+impl EvalCase {
+    /// 源文：优先 `source`，兼容旧格式的 `text`。
+    fn source_text(&self) -> &str {
+        if self.source.is_empty() {
+            &self.text
+        } else {
+            &self.source
+        }
+    }
+
+    /// 类别：外部数据没有 category，用 domain 兜底。
+    fn effective_category(&self) -> &str {
+        if self.category.is_empty() {
+            if self.domain.is_empty() {
+                "external"
+            } else {
+                &self.domain
+            }
+        } else {
+            &self.category
+        }
+    }
+}
+
 fn load_dataset(path: &PathBuf) -> Result<Vec<EvalCase>, String> {
     let text = std::fs::read_to_string(path)
         .map_err(|e| format!("读取数据集 {} 失败：{e}", path.display()))?;
@@ -502,7 +667,19 @@ fn load_dataset(path: &PathBuf) -> Result<Vec<EvalCase>, String> {
     Ok(out)
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
+struct Metrics {
+    /// 参与计算的样本数（有参考译文的）。
+    with_reference: usize,
+    /// 逐句 chrF++ 的平均值（0–100）。
+    chrf_pp: f64,
+    /// 逐句 BLEU-4 的平均值（0–100，空白分词，仅供参考）。
+    bleu4: f64,
+    /// 口径说明：不要把这里的数字当作 sacrebleu 结果。
+    note: String,
+}
+
+#[derive(Serialize)]
 struct Report {
     dataset: String,
     mode: String,
@@ -523,6 +700,8 @@ struct Report {
     /// 费用估算（美元）。未配置单价时为 `null`，不要当成账单。
     estimated_cost_usd: Option<f64>,
     by_category: Vec<CategoryStat>,
+    /// 自动指标（有参考译文时才计算）。chrF++ 是主指标，BLEU 仅供参考。
+    metrics: Option<Metrics>,
     /// 人工质量评审状态。自动指标通过不等于质量验收通过。
     human_review: String,
     cases: Vec<CaseResult>,
@@ -559,6 +738,8 @@ struct Args {
     out_md: Option<PathBuf>,
     /// 用数据集里的 `glossary` 字段生成临时术语表，并按 `Enforce` 跑。
     glossary_from_dataset: bool,
+    /// 可选：逗号分隔的多个配置文件，逐一跑同一数据集并输出对照表。
+    compare: Option<String>,
     config: Option<PathBuf>,
     mock: bool,
     mode: TranslationMode,
@@ -575,6 +756,7 @@ impl Args {
         let mut limit = None;
         let mut out_md = None;
         let mut glossary_from_dataset = false;
+        let mut compare: Option<String> = None;
 
         let mut i = 0;
         while i < args.len() {
@@ -625,6 +807,10 @@ impl Args {
                     glossary_from_dataset = true;
                     i += 1;
                 }
+                "--compare" => {
+                    compare = Some(next("--compare")?);
+                    i += 2;
+                }
                 "--help" | "-h" => {
                     println!(
                         "quality-runner --dataset <jsonl> --out <report.json> \
@@ -641,6 +827,7 @@ impl Args {
             out: out.ok_or("缺少 --out")?,
             out_md,
             glossary_from_dataset,
+            compare,
             config,
             mock,
             mode,

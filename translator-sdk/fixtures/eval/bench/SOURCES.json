@@ -1,0 +1,125 @@
+{
+  "converted": {
+    "by_dataset": {
+      "ntrex128": {
+        "by_domain": {
+          "news": 1996
+        },
+        "by_split": {
+          "blind": 358,
+          "dev": 383,
+          "test": 1255
+        },
+        "total": 1996
+      },
+      "wmt24pp": {
+        "by_domain": {
+          "literary": 206,
+          "news": 149,
+          "social": 492,
+          "speech": 111
+        },
+        "by_split": {
+          "test": 958
+        },
+        "total": 958
+      }
+    },
+    "dropped": {
+      "WMT24++ canary 行": 1,
+      "WMT24++ 标记为 bad_source": 37,
+      "源文与参考相同": 2,
+      "源文重复": 1
+    },
+    "filters": [
+      "丢弃 WMT24++ canary 与 is_bad_source",
+      "丢弃空源文/空参考、源文与参考归一化后相同",
+      "丢弃参考译文不含汉字（中英错位）的行",
+      "丢弃源文没有拉丁字母的行",
+      "按归一化源文全局去重（跨数据集）",
+      "NTREX 按 document_id 哈希切分 dev/blind/test，同一文档不跨 split"
+    ],
+    "samples": 2954
+  },
+  "generated_at": "2026-11-12T06:13:15Z",
+  "skipped": [
+    {
+      "dataset_id": "flores_plus",
+      "name": "FLORES+ (openlanguagedata/flores_plus)",
+      "probe": "HTTP 401",
+      "reason": "HuggingFace gated：未登录/未接受条款返回 401（Access restricted）。按规则不绕过。"
+    },
+    {
+      "dataset_id": "flores200",
+      "name": "FLORES-200 (facebook/flores, CC-BY-SA-4.0)",
+      "probe": "HTTP 401",
+      "reason": "HuggingFace gated（gated: auto）：downloads 返回 401，需要账号与条款同意。按规则不绕过；许可证本身允许再分发。"
+    },
+    {
+      "dataset_id": "wmt26_genmt",
+      "name": "WMT26 General MT",
+      "probe": "https://data.statmt.org/wmt26/ 目录列表",
+      "reason": "目前只公开 blind set（wmt26_genmt_blindset.jsonl，仅源文、无参考译文），无法计算 chrF/BLEU；带参考的测试集通常赛后发布。"
+    },
+    {
+      "dataset_id": "tatoeba_challenge",
+      "name": "Tatoeba Challenge (en-zh)",
+      "probe": "未下载",
+      "reason": "可用（Tatoeba 句子 CC-BY 2.0 FR），但为众包句子、领域/质量分布不可控，且与 WMT/NTREX 风格差异大；第一版不纳入基准，仅作为潜在补充记录在案。"
+    }
+  ],
+  "sources": [
+    {
+      "dataset_id": "wmt24pp",
+      "files": [
+        {
+          "bytes": 1061605,
+          "note": "zh_CN: 简体中文",
+          "path": "wmt24pp/en-zh_CN.jsonl",
+          "sha256": "984ec4da714800aae2b9ee6e2601d1cadb01a770e01ed385d5283ce7a0585287"
+        }
+      ],
+      "homepage": "https://huggingface.co/datasets/google/wmt24pp",
+      "license": "Apache-2.0",
+      "name": "WMT24++ (en-zh_CN)",
+      "redistributable": true,
+      "url": "https://huggingface.co/datasets/google/wmt24pp/resolve/main/en-zh_CN.jsonl",
+      "version": "HF snapshot 2026-07-30"
+    },
+    {
+      "dataset_id": "ntrex128",
+      "files": [
+        {
+          "bytes": 251739,
+          "note": "英语源文",
+          "path": "ntrex/newstest2019-src.eng.txt",
+          "sha256": "389e8f5796c66db4f646dfad33e1ec622d74767af5ef112b42a1f2cd814df3cc"
+        },
+        {
+          "bytes": 241603,
+          "note": "简体中文参考译文",
+          "path": "ntrex/newstest2019-ref.zho-CN.txt",
+          "sha256": "8bcd6f0868d33f26c8da12f55a82f66088a7b60a5f7b0b1a99dcec51daa8054a"
+        },
+        {
+          "bytes": 30754,
+          "note": "文档边界",
+          "path": "ntrex/DOCUMENT_IDS.tsv",
+          "sha256": "88a8b0ff1eae47e83f60dcde01075b8c87d75ced59ca09e0af1eb539958e05d5"
+        },
+        {
+          "bytes": 20137,
+          "note": "数据集许可证",
+          "path": "ntrex/LICENSE.md",
+          "sha256": "5e436ff8ffbb77d8607220e9bce20c8915d860010feeb6c1ebef5a85688e9b39"
+        }
+      ],
+      "homepage": "https://github.com/MicrosoftTranslator/NTREX",
+      "license": "CC-BY-SA-4.0",
+      "name": "NTREX-128 (eng-zho-CN)",
+      "redistributable": true,
+      "url": "https://github.com/MicrosoftTranslator/NTREX",
+      "version": "main @ 2026-11-12"
+    }
+  ]
+}

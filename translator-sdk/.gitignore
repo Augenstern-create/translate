@@ -1,21 +1,5 @@
-# Rust 构建产物
-/target
-**/*.rs.bk
-
-# 本地资源与模型（体积大，不入库）
-/resources
-/models
-/tmp
-
-# 编辑器
-.vscode/
-.idea/
-*.swp
-
-# P11 质量工具中间产物（可由 run-dictionary-quality.py 重新生成；报告 JSON/MD 保留）
-/tests/quality/reports/lookup-results.jsonl
-/tests/quality/reports/lookup-words.txt
-
-# Python 缓存
-__pycache__/
-*.pyc
+/target/
+# 外部原始语料：别人的发布物，体积大且可能受限，不入库
+/fixtures/eval/external/
+# 私有盲测集：只在本机保留，避免测试污染
+/fixtures/eval/private/

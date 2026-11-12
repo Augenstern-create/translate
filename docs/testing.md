@@ -255,6 +255,16 @@ node browser_check.mjs http://127.0.0.1:18096/
 同一句第二次请求（新进程、开启磁盘缓存）：`cached=true`、`http_calls=0`、
 `warnings=["CacheHit"]`，缓存文件 588 字节。
 
+**外部评测集（2026-11-12）**
+
+`tools/eval-import` 把 WMT24++（Apache-2.0）与 NTREX-128（CC-BY-SA-4.0）转换成统一格式：
+`bench/dev.jsonl` 383 条、`bench/test.jsonl` 2 213 条、`private/blind.jsonl` 358 条（不入库）。
+FLORES+/FLORES-200 因 HuggingFace gated（401）未导入，WMT26 只公开无参考的 blind set。
+细节与许可证见 `docs/eval/DATASETS.md`。
+
+`quality-runner` 新增 chrF++ / BLEU-4 指标（`src/metrics.rs`，9 条单测）与
+`--compare a.toml,b.toml` 多模型对照接口（自部署模型同样适用）。
+
 **S3 评测基线（2026-11-12）**
 
 `quality-runner` 新增：`--glossary-from-dataset`（用数据集术语对生成临时术语表并按 `Enforce` 跑）、
