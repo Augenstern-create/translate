@@ -15,7 +15,8 @@
 | 密钥 | 仅从环境变量 `STARHUB_KEY` 读取；未写入仓库、配置或日志 |
 | 策略 | `TranslationPolicy::RemoteOnly`（评测对象是远程 LLM，必须显式授权） |
 | 术语 | 用数据集里的 `glossary` 字段生成临时术语表，`TermPolicy::Enforce` |
-| 运行 | `cargo run -p quality-runner -- --dataset fixtures/eval/dev.jsonl --config <toml> --glossary-from-dataset --out <json> --out-md <md>` |
+| 运行 | `cargo run -p quality-runner -- --dataset fixtures/eval/dev.jsonl --config ../../docs/eval/starhub.example.toml --glossary-from-dataset --out <json> --out-md <md>` |
+| 配置样例 | `docs/eval/starhub.example.toml`（密钥只从 `STARHUB_KEY` 读取） |
 
 判定规则（全部机器可判定）：
 

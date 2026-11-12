@@ -1,0 +1,32 @@
+# 评测用后端配置示例（真实转发站）。
+#
+# 密钥**只能**从环境变量读取：
+#   export STARHUB_KEY='...'
+# 不要把密钥写进本文件、配置模板、仓库或测试数据。
+#
+# 用法：
+#   cargo run -p quality-runner -- \
+#     --dataset fixtures/eval/dev.jsonl \
+#     --config ../../docs/eval/starhub.example.toml \
+#     --glossary-from-dataset \
+#     --out /tmp/dev.json --out-md /tmp/dev.md
+
+[backend.starhub]
+base_url = "https://starhub.iepose.cn/v1"
+model = "deepseek-v4.1-flash"      # 或 glm-5.3-flash
+model_revision = "starhub-2026-11-12"
+api_key_env = "STARHUB_KEY"
+max_retries = 1
+max_concurrent_requests = 1
+timeout_ms = 60000
+connect_timeout_ms = 15000
+
+[http]
+max_concurrent_requests = 1
+max_queue_size = 2
+
+[translation]
+mode = "precise"
+timeout_ms = 90000
+max_http_calls_per_request = 3
+strict_integrity = true
