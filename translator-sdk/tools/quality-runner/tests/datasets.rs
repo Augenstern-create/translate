@@ -29,7 +29,12 @@ fn load(name: &str) -> Vec<Value> {
 
 #[test]
 fn 所有数据集字段完整且编号唯一() {
-    for name in ["smoke.jsonl", "dev.jsonl", "blind.jsonl"] {
+    for name in [
+        "smoke.jsonl",
+        "dev.jsonl",
+        "blind.jsonl",
+        "regression.jsonl",
+    ] {
         let cases = load(name);
         assert!(!cases.is_empty(), "{name} 不应为空");
 
@@ -62,11 +67,14 @@ fn 所有数据集字段完整且编号唯一() {
                     "{id} 的 {field} 必须是数组"
                 );
             }
-            // 参考译文尚未人工撰写：必须是 null（PENDING_HUMAN），不能是空串
-            assert!(
-                case["reference_zh"].is_null(),
-                "{id} 的 reference_zh 应为 null（人工参考译文未完成）"
-            );
+            // 自建用例的参考译文尚未人工撰写：必须是 null（PENDING_HUMAN）；
+            // 回归集自带人工核对过的参考译文，单独校验。
+            if name != "regression.jsonl" {
+                assert!(
+                    case["reference_zh"].is_null(),
+                    "{id} 的 reference_zh 应为 null（人工参考译文未完成）"
+                );
+            }
         }
     }
 }
@@ -86,6 +94,45 @@ fn 金额不应放进逐字保留项() {
                 );
             }
         }
+    }
+}
+
+#[test]
+fn 回归集字段与严重级别合法() {
+    let allowed_checks = [
+        "no_residual_english",
+        "entity_consistency",
+        "context_word_sense",
+        "detail_fidelity",
+        "reference_quality",
+    ];
+    for case in load("regression.jsonl") {
+        let id = case["id"].as_str().unwrap_or("?");
+        let severity = case["severity"].as_str().unwrap_or("");
+        assert!(
+            matches!(severity, "critical" | "major" | "reference"),
+            "{id} 的 severity 非法：{severity}"
+        );
+        let checks = case["expected_checks"]
+            .as_array()
+            .expect("expected_checks 必须是数组");
+        assert!(!checks.is_empty(), "{id} 至少要声明一个检查项");
+        for check in checks {
+            let name = check.as_str().unwrap_or("");
+            assert!(allowed_checks.contains(&name), "{id} 未知检查项：{name}");
+        }
+        // 参考译文有问题的用例必须写明问题，否则会被误判成模型失败
+        if severity == "reference" {
+            assert!(
+                case["reference_issue"].is_string(),
+                "{id} 缺少 reference_issue"
+            );
+        }
+        assert!(
+            case["reference_zh"].is_string()
+                && !case["reference_zh"].as_str().unwrap_or("").is_empty(),
+            "{id} 必须有参考译文（回归集不是自建空参考用例）"
+        );
     }
 }
 

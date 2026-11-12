@@ -28,7 +28,7 @@ cargo test -p translator-api           # 端到端流水线（脚本化引擎）
 当前基线（Linux，`refactor/online-translation-v1`）：
 
 ```text
-passed = 418   failed = 0   ignored = 5
+passed = 420   failed = 0   ignored = 5
 ```
 
 覆盖的关键场景：
@@ -223,7 +223,7 @@ node browser_check.mjs http://127.0.0.1:18096/
 |---|---|---|
 | 全工作区编译（含测试目标） | `cargo xwin check --workspace --all-targets --target x86_64-pc-windows-msvc` | 通过 |
 | CLI 二进制链接 | `cargo xwin build -p translator-cli --target x86_64-pc-windows-msvc` | 生成 `translator-cli.exe` |
-| 单元 + 集成测试 | Windows 实机 `cargo test --workspace --no-fail-fast` | **418 passed / 0 failed / 5 ignored**（逐句译文入库后复跑） |
+| 单元 + 集成测试 | Windows 实机 `cargo test --workspace --no-fail-fast` | **420 passed / 0 failed / 5 ignored**（质量回归集后复跑） |
 
 **Windows 端到端（2026-11-12 实测）**
 
@@ -325,10 +325,21 @@ p50 2.3 s、$0.0898；glm-5.3-flash 2 211/2 213、chrF++ 30.12、p50 3.6 s、$0.
 | 词典 | `lookup children` → `孩子, 孩子们`（ECDICT 包，Windows 资源访问正常） |
 | 错误退出码 | 配置文件不存在 → 退出码 1，stderr 带中文路径与修复建议 |
 | Web UI | 200；CSP 无 `unsafe-inline`；令牌 64 位；带令牌 POST 200；无令牌/坏 Origin/坏 Host 均 403 |
-| 全量测试 | `cargo test --workspace` 418 passed / 0 failed（含 5 ignored） |
+| 全量测试 | `cargo test --workspace` 420 passed / 0 failed（含 5 ignored） |
 
 > 备注：Windows 上 `ALL_PROXY` 指向不可用代理时，回环请求曾被劫持；
 > 已改为回环地址强制直连（见 CHANGELOG 与 `is_loopback_url` 单测）。
+
+**质量回归集（2026-11-13）**
+
+`fixtures/eval/regression.jsonl`（7 条）来自对 2 213 条全量译文的人工语言审阅：
+
+| 检查 | 方式 | 结果 |
+|---|---|---|
+| 未翻译英文片段（`no_residual_english`） | 机器判定（`residual_english_fragment`）+ 3 条单测 | 已知案例可捕获；2–4 词残留不覆盖 |
+| 人物/上下文/信息精度 | 人工评审 | DeepSeek 6/7 类表现更好，GLM 在习语上更好；两者均有错 |
+| 参考译文错误 | `reference_issue` 标注 | 已确认 2 条（incapacitated、democracy），不计模型失败 |
+| 数据集结构 | `quality-runner/tests/datasets.rs` | 6 条测试（编号/字段/严重级别/参考译文齐全） |
 
 **仍未做（S4 以外的部分）**
 

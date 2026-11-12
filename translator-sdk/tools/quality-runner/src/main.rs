@@ -461,6 +461,26 @@ fn evaluate_case(
                         .collect()
                 })
                 .unwrap_or_default();
+            // 回归集：译文中残留未翻译英文片段（机器可判定）
+            if case
+                .expected_checks
+                .iter()
+                .any(|c| c == "no_residual_english")
+            {
+                if let Some(quality) = output.diagnostics.quality.as_ref() {
+                    for issue in &quality.issues {
+                        if issue.kind == translator_api::QualityIssueKind::Untranslated {
+                            failures.push(format!("残留未翻译英文：{}", issue.detail));
+                        }
+                    }
+                }
+            }
+            // 参考译文本身有问题的用例：只记录，不用它判模型失败
+            if let Some(issue) = &case.reference_issue {
+                eprintln!("注意：{} 的参考译文有问题：{issue}", case.id);
+                failures.clear();
+            }
+
             // SDK 语义层报告的"数字/金额缺失或新增"（Major）在**用例声明了数字**时算失败：
             // 这样币种丢失、金额被改会被抓住，而 SDK 对 "one hand"/"every second"
             // 这类词形歧义的启发式判断不会污染结果（那些用例本身不声明数字）。
@@ -509,6 +529,7 @@ fn evaluate_case(
                 error: None,
                 dataset_id: case.dataset_id.clone(),
                 document_id: case.document_id.clone(),
+                severity: case.severity.clone(),
                 notes: case.notes.clone(),
             }
         }
@@ -523,6 +544,7 @@ fn evaluate_case(
             error: Some(err.code.as_str().to_string()),
             dataset_id: case.dataset_id.clone(),
             document_id: case.document_id.clone(),
+            severity: case.severity.clone(),
             notes: case.notes.clone(),
         },
     };
@@ -599,6 +621,15 @@ struct EvalCase {
     glossary: Vec<GlossaryPair>,
     #[serde(default)]
     notes: String,
+    /// 回归集：期望被机器检查的项目（目前支持 `no_residual_english`）。
+    #[serde(default)]
+    expected_checks: Vec<String>,
+    /// 回归集：`critical` / `major` / `reference`（参考译文问题）。
+    #[serde(default)]
+    severity: String,
+    /// 参考译文本身的问题说明（有值时不把模型判失败）。
+    #[serde(default)]
+    reference_issue: Option<String>,
 }
 
 /// 把数据集里声明的术语对写成临时术语表（JSON），用于 `Enforce` 评测。
@@ -772,6 +803,9 @@ struct CategoryStat {
 #[derive(Debug, Serialize)]
 struct CaseResult {
     id: String,
+    /// 回归集严重级别（空表示普通用例）。
+    #[serde(default)]
+    severity: String,
     /// 数据来源（`wmt24pp` / `ntrex128` / 空表示自建用例）。
     #[serde(default)]
     dataset_id: String,

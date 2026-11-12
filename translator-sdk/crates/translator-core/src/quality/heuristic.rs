@@ -68,12 +68,96 @@ pub fn check(source: &str, output: &str, target: &LanguageTag, report: &mut Qual
         ));
     }
 
+    if target.as_str().starts_with("zh") {
+        if let Some(fragment) = residual_english_fragment(output) {
+            report.issues.push(QualityIssue::major(
+                QualityIssueKind::Untranslated,
+                format!("译文中残留未翻译的英文片段：{fragment}"),
+            ));
+        }
+    }
+
     if source.trim().eq_ignore_ascii_case(output.trim()) && source.split_whitespace().count() >= 2 {
         report.issues.push(QualityIssue::major(
             QualityIssueKind::Untranslated,
             "译文与原文完全相同",
         ));
     }
+}
+
+/// 找出"整段没翻译"的英文残留（如 `geared to being a weapon`）。
+///
+/// 判定条件（刻意保守，宁可漏报也不误报）：
+///
+/// - 连续 ≥5 个纯英文单词（不含 URL/代码，含标点的 token 会打断连续段）；
+/// - 其中至少 2 个是功能词（the/of/to/and/being…）——排除 `iPhone 15 Pro` 这类品牌；
+/// - 至少 1 个**小写**内容词（长度 ≥4）——排除 `The Lord of the Rings` 这类专名标题。
+///
+/// 命中时只报 Major（不判致命）：这是启发式，任务是"让人看见"，不是自动拒稿。
+fn residual_english_fragment(output: &str) -> Option<String> {
+    const FUNCTION_WORDS: [&str; 34] = [
+        "the", "a", "an", "of", "to", "and", "or", "is", "are", "was", "were", "be", "being",
+        "been", "in", "on", "at", "for", "with", "that", "this", "it", "its", "as", "by", "from",
+        "not", "you", "we", "they", "he", "she", "but", "if",
+    ];
+
+    // 把文本切成 (单词, 与前一个单词之间是否只隔空格)。
+    // 中文与标点都会打断"连续英文段"——但被打断前的单词要保留，
+    // 否则 `geared to being a weapon，在…` 里的 weapon 会把整段吞掉。
+    let mut tokens: Vec<(String, bool)> = Vec::new();
+    let mut current = String::new();
+    let mut spacer_only = true;
+    for ch in output.chars() {
+        let is_word_char = ch.is_ascii_alphanumeric() || ch == '\'' || ch == '-';
+        if is_word_char {
+            current.push(ch);
+            continue;
+        }
+        if !current.is_empty() {
+            tokens.push((std::mem::take(&mut current), spacer_only));
+        }
+        spacer_only = ch.is_whitespace();
+    }
+    if !current.is_empty() {
+        tokens.push((current, spacer_only));
+    }
+
+    let mut run: Vec<String> = Vec::new();
+    let mut candidate: Option<String> = None;
+    let evaluate = |run: &mut Vec<String>, candidate: &mut Option<String>| {
+        if candidate.is_none() && run.len() >= 5 {
+            let funcs = run
+                .iter()
+                .filter(|w| FUNCTION_WORDS.contains(&w.to_lowercase().as_str()))
+                .count();
+            let lower_content = run.iter().any(|w| {
+                w.chars().next().is_some_and(|c| c.is_ascii_lowercase())
+                    && w.len() >= 4
+                    && !FUNCTION_WORDS.contains(&w.to_lowercase().as_str())
+            });
+            if funcs >= 2 && lower_content {
+                *candidate = Some(run.join(" "));
+            }
+        }
+        run.clear();
+    };
+
+    for (word, spaced) in tokens {
+        if word
+            .chars()
+            .all(|c| c.is_ascii_alphabetic() || c == '\'' || c == '-')
+        {
+            if !spaced {
+                evaluate(&mut run, &mut candidate);
+            }
+            run.push(word);
+        } else {
+            // 含数字的 token（iPhone 15、PA-28）打断连续段但不参与判断
+            evaluate(&mut run, &mut candidate);
+        }
+    }
+    evaluate(&mut run, &mut candidate);
+    candidate
 }
 
 /// 分段策略下对**单个片段**做保守的合理性检查。
@@ -305,6 +389,61 @@ mod tests {
             .issues
             .iter()
             .any(|i| i.kind == QualityIssueKind::ConditionalDropped));
+    }
+
+    #[test]
+    fn 未翻译的英文片段会被报告() {
+        let zh = LanguageTag::new("zh-Hans").unwrap();
+
+        // 真实案例（wmt24pp-440）：模型留下了整段英文
+        let mut report = QualityReport::default();
+        check(
+            "Everything is geared to being a weapon, displayed in accompanying media with gratuitous effect.",
+            "一切都 geared to being a weapon，在 accompanying media 中以 gratuitous effect 展示。",
+            &zh,
+            &mut report,
+        );
+        assert!(
+            report
+                .issues
+                .iter()
+                .any(|i| i.kind == QualityIssueKind::Untranslated),
+            "{:?}",
+            report.issues
+        );
+
+        // 品牌/人名不算残留
+        let mut ok = QualityReport::default();
+        check(
+            "Buy the iPhone 15 Pro Max now.",
+            "现在就购买 iPhone 15 Pro Max。",
+            &zh,
+            &mut ok,
+        );
+        assert!(
+            !ok.issues
+                .iter()
+                .any(|i| i.kind == QualityIssueKind::Untranslated),
+            "{:?}",
+            ok.issues
+        );
+
+        // 专名标题不算残留（全是功能词或大写开头）
+        let mut title = QualityReport::default();
+        check(
+            "The film is The Lord of the Rings.",
+            "这部电影是 The Lord of the Rings。",
+            &zh,
+            &mut title,
+        );
+        assert!(
+            !title
+                .issues
+                .iter()
+                .any(|i| i.kind == QualityIssueKind::Untranslated),
+            "{:?}",
+            title.issues
+        );
     }
 
     #[test]

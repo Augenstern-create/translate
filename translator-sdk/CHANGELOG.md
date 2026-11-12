@@ -20,6 +20,18 @@
 - 新增 `crates/translator-http/tests/stress.rs`（默认 `#[ignore]`）：10 000 次
   Mock 压力测试报告 requests/ok/failed/cancelled/queue_full/http_calls/peak_threads/RSS。
 
+### 质量回归集（人工审阅反馈）
+
+- 新增 `fixtures/eval/regression.jsonl`（7 条）：未翻译英文片段、人物实体一致性、
+  上下文词义、信息精度、参考译文错误五类，来自 2026-11-13 的人工语言审阅。
+- `quality/heuristic.rs` 新增 `residual_english_fragment`：连续 ≥5 个英文单词、
+  ≥2 个功能词、≥1 个中文语境下的小写内容词 → 报 `untranslated`（Major，不致命）。
+  边界：2–4 词残留抓不到（阈值降低会误报专名标题）。
+- `quality-runner` 支持 `expected_checks` / `severity` / `reference_issue`：
+  `no_residual_english` 为机器判定项；`severity=reference` 的用例不计模型失败。
+- 复跑两份模型报告：`docs/eval/runs/regression-*.json`；结论与人工审阅一致
+  （DeepSeek 信息精度更好、GLM 口语/习语更好，无模型全类别占优）。
+
 ### 评测产物入库
 
 - `docs/eval/runs/`：bench/test 2 213 条的**完整模型译文**（deepseek-v4.1-flash、

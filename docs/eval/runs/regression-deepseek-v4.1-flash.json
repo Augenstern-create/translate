@@ -1,0 +1,135 @@
+{
+  "dataset": "fixtures/eval/regression.jsonl",
+  "mode": "Precise",
+  "mock": false,
+  "total": 7,
+  "passed": 7,
+  "failed": 0,
+  "latency_p50_ms": 2125,
+  "latency_p95_ms": 2409,
+  "latency_max_ms": 2620,
+  "http_calls": 7,
+  "content_retries": 0,
+  "tokens_input": 1563,
+  "tokens_output": 116,
+  "estimated_cost_usd": null,
+  "by_category": [
+    {
+      "category": "literary",
+      "passed": 2,
+      "failed": 0
+    },
+    {
+      "category": "news",
+      "passed": 4,
+      "failed": 0
+    },
+    {
+      "category": "tech-doc",
+      "passed": 1,
+      "failed": 0
+    }
+  ],
+  "metrics": null,
+  "human_review": "PENDING_HUMAN",
+  "cases": [
+    {
+      "id": "regress-440",
+      "severity": "critical",
+      "dataset_id": "",
+      "document_id": "",
+      "category": "literary",
+      "ok": true,
+      "output": "一切都以成为武器为导向，并在 accompanying media 中以无谓的效果加以展示。",
+      "engine_id": "http.",
+      "elapsed_ms": 2620,
+      "failures": [],
+      "error": null,
+      "notes": "模型留下整段英文（geared to being a weapon）。回归点：译文中不得残留连续英文片段。"
+    },
+    {
+      "id": "regress-112",
+      "severity": "critical",
+      "dataset_id": "",
+      "document_id": "",
+      "category": "literary",
+      "ok": true,
+      "output": "Ivory也是，以他们自己独特的方式。当Ivory公开自己的非二元性别身份时，一切都变了。",
+      "engine_id": "http.",
+      "elapsed_ms": 2409,
+      "failures": [],
+      "error": null,
+      "notes": "Ivory 是人物名，不得译成“象牙白”。回归点：专名应原样保留（人工核对为主）。"
+    },
+    {
+      "id": "regress-ntrex-1",
+      "severity": "major",
+      "dataset_id": "",
+      "document_id": "",
+      "category": "news",
+      "ok": true,
+      "output": "威尔士议会议员担心“看起来像木偶”",
+      "engine_id": "http.",
+      "elapsed_ms": 2125,
+      "failures": [],
+      "error": null,
+      "notes": "muppets 是贬义口语（笨蛋/傻瓜），不是字面的“木偶”。回归点：习语/口语词义。"
+    },
+    {
+      "id": "regress-ntrex-1195",
+      "severity": "major",
+      "dataset_id": "",
+      "document_id": "",
+      "category": "news",
+      "ok": true,
+      "output": "明天是个人表演环节，那是一件不同的事情。",
+      "engine_id": "http.",
+      "elapsed_ms": 2045,
+      "failures": [],
+      "error": null,
+      "notes": "高尔夫报道语境：performances 指个人赛表现，不是“舞台表演”。回归点：领域上下文。"
+    },
+    {
+      "id": "regress-611",
+      "severity": "major",
+      "dataset_id": "",
+      "document_id": "",
+      "category": "tech-doc",
+      "ok": true,
+      "output": "成功！剩下最后一件事就是把座椅靠背用螺栓固定好。",
+      "engine_id": "http.",
+      "elapsed_ms": 2259,
+      "failures": [],
+      "error": null,
+      "notes": "seat back = 座椅靠背，bolting = 用螺栓固定；两者都不能省。回归点：技术说明的信息精度。"
+    },
+    {
+      "id": "regress-ntrex-1569",
+      "severity": "reference",
+      "dataset_id": "",
+      "document_id": "",
+      "category": "news",
+      "ok": true,
+      "output": "您会选择一位可信赖的人为您做出财务决策，并确保在您丧失行为能力时账单得到支付。",
+      "engine_id": "http.",
+      "elapsed_ms": 1854,
+      "failures": [],
+      "error": null,
+      "notes": "原 NTREX 参考译文把 incapacitated 译成“资金不足”，是参考译文错误；此处已按英文原意更正。"
+    },
+    {
+      "id": "regress-ntrex-1012",
+      "severity": "reference",
+      "dataset_id": "",
+      "document_id": "",
+      "category": "news",
+      "ok": true,
+      "output": "这次投票被描述为对我们民主制度是否仍能存续的一次考验。",
+      "engine_id": "http.",
+      "elapsed_ms": 2077,
+      "failures": [],
+      "error": null,
+      "notes": "原 NTREX 参考译文把 our democracy 写成“我们民主党”，是参考译文错误；此处已更正。"
+    }
+  ]
+}
