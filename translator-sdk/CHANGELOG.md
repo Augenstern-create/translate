@@ -1,5 +1,17 @@
 # 变更记录
 
+## S3 评测基线（2026-11-12）
+
+- `quality-runner`：新增 `--glossary-from-dataset`（数据集术语 → 临时术语表 + `Enforce`）、
+  `--out-md`（人工评审包）、`latency_p95_ms` / `http_calls` / `content_retries` /
+  `tokens_*` / `estimated_cost_usd` 字段；评测请求显式使用 `RemoteOnly`。
+- 数字检查：英文序数词增加上下文判定（`every second` / `finishes first` / `First, ...`
+  不再被当成"第几"），消除一类把正确译文判成漏数字的误报。
+- 数据集：6 条 money 用例的金额从 `must_preserve`（逐字）移到 `must_keep_numbers`（语义），
+  因为中文写 `12.50 美元` 是正确译文。
+- 真实转发站基线：dev 100 条、smoke 30 条，两个模型均 100% 通过机器判定
+  （见 `docs/quality-baseline.md`；人工评审仍为 `PENDING_HUMAN`）。
+
 ## 磁盘缓存复查修复（2026-11-12）
 
 - **语言标签不再写死**：条目里持久化真实 `source`/`target`，加载时解析，

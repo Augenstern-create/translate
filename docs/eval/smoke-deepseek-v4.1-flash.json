@@ -1,0 +1,431 @@
+{
+  "dataset": "fixtures/eval/smoke.jsonl",
+  "mode": "Precise",
+  "mock": false,
+  "total": 30,
+  "passed": 30,
+  "failed": 0,
+  "latency_p50_ms": 2567,
+  "latency_p95_ms": 3347,
+  "latency_max_ms": 4265,
+  "http_calls": 30,
+  "content_retries": 0,
+  "tokens_input": 7699,
+  "tokens_output": 4420,
+  "estimated_cost_usd": null,
+  "by_category": [
+    {
+      "category": "clause",
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "category": "conditional",
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "category": "dialogue",
+      "passed": 2,
+      "failed": 0
+    },
+    {
+      "category": "glossary",
+      "passed": 2,
+      "failed": 0
+    },
+    {
+      "category": "money",
+      "passed": 2,
+      "failed": 0
+    },
+    {
+      "category": "negation",
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "category": "paragraph",
+      "passed": 2,
+      "failed": 0
+    },
+    {
+      "category": "passive",
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "category": "polysemy",
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "category": "question",
+      "passed": 2,
+      "failed": 0
+    },
+    {
+      "category": "reference",
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "category": "statement",
+      "passed": 4,
+      "failed": 0
+    },
+    {
+      "category": "tech-doc",
+      "passed": 3,
+      "failed": 0
+    },
+    {
+      "category": "tense",
+      "passed": 2,
+      "failed": 0
+    },
+    {
+      "category": "ui",
+      "passed": 3,
+      "failed": 0
+    },
+    {
+      "category": "url",
+      "passed": 2,
+      "failed": 0
+    }
+  ],
+  "human_review": "PENDING_HUMAN",
+  "cases": [
+    {
+      "id": "smoke-001",
+      "category": "statement",
+      "ok": true,
+      "output": "博物馆工作日下午六点闭馆。",
+      "engine_id": "http.",
+      "elapsed_ms": 3347,
+      "failures": [],
+      "error": null,
+      "notes": "Checks a plain declarative sentence with a time expression."
+    },
+    {
+      "id": "smoke-002",
+      "category": "statement",
+      "ok": true,
+      "output": "我们的支持团队会在一个工作日内回复大多数消息。",
+      "engine_id": "http.",
+      "elapsed_ms": 3359,
+      "failures": [],
+      "error": null,
+      "notes": "Checks a simple factual statement about a service promise."
+    },
+    {
+      "id": "smoke-003",
+      "category": "question",
+      "ok": true,
+      "output": "我在哪里可以找到桌面应用的最新版本？",
+      "engine_id": "http.",
+      "elapsed_ms": 1921,
+      "failures": [],
+      "error": null,
+      "notes": "Checks a wh-question rendered with natural Chinese word order."
+    },
+    {
+      "id": "smoke-004",
+      "category": "question",
+      "ok": true,
+      "output": "你记得带笔记本电脑的充电器了吗？",
+      "engine_id": "http.",
+      "elapsed_ms": 2236,
+      "failures": [],
+      "error": null,
+      "notes": "Checks a yes/no question without a question-word."
+    },
+    {
+      "id": "smoke-005",
+      "category": "negation",
+      "ok": true,
+      "output": "打印机不支持双面打印。",
+      "engine_id": "http.",
+      "elapsed_ms": 3172,
+      "failures": [],
+      "error": null,
+      "notes": "Checks negation with the auxiliary do in the present tense."
+    },
+    {
+      "id": "smoke-006",
+      "category": "conditional",
+      "ok": true,
+      "output": "如果下载失败，请在几分钟后重试。",
+      "engine_id": "http.",
+      "elapsed_ms": 1751,
+      "failures": [],
+      "error": null,
+      "notes": "Checks a first conditional plus an imperative main clause."
+    },
+    {
+      "id": "smoke-007",
+      "category": "passive",
+      "ok": true,
+      "output": "包裹被送到了错误的地址。",
+      "engine_id": "http.",
+      "elapsed_ms": 3292,
+      "failures": [],
+      "error": null,
+      "notes": "Checks a short passive clause in the past tense."
+    },
+    {
+      "id": "smoke-008",
+      "category": "tense",
+      "ok": true,
+      "output": "她从周一开始就在撰写这份报告了。",
+      "engine_id": "http.",
+      "elapsed_ms": 2986,
+      "failures": [],
+      "error": null,
+      "notes": "Checks present perfect progressive with a since-phrase."
+    },
+    {
+      "id": "smoke-009",
+      "category": "clause",
+      "ok": true,
+      "output": "编写该解析器的工程师去年离开了公司。",
+      "engine_id": "http.",
+      "elapsed_ms": 2374,
+      "failures": [],
+      "error": null,
+      "notes": "Checks a subject relative clause inside a main clause."
+    },
+    {
+      "id": "smoke-010",
+      "category": "reference",
+      "ok": true,
+      "output": "把蓝色文件夹拿到窗户旁边的桌子上。",
+      "engine_id": "http.",
+      "elapsed_ms": 4265,
+      "failures": [],
+      "error": null,
+      "notes": "Checks that the pronoun it binds to the correct noun phrase."
+    },
+    {
+      "id": "smoke-011",
+      "category": "polysemy",
+      "ok": true,
+      "output": "船驶到河岸边停了下来。",
+      "engine_id": "http.",
+      "elapsed_ms": 2564,
+      "failures": [],
+      "error": null,
+      "notes": "Checks that bank is read as a riverbank, not a financial bank."
+    },
+    {
+      "id": "smoke-012",
+      "category": "ui",
+      "ok": true,
+      "output": "错误：未找到文件。请检查路径并重试。",
+      "engine_id": "http.",
+      "elapsed_ms": 2567,
+      "failures": [],
+      "error": null,
+      "notes": "Checks a short interface error string that must read naturally in Chinese."
+    },
+    {
+      "id": "smoke-013",
+      "category": "ui",
+      "ok": true,
+      "output": "欢迎回来，{username}！你保存的草稿已就绪。",
+      "engine_id": "http.",
+      "elapsed_ms": 2990,
+      "failures": [],
+      "error": null,
+      "notes": "Checks that a user placeholder survives unchanged."
+    },
+    {
+      "id": "smoke-014",
+      "category": "ui",
+      "ok": true,
+      "output": "您的会话将在 5 分钟后过期。",
+      "engine_id": "http.",
+      "elapsed_ms": 2196,
+      "failures": [],
+      "error": null,
+      "notes": "Checks a UI notice that carries a small number."
+    },
+    {
+      "id": "smoke-015",
+      "category": "tech-doc",
+      "ok": true,
+      "output": "在启动开发服务器之前，先运行 `npm install`。",
+      "engine_id": "http.",
+      "elapsed_ms": 1934,
+      "failures": [],
+      "error": null,
+      "notes": "Checks that an inline command keeps its backticks and spelling."
+    },
+    {
+      "id": "smoke-016",
+      "category": "tech-doc",
+      "ok": true,
+      "output": "当您超过速率限制时，API 会返回 429 状态码。",
+      "engine_id": "http.",
+      "elapsed_ms": 2673,
+      "failures": [],
+      "error": null,
+      "notes": "Checks a technical statement that must keep a status code."
+    },
+    {
+      "id": "smoke-017",
+      "category": "url",
+      "ok": true,
+      "output": "访问 https://example.com/docs?page=2&lang=en 获取完整指南。",
+      "engine_id": "http.",
+      "elapsed_ms": 2142,
+      "failures": [],
+      "error": null,
+      "notes": "Checks a URL with query parameters and digits."
+    },
+    {
+      "id": "smoke-018",
+      "category": "url",
+      "ok": true,
+      "output": "发布说明位于https://example.org/releases/v1.2.0.html。",
+      "engine_id": "http.",
+      "elapsed_ms": 3036,
+      "failures": [],
+      "error": null,
+      "notes": "Checks a URL that contains a version number."
+    },
+    {
+      "id": "smoke-019",
+      "category": "dialogue",
+      "ok": true,
+      "output": "“您能在周五之前把发票寄给我吗？”她问道。",
+      "engine_id": "http.",
+      "elapsed_ms": 3233,
+      "failures": [],
+      "error": null,
+      "notes": "Checks quoted speech with a question inside the quotation."
+    },
+    {
+      "id": "smoke-020",
+      "category": "dialogue",
+      "ok": true,
+      "output": "“好的，我十分钟后给你回电话，”他说。",
+      "engine_id": "http.",
+      "elapsed_ms": 3236,
+      "failures": [],
+      "error": null,
+      "notes": "Checks quoted speech with a contraction and a time phrase."
+    },
+    {
+      "id": "smoke-021",
+      "category": "money",
+      "ok": true,
+      "output": "年度计划每位用户费用为 $39.99。",
+      "engine_id": "http.",
+      "elapsed_ms": 3232,
+      "failures": [],
+      "error": null,
+      "notes": "Checks currency amount and currency word; literal $ is not required."
+    },
+    {
+      "id": "smoke-022",
+      "category": "money",
+      "ok": true,
+      "output": "折扣后发票总额为 $1,250.00。",
+      "engine_id": "http.",
+      "elapsed_ms": 2861,
+      "failures": [],
+      "error": null,
+      "notes": "Checks a thousands-separated amount and currency word."
+    },
+    {
+      "id": "smoke-023",
+      "category": "tense",
+      "ok": true,
+      "output": "合同续签的截止日期为2025年3月14日。",
+      "engine_id": "http.",
+      "elapsed_ms": 2798,
+      "failures": [],
+      "error": null,
+      "notes": "Checks a full date whose day and year numbers must not change."
+    },
+    {
+      "id": "smoke-024",
+      "category": "tech-doc",
+      "ok": true,
+      "output": "更新后，电池用量下降了15%。",
+      "engine_id": "http.",
+      "elapsed_ms": 1952,
+      "failures": [],
+      "error": null,
+      "notes": "Checks a percentage with the percent sign attached to the number."
+    },
+    {
+      "id": "smoke-025",
+      "category": "glossary",
+      "ok": true,
+      "output": "大语言模型可以总结长文档。",
+      "engine_id": "http.",
+      "elapsed_ms": 2100,
+      "failures": [],
+      "error": null,
+      "notes": "Checks that a glossary term is translated consistently."
+    },
+    {
+      "id": "smoke-026",
+      "category": "glossary",
+      "ok": true,
+      "output": "在合并分支之前，请先打开一个拉取请求。",
+      "engine_id": "http.",
+      "elapsed_ms": 2297,
+      "failures": [],
+      "error": null,
+      "notes": "Checks that a workflow term follows the supplied glossary."
+    },
+    {
+      "id": "smoke-027",
+      "category": "statement",
+      "ok": true,
+      "output": "您的订单#10248已发货，将于周二送达。",
+      "engine_id": "http.",
+      "elapsed_ms": 1967,
+      "failures": [],
+      "error": null,
+      "notes": "Checks that an order number with a hash prefix is untouched."
+    },
+    {
+      "id": "smoke-028",
+      "category": "statement",
+      "ok": true,
+      "output": "请在本周末之前将已签署的表格发送给hr@example.com。",
+      "engine_id": "http.",
+      "elapsed_ms": 2329,
+      "failures": [],
+      "error": null,
+      "notes": "Checks that an email address is preserved exactly."
+    },
+    {
+      "id": "smoke-029",
+      "category": "paragraph",
+      "ok": true,
+      "output": "备份在凌晨2:00完成。所有文件都已复制到远程服务器。你现在可以关闭笔记本电脑了。",
+      "engine_id": "http.",
+      "elapsed_ms": 2298,
+      "failures": [],
+      "error": null,
+      "notes": "Checks multi-sentence paragraph; 2:00 may be written as 凌晨2点."
+    },
+    {
+      "id": "smoke-030",
+      "category": "paragraph",
+      "ok": true,
+      "output": "服务器在午夜重启，不到一分钟就重新上线了。",
+      "engine_id": "http.",
+      "elapsed_ms": 2370,
+      "failures": [],
+      "error": null,
+      "notes": "Checks a two-sentence paragraph with a pronoun across sentences."
+    }
+  ]
+}

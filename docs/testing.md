@@ -28,7 +28,7 @@ cargo test -p translator-api           # 端到端流水线（脚本化引擎）
 当前基线（Linux，`refactor/online-translation-v1`）：
 
 ```text
-passed = 390   failed = 0   ignored = 4
+passed = 391   failed = 0   ignored = 4
 ```
 
 覆盖的关键场景：
@@ -223,7 +223,7 @@ node browser_check.mjs http://127.0.0.1:18096/
 |---|---|---|
 | 全工作区编译（含测试目标） | `cargo xwin check --workspace --all-targets --target x86_64-pc-windows-msvc` | 通过 |
 | CLI 二进制链接 | `cargo xwin build -p translator-cli --target x86_64-pc-windows-msvc` | 生成 `translator-cli.exe` |
-| 单元 + 集成测试 | Windows 实机 `cargo test --workspace --no-fail-fast` | **390 passed / 0 failed / 4 ignored**（磁盘缓存复查修复后复跑） |
+| 单元 + 集成测试 | Windows 实机 `cargo test --workspace --no-fail-fast` | **391 passed / 0 failed / 4 ignored**（S3 评测基线后复跑） |
 
 **Windows 端到端（2026-11-12 实测）**
 
@@ -254,6 +254,24 @@ node browser_check.mjs http://127.0.0.1:18096/
 
 同一句第二次请求（新进程、开启磁盘缓存）：`cached=true`、`http_calls=0`、
 `warnings=["CacheHit"]`，缓存文件 588 字节。
+
+**S3 评测基线（2026-11-12）**
+
+`quality-runner` 新增：`--glossary-from-dataset`（用数据集术语对生成临时术语表并按 `Enforce` 跑）、
+`--out-md`（人工评审包）、以及 `http_calls` / `content_retries` / `tokens_*` /
+`estimated_cost_usd` / `latency_p95_ms` 等报告字段。评测统一用 `TranslationPolicy::RemoteOnly`
+显式授权远程后端。
+
+结果（真实转发站，详见 `docs/quality-baseline.md`）：
+
+| 数据集 | 模型 | 通过 | p50 | p95 |
+|---|---|---|---|---|
+| dev 100 | deepseek-v4.1-flash | 100/100 | 3,143 ms | 4,319 ms |
+| dev 100 | glm-5.3-flash | 100/100 | 2,817 ms | 5,426 ms |
+| smoke 30 | deepseek-v4.1-flash | 30/30 | 2,567 ms | 3,347 ms |
+| smoke 30 | glm-5.3-flash | 30/30 | 2,699 ms | 5,066 ms |
+
+人工评审状态：`PENDING_HUMAN`（评审包见 `docs/eval/`）。
 
 **仍未做（S4）**
 

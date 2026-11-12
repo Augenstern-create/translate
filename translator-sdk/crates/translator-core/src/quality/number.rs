@@ -296,12 +296,17 @@ pub fn tokenize(text: &str) -> Vec<NumberToken> {
             }
             let word: String = chars[start..j].iter().collect::<String>().to_lowercase();
             if let Some((_, v)) = ORDINAL_WORDS.iter().find(|(w, _)| *w == word) {
-                out.push(NumberToken {
-                    raw: word,
-                    kind: NumberKind::Ordinal,
-                    value: Some(*v as f64),
-                    currency: None,
-                });
+                // 只有确定是"序数词"时才当作数字：`first`/`second` 也常作副词
+                // （"finishes first"）或时间单位（"every second"），
+                // 误判会要求译文出现"第一/第二"，把正确译文判成漏数字。
+                if ordinal_is_numeric(&chars, start, j) {
+                    out.push(NumberToken {
+                        raw: word,
+                        kind: NumberKind::Ordinal,
+                        value: Some(*v as f64),
+                        currency: None,
+                    });
+                }
                 i = j;
                 continue;
             }
@@ -374,6 +379,53 @@ fn is_word_start(chars: &[char], i: usize) -> bool {
         Some(c) => !c.is_ascii_alphanumeric() && *c != '_',
         None => true,
     }
+}
+
+/// 英文序数词是否真的在表达"第几个"。
+///
+/// 规则（保守）：
+///
+/// - 前面是 `every`/`each`/`per`/`a`/`an` → 时间单位用法（`every second`），不算序数；
+/// - 前面必须是限定词（`the`/`this`/`my`/...，最多跨一个词），否则当作副词
+///   （`finishes first`、`First, open ...`），不算序数。
+fn ordinal_is_numeric(chars: &[char], start: usize, end: usize) -> bool {
+    // 向前取最多两个词（只用于诊断；判定只用紧邻词）
+    let mut words: Vec<String> = Vec::new();
+    let mut i = start;
+    while words.len() < 2 && i > 0 {
+        // 跳过空白
+        let mut k = i;
+        while k > 0 && chars[k - 1].is_whitespace() {
+            k -= 1;
+        }
+        if k == 0 {
+            break;
+        }
+        let mut begin = k;
+        while begin > 0 && chars[begin - 1].is_ascii_alphabetic() {
+            begin -= 1;
+        }
+        if begin == k {
+            break; // 不是词（标点/数字），停止
+        }
+        let word: String = chars[begin..k].iter().collect::<String>().to_lowercase();
+        words.push(word);
+        i = begin;
+    }
+    let _ = end;
+
+    let Some(prev) = words.first() else {
+        return false;
+    };
+    if matches!(prev.as_str(), "every" | "each" | "per" | "a" | "an") {
+        return false;
+    }
+    // 只看**紧邻**的一个词：`the checklist first` 里的 `the` 属于 checklist，
+    // 不能当作 first 的限定词（否则 "finishes the checklist first" 会误判）。
+    const DETERMINERS: [&str; 11] = [
+        "the", "this", "that", "these", "those", "my", "your", "his", "her", "its", "their",
+    ];
+    DETERMINERS.contains(&prev.as_str())
 }
 
 /// 解析从 `start` 开始的数字，返回 (值, 结束位置, 原文)。
@@ -1241,6 +1293,35 @@ mod tests {
     fn 千分位与空格千分位等价() {
         let check = check("Total 1,250 USD.", "总计 1250 美元。");
         assert!(!check.has_fatal(), "{:?}", check.issues);
+    }
+
+    #[test]
+    fn 序数词只在真正表序数时才校验() {
+        // `every second` 是时间单位：不该要求译文出现"第二"
+        let unit = check(
+            "It handles thousands of tasks every second.",
+            "每秒处理数千个任务。",
+        );
+        assert!(unit.issues.is_empty(), "{:?}", unit.issues);
+
+        // `finishes first` 是副词
+        let adverb = check("Whoever finishes first should help.", "谁先完成谁帮忙。");
+        assert!(adverb.issues.is_empty(), "{:?}", adverb.issues);
+
+        // `First, ...` 是连接词
+        let conjunction = check("First, open the panel.", "首先，打开面板。");
+        assert!(conjunction.issues.is_empty(), "{:?}", conjunction.issues);
+
+        // 真正的序数仍然校验
+        let ordinal = check("This is the second attempt.", "这是第二次尝试。");
+        assert!(ordinal.issues.is_empty(), "{:?}", ordinal.issues);
+
+        let wrong = check("This is the second attempt.", "这是第三次尝试。");
+        assert!(
+            wrong.issues.iter().any(|i| i.detail.contains("second")),
+            "{:?}",
+            wrong.issues
+        );
     }
 
     #[test]
