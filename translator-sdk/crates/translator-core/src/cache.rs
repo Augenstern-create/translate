@@ -216,6 +216,21 @@ struct PersistedEntry {
     checksum: String,
 }
 
+/// 生成唯一的临时文件名：`<缓存名>.<pid>-<序号>.tmp`。
+///
+/// 固定 `.tmp` 名在"多个进程同时写同一份缓存"时会互相踩踏；
+/// 带上进程号与一个进程内递增序号即可避免（不引入额外依赖）。
+fn unique_temp_path(path: &std::path::Path) -> std::path::PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let file = path
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| "cache".to_string());
+    path.with_file_name(format!("{file}.{}-{seq}.tmp", std::process::id()))
+}
+
 /// 条目校验和：把"键 + 译文 + 引擎"一起哈希。
 ///
 /// 只用于发现文件损坏/被修改，不用于安全认证（本地文件没有攻击者模型）。
@@ -416,7 +431,9 @@ impl QueryCache {
         // Windows 上目标文件可能被杀毒/索引服务短暂占用，`rename` 会失败；
         // 这时先备份旧文件再替换，任何一步失败都恢复旧文件——
         // **绝不允许**出现"缓存写坏且旧数据也丢了"的情况。
-        let tmp = path.with_extension("tmp");
+        // 临时文件必须唯一：多个进程同时写同一份缓存时，
+        // 固定 `.tmp` 名会让两个写者互相覆盖/删掉对方的临时文件。
+        let tmp = unique_temp_path(path);
         std::fs::write(&tmp, &json)?;
         let first_error = match std::fs::rename(&tmp, path) {
             Ok(()) => return Ok(()),
@@ -451,18 +468,35 @@ impl QueryCache {
     }
 
     /// 从文件加载。文件缺失/损坏/版本不符时返回空缓存（不 panic、不阻塞启动）。
+    ///
+    /// 崩溃恢复：替换流程是"主文件 → .bak，临时文件 → 主文件，删 .bak"。
+    /// 如果进程恰好在两步之间退出，主文件会暂时不存在，而 `.bak` 是完整的。
+    /// 因此主文件缺失或损坏时，会尝试 `.bak`，校验通过后把它恢复为主文件。
     pub fn load_from_file(path: &std::path::Path, capacity: usize) -> (Self, usize) {
-        let mut cache = Self::new(capacity);
-        let Ok(text) = std::fs::read_to_string(path) else {
-            return (cache, 0);
-        };
-        let Ok(payload) = serde_json::from_str::<PersistedCache>(&text) else {
-            return (cache, 0);
-        };
-        if payload.schema_version != CACHE_SCHEMA_VERSION {
-            return (cache, 0);
+        if let Some((cache, loaded)) = Self::try_load(path, capacity) {
+            return (cache, loaded);
         }
 
+        // 主文件缺失/损坏 → 尝试备份
+        let backup = path.with_extension("bak");
+        if let Some((cache, loaded)) = Self::try_load(&backup, capacity) {
+            // 尽力把备份恢复成主文件，让后续运行恢复正常路径；失败不影响本次使用
+            let _ = std::fs::copy(&backup, path);
+            let _ = std::fs::remove_file(&backup);
+            return (cache, loaded);
+        }
+
+        (Self::new(capacity), 0)
+    }
+
+    /// 读取单个文件；格式/版本/条目完整性不合法时返回 `None`。
+    fn try_load(path: &std::path::Path, capacity: usize) -> Option<(Self, usize)> {
+        let text = std::fs::read_to_string(path).ok()?;
+        let payload = serde_json::from_str::<PersistedCache>(&text).ok()?;
+        if payload.schema_version != CACHE_SCHEMA_VERSION {
+            return None;
+        }
+        let mut cache = Self::new(capacity);
         let mut loaded = 0usize;
         for entry in payload.entries.into_iter().take(capacity) {
             // 1) 自校验：文件被截断/手改/旧格式污染 → 跳过该条目
@@ -520,7 +554,7 @@ impl QueryCache {
             );
             loaded += 1;
         }
-        (cache, loaded)
+        Some((cache, loaded))
     }
 
     /// 删除一个条目（命中的条目未通过校验时使用）。
@@ -821,6 +855,75 @@ mod tests {
 
         // 旧缓存不受影响
         assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+    }
+
+    #[test]
+    fn 崩溃在两次重命名之间时从备份恢复() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.json");
+        let backup = path.with_extension("bak");
+
+        // 1) 先写一份正常缓存，再手工模拟"主文件已被挪走、临时文件还在"的中断点
+        let mut cache = QueryCache::new(8);
+        let key = CacheKey::new("hello", identity());
+        cache.insert(key.clone(), entry("旧译文"));
+        cache.save_to_file(&path).unwrap();
+        std::fs::rename(&path, &backup).unwrap();
+        std::fs::write(path.with_extension("leftover.tmp"), b"{ truncated").unwrap();
+
+        // 2) 主文件不存在 + .bak 完整 → 必须从 .bak 恢复，并把主文件补回来
+        let (loaded, count) = QueryCache::load_from_file(&path, 8);
+        assert_eq!(count, 1, "应从 .bak 恢复出条目");
+        assert_eq!(
+            loaded.map.get(&key).map(|e| e.result.text.as_str()),
+            Some("旧译文")
+        );
+        assert!(path.exists(), "恢复后主文件应被写回");
+        assert!(!backup.exists(), "恢复后 .bak 应被清理");
+    }
+
+    #[test]
+    fn 主文件损坏时从备份恢复() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.json");
+        let backup = path.with_extension("bak");
+
+        let mut cache = QueryCache::new(8);
+        let key = CacheKey::new("hello", identity());
+        cache.insert(key.clone(), entry("备份里的译文"));
+        cache.save_to_file(&path).unwrap();
+        std::fs::copy(&path, &backup).unwrap();
+        std::fs::write(&path, b"{ not json").unwrap();
+
+        let (loaded, count) = QueryCache::load_from_file(&path, 8);
+        assert_eq!(count, 1, "主文件损坏时应回退到 .bak");
+        assert_eq!(
+            loaded.map.get(&key).map(|e| e.result.text.as_str()),
+            Some("备份里的译文")
+        );
+    }
+
+    #[test]
+    fn 主文件与备份都不可用时返回空缓存() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.json");
+        std::fs::write(&path, b"broken").unwrap();
+        std::fs::write(path.with_extension("bak"), b"also broken").unwrap();
+
+        let (cache, count) = QueryCache::load_from_file(&path, 8);
+        assert_eq!(count, 0);
+        assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn 临时文件名唯一() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.json");
+        let a = unique_temp_path(&path);
+        let b = unique_temp_path(&path);
+        assert_ne!(a, b, "两个写者不能用同一个临时文件");
+        let pid = std::process::id().to_string();
+        assert!(a.to_string_lossy().contains(pid.as_str()));
     }
 
     #[test]

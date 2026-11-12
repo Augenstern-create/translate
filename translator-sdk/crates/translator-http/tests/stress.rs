@@ -218,6 +218,13 @@ max_queue_size = 8
     println!("STRESS {report}");
     std::fs::write("/tmp/stress-report.txt", &report).ok();
 
+    // 轻量阈值（不阻断，只防止明显回归）：线程归位、RSS 不出现数量级增长
+    let rss_growth = rss_after.saturating_sub(rss_before);
+    assert!(
+        rss_growth < 200_000,
+        "RSS 增长异常：{rss_growth} KB（{rss_before} → {rss_after}）"
+    );
+    assert!(peak_threads.load(Ordering::Relaxed) < 200, "线程数异常");
     assert!(ok.load(Ordering::Relaxed) > 0, "至少要有一个成功");
     assert_eq!(
         live_worker_threads(),

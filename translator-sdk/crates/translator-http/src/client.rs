@@ -206,17 +206,40 @@ impl HttpTransport {
 /// 回环请求**永不**走代理：本地模型服务、本地 UI、mock 测试都依赖这一行为，
 /// 而环境里残留 `ALL_PROXY`/`HTTP_PROXY` 指向一个不可用的代理时，
 /// 把所有回环流量也转发过去只会得到"连接被重置"。
+///
+/// 只认三种情况：`localhost`、IPv4 回环（127.0.0.0/8）、IPv6 回环（`::1`，
+/// 含 `::ffff:127.0.0.1` 这类映射地址）。**`0.0.0.0` 不是回环地址**，
+/// 它是"未指定地址"，连它的语义由系统决定，不能当作本地直连的借口。
 pub fn is_loopback_url(url: &str) -> bool {
-    let rest = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
-    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
-    let host = if let Some(stripped) = authority.strip_prefix('[') {
-        // IPv6 字面量：[::1]:8080
-        stripped.split(']').next().unwrap_or("")
-    } else {
-        authority.split(':').next().unwrap_or("")
+    let Some(host) = url_host(url) else {
+        return false;
     };
-    let host = host.to_ascii_lowercase();
-    host == "localhost" || host == "::1" || host == "0.0.0.0" || host.starts_with("127.")
+    if host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    match host.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(v4)) => v4.is_loopback(),
+        Ok(std::net::IpAddr::V6(v6)) => {
+            v6.is_loopback() || v6.to_ipv4_mapped().is_some_and(|v4| v4.is_loopback())
+        }
+        Err(_) => false,
+    }
+}
+
+/// 从 URL 里取出 host（去掉 userinfo、端口、IPv6 方括号）。
+///
+/// 没有 scheme 的字符串一律返回 `None`：宁可走代理，也不要猜。
+fn url_host(url: &str) -> Option<&str> {
+    let (_, rest) = url.split_once("://")?;
+    let authority = rest.split(['/', '?', '#']).next()?;
+    let authority = authority
+        .rsplit_once('@')
+        .map(|(_, host)| host)
+        .unwrap_or(authority);
+    if let Some(stripped) = authority.strip_prefix('[') {
+        return stripped.split(']').next();
+    }
+    Some(authority.split(':').next().unwrap_or(authority))
 }
 
 /// 执行一次 HTTP 往返（同步，只在 worker 线程里调用）。
@@ -375,9 +398,12 @@ mod tests {
         for url in [
             "http://127.0.0.1:8080/v1",
             "https://127.0.0.1/v1",
+            "http://127.1.2.3/v1",
             "http://localhost:1234/v1",
+            "http://LOCALHOST/v1",
             "http://[::1]:8080/v1",
-            "http://127.10.20.30/v1",
+            "http://[::ffff:127.0.0.1]:8080/v1",
+            "http://user:pass@127.0.0.1:8080/v1",
         ] {
             assert!(is_loopback_url(url), "{url} 应判为回环");
         }
@@ -385,6 +411,14 @@ mod tests {
             "https://api.example.com/v1",
             "http://192.168.1.10:8080/v1",
             "https://example.com",
+            // 未指定地址不是回环地址
+            "http://0.0.0.0:8080/v1",
+            "https://0.0.0.0/v1",
+            // 没有 scheme 的字符串不猜
+            "127.0.0.1:8080/v1",
+            "localhost:8080",
+            // IPv6 非回环
+            "http://[::2]:8080/v1",
         ] {
             assert!(!is_loopback_url(url), "{url} 不应判为回环");
         }

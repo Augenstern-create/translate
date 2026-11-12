@@ -20,6 +20,15 @@
 - 新增 `crates/translator-http/tests/stress.rs`（默认 `#[ignore]`）：10 000 次
   Mock 压力测试报告 requests/ok/failed/cancelled/queue_full/http_calls/peak_threads/RSS。
 
+### 修复（审查意见，P1 / P2）
+
+- **缓存崩溃恢复**：加载时若主文件缺失或损坏，会校验 `.bak`（格式/版本/条目校验和）
+  并在通过后恢复为主文件；两者都不可用时返回空缓存。临时文件名带 PID + 序号，
+  避免多进程写同一份缓存时互相踩踏。新增 4 条测试（含"两次重命名之间崩溃"）。
+- **回环判定修正**：`0.0.0.0` 不再被当作回环地址（它是未指定地址）；改用
+  `IpAddr::is_loopback()`（含 `::ffff:127.0.0.1` 映射）与 `localhost` 比较，
+  并正确剥离 userinfo/端口/IPv6 方括号；无 scheme 的字符串一律不猜。
+
 ### 修复（Windows 实机发现）
 
 - **回环地址强制直连**：系统 `ALL_PROXY` 指向不可用代理时，`127.0.0.1`

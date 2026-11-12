@@ -199,10 +199,10 @@ node browser_check.mjs http://127.0.0.1:18096/
 
 | 项目 | 状态 | 说明 |
 |---|---|---|
-| `fixtures/eval/*.jsonl` 的 `reference_zh` | PENDING_HUMAN | 需要人工翻译并复核 |
-| 真实转发站译文抽样（≥50 条） | PENDING_HUMAN | 需要真实 base_url + 密钥 |
+| `fixtures/eval/*.jsonl` 的 `reference_zh` | PENDING_HUMAN | 自建 226 条仍需人工参考译文；外部 2 954 条已有参考译文但无人工质量标注 |
+| 真实转发站译文抽样（≥50 条） | **已完成（自动化）**：2 213 条 bench/test 全量跑分（`docs/eval/BENCH-BASELINE.md`）；**人工阅读仍未做** | 质量结论仍待人工 |
 | 本地模型质量对比（Phase 5） | PENDING_HUMAN | 需要模型权重与实测延迟 |
-| Windows 实机运行 | PENDING_HUMAN | 已做交叉编译检查，未在真实 Windows 上跑 |
+| Windows 实机运行 | **已完成（2026-11-12）** | 实机跑通构建、全量测试、CLI、本地 Web UI、词典与磁盘缓存（见 S4 一节） |
 | 术语表/模板业务验收 | PENDING_HUMAN | 需要业务方确认用词 |
 
 人工评审记录格式建议：
@@ -309,6 +309,9 @@ p50 2.3 s、$0.0898；glm-5.3-flash 2 211/2 213、chrF++ 30.12、p50 3.6 s、$0.
 | 浏览器 CSP | headless Chromium 156 + CDP | 页面可用、令牌 64 位、注入脚本被拦、style 属性被拦、0 CSP 违规 |
 | 发布包 | `scripts/package-release.sh` | `tar.gz` 2.8 MB，`sha256sum -c` 通过，解压后 `--version` 正常、中文路径配置/缓存可用 |
 | 磁盘缓存 | 反复写入 + 目标不可写 | 旧文件保留、临时文件清理；损坏文件被忽略 |
+| 缓存崩溃恢复 | 单测模拟"两次 rename 之间进程退出"（主文件缺失、`.bak` 完整、`.tmp` 残留） | 从 `.bak` 恢复条目并把主文件写回、清理 `.bak`；主文件损坏时同样回退 |
+| 缓存临时文件 | 单测 | 临时名含 PID + 序号，两个写者不会用同一个文件名 |
+| 回环判定 | 单测（8 正 / 9 负） | `127.0.0.1`/`127.1.2.3`/`[::1]`/`[::ffff:127.0.0.1]`/`localhost` 判回环；`0.0.0.0`、内网、普通域名、无 scheme 字符串均不判回环 |
 
 **S4 Windows 实机（2026-11-12，`E:\augenstern\translate`）**
 
