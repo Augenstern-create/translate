@@ -169,6 +169,53 @@ fn run() -> Result<u8, String> {
     Ok(if failed == 0 { EXIT_OK } else { EXIT_FAIL })
 }
 
+/// 并行跑用例：固定 `jobs` 个线程从同一个原子索引取任务，结果按原顺序落位。
+fn evaluate_parallel(
+    cases: &[EvalCase],
+    translator: &Translator,
+    args: &Args,
+    jobs: usize,
+) -> Result<Vec<CaseResult>, String> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
+
+    let jobs = jobs.clamp(1, 16).min(cases.len().max(1));
+    let next = AtomicUsize::new(0);
+    let slots: Mutex<Vec<Option<CaseResult>>> =
+        Mutex::new((0..cases.len()).map(|_| None).collect());
+    let error: Mutex<Option<String>> = Mutex::new(None);
+
+    std::thread::scope(|scope| {
+        for _ in 0..jobs {
+            scope.spawn(|| loop {
+                let index = next.fetch_add(1, Ordering::SeqCst);
+                if index >= cases.len() {
+                    return;
+                }
+                match evaluate_case(translator, args, &cases[index]) {
+                    Ok(record) => {
+                        slots.lock().unwrap()[index] = Some(record);
+                    }
+                    Err(err) => {
+                        *error.lock().unwrap() = Some(err);
+                        return;
+                    }
+                }
+            });
+        }
+    });
+
+    if let Some(err) = error.into_inner().unwrap() {
+        return Err(err);
+    }
+    Ok(slots
+        .into_inner()
+        .unwrap()
+        .into_iter()
+        .map(|slot| slot.expect("并行执行漏掉了用例"))
+        .collect())
+}
+
 fn write_outputs(report: &Report, cases: &[EvalCase], args: &Args) -> Result<(), String> {
     if let Some(path) = &args.out_md {
         let markdown = render_markdown(report, cases);
@@ -274,133 +321,23 @@ fn escape_table(text: &str) -> String {
 
 /// 在给定 translator 上跑一遍数据集，产出报告（不做 I/O）。
 fn evaluate(cases: &[EvalCase], translator: &Translator, args: &Args) -> Result<Report, String> {
-    let mut results = Vec::new();
-    let mut passed = 0usize;
-    let mut failed = 0usize;
-    let mut latencies = Vec::new();
+    let mut latencies: Vec<u64> = Vec::new();
     let usage_before = translator.usage();
 
-    for case in cases {
-        let started = std::time::Instant::now();
-        let request = TranslateRequest::new(
-            case.source_text().to_string(),
-            LanguageTag::new(&case.target_lang).map_err(|e| e.message)?,
-        )
-        .with_source(LanguageTag::new(&case.source_lang).map_err(|e| e.message)?)
-        // 评测对象是远程 LLM：必须显式授权，不能用默认的"本地优先、绝不自动回退远程"
-        .with_policy(TranslationPolicy::RemoteOnly);
-
-        let mut options = translator.default_options().clone();
-        options.text_kind = TextKind::Sentence;
-        options.mode = args.mode;
-
-        let outcome =
-            pollster::block_on(translator.translate_with_diagnostics_options(&request, &options));
-        let elapsed = started.elapsed().as_millis() as u64;
-        latencies.push(elapsed);
-
-        let record = match outcome {
-            Ok(output) => {
-                let result = &output.result;
-                let mut failures = Vec::new();
-                // 1) 字面约束：URL / 邮箱 / 变量 / 代码 / 标签必须逐字出现
-                for needle in &case.must_preserve {
-                    if !result.text.contains(needle) {
-                        failures.push(format!("缺少受保护内容 {needle}"));
-                    }
-                }
-                // 2) 数字约束：先看字面，再看 SDK 的语义判定
-                //    （`$39.99` 写成 `39.99美元`、`2:00` 写成 `凌晨2点` 都是正确的）
-                let critical_numbers: Vec<String> = output
-                    .diagnostics
-                    .quality
-                    .as_ref()
-                    .map(|quality| {
-                        quality
-                            .issues
-                            .iter()
-                            .filter(|issue| {
-                                issue.severity == translator_api::QualitySeverity::Critical
-                            })
-                            .map(|issue| {
-                                format!(
-                                    "SDK 判定致命问题 {}：{}",
-                                    issue.kind.as_str(),
-                                    issue.detail
-                                )
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                // SDK 语义层报告的"数字/金额缺失或新增"（Major）在**用例声明了数字**时算失败：
-                // 这样币种丢失、金额被改会被抓住，而 SDK 对 "one hand"/"every second"
-                // 这类词形歧义的启发式判断不会污染结果（那些用例本身不声明数字）。
-                if !case.must_keep_numbers.is_empty() {
-                    if let Some(quality) = output.diagnostics.quality.as_ref() {
-                        for issue in &quality.issues {
-                            if issue.severity != translator_api::QualitySeverity::Major {
-                                continue;
-                            }
-                            if matches!(
-                                issue.kind,
-                                translator_api::QualityIssueKind::NumberMissing
-                                    | translator_api::QualityIssueKind::NumberAdded
-                                    | translator_api::QualityIssueKind::NumberRelationMismatch
-                            ) {
-                                failures.push(format!(
-                                    "数字/金额问题 {}：{}",
-                                    issue.kind.as_str(),
-                                    issue.detail
-                                ));
-                            }
-                        }
-                    }
-                }
-                for needle in &case.must_keep_numbers {
-                    if !result.text.contains(needle) && !critical_numbers.is_empty() {
-                        failures.push(format!("关键数字未保留 {needle}"));
-                    }
-                }
-                failures.extend(critical_numbers);
-                // 3) 术语
-                for term in &case.glossary {
-                    if !result.text.contains(&term.target) {
-                        failures.push(format!("术语未遵循 {} → {}", term.source, term.target));
-                    }
-                }
-                let ok = failures.is_empty();
-                CaseResult {
-                    id: case.id.clone(),
-                    category: case.effective_category().to_string(),
-                    ok,
-                    output: result.text.clone(),
-                    engine_id: result.engine_id.clone(),
-                    elapsed_ms: elapsed,
-                    failures,
-                    error: None,
-                    notes: case.notes.clone(),
-                }
-            }
-            Err(err) => CaseResult {
-                id: case.id.clone(),
-                category: case.effective_category().to_string(),
-                ok: false,
-                output: String::new(),
-                engine_id: String::new(),
-                elapsed_ms: elapsed,
-                failures: vec![format!("翻译失败：{}（{}）", err.message, err.code)],
-                error: Some(err.code.as_str().to_string()),
-                notes: case.notes.clone(),
-            },
-        };
-
-        if record.ok {
-            passed += 1;
-        } else {
-            failed += 1;
-        }
-        results.push(record);
+    let records: Vec<CaseResult> = if args.jobs <= 1 {
+        cases
+            .iter()
+            .map(|case| evaluate_case(translator, args, case))
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        evaluate_parallel(cases, translator, args, args.jobs)?
+    };
+    for record in &records {
+        latencies.push(record.elapsed_ms);
     }
+    let results = records;
+    let passed = results.iter().filter(|r| r.ok).count();
+    let failed = results.len() - passed;
 
     let mut by_category: BTreeMap<String, (usize, usize)> = BTreeMap::new();
     for record in &results {
@@ -472,6 +409,120 @@ fn evaluate(cases: &[EvalCase], translator: &Translator, args: &Args) -> Result<
     };
 
     Ok(report)
+}
+
+/// 跑一条用例。可并行调用：`Translator` 是线程安全的。
+fn evaluate_case(
+    translator: &Translator,
+    args: &Args,
+    case: &EvalCase,
+) -> Result<CaseResult, String> {
+    let started = std::time::Instant::now();
+    let request = TranslateRequest::new(
+        case.source_text().to_string(),
+        LanguageTag::new(&case.target_lang).map_err(|e| e.message)?,
+    )
+    .with_source(LanguageTag::new(&case.source_lang).map_err(|e| e.message)?)
+    // 评测对象是远程 LLM：必须显式授权，不能用默认的"本地优先、绝不自动回退远程"
+    .with_policy(TranslationPolicy::RemoteOnly);
+
+    let mut options = translator.default_options().clone();
+    options.text_kind = TextKind::Sentence;
+    options.mode = args.mode;
+
+    let outcome =
+        pollster::block_on(translator.translate_with_diagnostics_options(&request, &options));
+    let elapsed = started.elapsed().as_millis() as u64;
+
+    let record = match outcome {
+        Ok(output) => {
+            let result = &output.result;
+            let mut failures = Vec::new();
+            // 1) 字面约束：URL / 邮箱 / 变量 / 代码 / 标签必须逐字出现
+            for needle in &case.must_preserve {
+                if !result.text.contains(needle) {
+                    failures.push(format!("缺少受保护内容 {needle}"));
+                }
+            }
+            // 2) 数字约束：先看字面，再看 SDK 的语义判定
+            //    （`$39.99` 写成 `39.99美元`、`2:00` 写成 `凌晨2点` 都是正确的）
+            let critical_numbers: Vec<String> = output
+                .diagnostics
+                .quality
+                .as_ref()
+                .map(|quality| {
+                    quality
+                        .issues
+                        .iter()
+                        .filter(|issue| issue.severity == translator_api::QualitySeverity::Critical)
+                        .map(|issue| {
+                            format!("SDK 判定致命问题 {}：{}", issue.kind.as_str(), issue.detail)
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            // SDK 语义层报告的"数字/金额缺失或新增"（Major）在**用例声明了数字**时算失败：
+            // 这样币种丢失、金额被改会被抓住，而 SDK 对 "one hand"/"every second"
+            // 这类词形歧义的启发式判断不会污染结果（那些用例本身不声明数字）。
+            if !case.must_keep_numbers.is_empty() {
+                if let Some(quality) = output.diagnostics.quality.as_ref() {
+                    for issue in &quality.issues {
+                        if issue.severity != translator_api::QualitySeverity::Major {
+                            continue;
+                        }
+                        if matches!(
+                            issue.kind,
+                            translator_api::QualityIssueKind::NumberMissing
+                                | translator_api::QualityIssueKind::NumberAdded
+                                | translator_api::QualityIssueKind::NumberRelationMismatch
+                        ) {
+                            failures.push(format!(
+                                "数字/金额问题 {}：{}",
+                                issue.kind.as_str(),
+                                issue.detail
+                            ));
+                        }
+                    }
+                }
+            }
+            for needle in &case.must_keep_numbers {
+                if !result.text.contains(needle) && !critical_numbers.is_empty() {
+                    failures.push(format!("关键数字未保留 {needle}"));
+                }
+            }
+            failures.extend(critical_numbers);
+            // 3) 术语
+            for term in &case.glossary {
+                if !result.text.contains(&term.target) {
+                    failures.push(format!("术语未遵循 {} → {}", term.source, term.target));
+                }
+            }
+            let ok = failures.is_empty();
+            CaseResult {
+                id: case.id.clone(),
+                category: case.effective_category().to_string(),
+                ok,
+                output: result.text.clone(),
+                engine_id: result.engine_id.clone(),
+                elapsed_ms: elapsed,
+                failures,
+                error: None,
+                notes: case.notes.clone(),
+            }
+        }
+        Err(err) => CaseResult {
+            id: case.id.clone(),
+            category: case.effective_category().to_string(),
+            ok: false,
+            output: String::new(),
+            engine_id: String::new(),
+            elapsed_ms: elapsed,
+            failures: vec![format!("翻译失败：{}（{}）", err.message, err.code)],
+            error: Some(err.code.as_str().to_string()),
+            notes: case.notes.clone(),
+        },
+    };
+    Ok(record)
 }
 
 fn mock_translator() -> Translator {
@@ -740,6 +791,8 @@ struct Args {
     glossary_from_dataset: bool,
     /// 可选：逗号分隔的多个配置文件，逐一跑同一数据集并输出对照表。
     compare: Option<String>,
+    /// 并发执行的用例数（默认 1；远程后端建议 4）。
+    jobs: usize,
     config: Option<PathBuf>,
     mock: bool,
     mode: TranslationMode,
@@ -757,6 +810,7 @@ impl Args {
         let mut out_md = None;
         let mut glossary_from_dataset = false;
         let mut compare: Option<String> = None;
+        let mut jobs: usize = 1;
 
         let mut i = 0;
         while i < args.len() {
@@ -811,6 +865,12 @@ impl Args {
                     compare = Some(next("--compare")?);
                     i += 2;
                 }
+                "--jobs" => {
+                    jobs = next("--jobs")?
+                        .parse()
+                        .map_err(|_| "--jobs 必须是整数".to_string())?;
+                    i += 2;
+                }
                 "--help" | "-h" => {
                     println!(
                         "quality-runner --dataset <jsonl> --out <report.json> \
@@ -828,6 +888,7 @@ impl Args {
             out_md,
             glossary_from_dataset,
             compare,
+            jobs,
             config,
             mock,
             mode,

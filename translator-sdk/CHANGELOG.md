@@ -1,5 +1,17 @@
 # 变更记录
 
+## S3 公开基准首轮跑分（2026-11-12）
+
+- `quality-runner` 新增 `--jobs N`：并发跑同一数据集（`Translator` 线程安全），
+  结果按原顺序落位；`scripts/summarize-eval.py` 汇总多份报告。
+- 关闭"思考"（`disable_thinking` + `thinking_style`）后 completion token 45 → 6，
+  单请求延迟 4.4 s → 2.0 s；首次全量跑（思考开）55 分钟未完成、花 $0.43。
+- 站点对单 key 并发上限约 3：并发 8 时 577/2 213 请求 429 失败（不可作为质量结论）；
+  改为并发 3 + `max_retries=4` 后 429 消失。
+- 结果：`bench/test.jsonl` 2 213 条，deepseek-v4.1-flash 2 210 通过 / chrF++ 30.72 /
+  $0.0898；glm-5.3-flash 2 211 通过 / chrF++ 30.12 / $0.0908。
+  详见 `docs/eval/BENCH-BASELINE.md`。
+
 ## S3 外部评测集（2026-11-12）
 
 - 新增 `tools/eval-import`：把 WMT24++（Apache-2.0）与 NTREX-128（CC-BY-SA-4.0）

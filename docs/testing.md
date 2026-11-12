@@ -287,6 +287,11 @@ FLORES+/FLORES-200 因 HuggingFace gated（401）未导入，WMT26 只公开无�
 字段完整、id/文本不重复、金额不得进 `must_preserve`、blind 集与 dev/smoke 零重叠、
 blind 覆盖全部 16 个类别。blind 集 96 条已建立但**未运行**，只用于人工评分。
 
+外部基准全量（2026-11-12）：`bench/test.jsonl` 2 213 条，两个模型各跑一遍
+（`docs/eval/BENCH-BASELINE.md`）：deepseek-v4.1-flash 2 210/2 213、chrF++ 30.72、
+p50 2.3 s、$0.0898；glm-5.3-flash 2 211/2 213、chrF++ 30.12、p50 3.6 s、$0.0908。
+关闭"思考"后 completion token 从 45 降到 6；并发 3 + 重试 4 可避免站点 429。
+
 人工评审状态：`PENDING_HUMAN`（评审包见 `docs/eval/`）。
 
 **仍未做（S4）**

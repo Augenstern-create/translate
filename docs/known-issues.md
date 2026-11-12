@@ -16,7 +16,7 @@
 | K-15 | 后端 | 已在飞行的单次 HTTP 请求无法被 `ureq` 中断；取消保证 Future 立即返回、后续不再重试/切段，且每次尝试都有超时上限 | 低 | Accepted（上游库无中断句柄；等待时间有界） |
 | K-17 | 后端 | 供应商扩展字段差异只能靠 `extra_body`/`thinking_style` 手工配置 | 中 | Accepted |
 | K-19 | 评测 | **外部集已有真实参考译文**（WMT24++ / NTREX，2 954 条，见 `docs/eval/DATASETS.md`）；但自建 226 条的 `reference_zh` 仍为 `null`，且外部参考译文**没有人工质量标注** | 中 | 部分完成（人工评分仍 PENDING_HUMAN） |
-| K-20 | 评测 | 已在真实转发站跑自建 dev/smoke 与外部 bench/dev（20 条对照）；仍缺外部集全量跑分、繁体（zh_TW）与法律/医疗/专利领域 | 中 | 部分完成（S3 继续） |
+| K-20 | 评测 | 已完成 bench/test 全量（2 213 条）双模型跑分（`docs/eval/BENCH-BASELINE.md`）；仍缺繁体（zh_TW）与法律/医疗/专利领域数据 | 中 | 部分完成（S3 继续） |
 | K-21 | 本地模型 | CPU 实测已做（Qwen2.5-1.5B，p50 732 ms / RSS 1.87 GB，smoke 29/30）；**与远程基线的质量对比未做** | 高 | PENDING_HUMAN（缺密钥与人工评分） |
 | K-21b | 本地模型 | 1.5B 模型术语选择不稳定（无约束时会换同义词），长文档需分块（4k 上下文） | 中 | Accepted（靠术语表 + 分块策略） |
 | K-22 | 平台 | Windows 实机已跑通：`cargo test --workspace`（386 passed）、CLI 端到端翻译、磁盘缓存跨进程命中、`serve` 页面 CSP/CSRF（403）与 `/api/translate`（200）。仍未验证：真实 TLS 站点、系统代理、中文路径、长时间运行 | 中 | 部分完成（S4 补齐剩余场景） |
