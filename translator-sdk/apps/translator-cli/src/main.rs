@@ -872,10 +872,13 @@ pub fn build_from_toml(text: &str) -> Result<Translator, String> {
         }
     }
     // 测试入口没有配置文件路径：相对缓存路径按当前工作目录解析
-    build_translator(&config, &std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
-        .map_err(|e| match e {
-            Failure::App(msg) | Failure::Usage(msg) => msg,
-        })
+    build_translator(
+        &config,
+        &std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+    )
+    .map_err(|e| match e {
+        Failure::App(msg) | Failure::Usage(msg) => msg,
+    })
 }
 
 #[allow(dead_code)]

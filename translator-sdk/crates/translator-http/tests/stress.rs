@@ -15,8 +15,7 @@ use std::time::{Duration, Instant};
 use translator_http::{live_worker_threads, BackendsFile, HttpTranslationEngine};
 use translator_plugin_api::TranslationEngine;
 use translator_types::{
-    CancelToken, LanguageTag, RequestBudget, TextKind, TranslationErrorCode,
-    TranslationMode,
+    CancelToken, LanguageTag, RequestBudget, TextKind, TranslationErrorCode, TranslationMode,
 };
 
 #[path = "common/mock_server.rs"]

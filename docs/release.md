@@ -89,6 +89,7 @@ Windows 把 `./translator-cli` 换成 `translator-cli.exe`，环境变量用
 | `IntegrityFailure` | 译文没通过完整性/数字/语言检查；查看 `--json` 里的 `quality` |
 | 代理不生效 | 只支持 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` 环境变量；不支持系统代理设置与 PAC |
 | 缓存写入失败 | 会打印原因但不影响本次翻译结果；检查目录权限 |
+| 缓存文件位置 | `[cache] file` 用相对路径时，**相对于配置文件所在目录**（不是当前工作目录） |
 
 ## 6. 数据与隐私
 

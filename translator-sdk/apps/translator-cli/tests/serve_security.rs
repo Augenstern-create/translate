@@ -484,7 +484,9 @@ fn 连接数超过上限时返回_503() {
     );
     // 响应体在部分平台可能被截断，但状态码与 content-type 必须稳定
     assert!(
-        response.to_ascii_lowercase().contains("content-type: application/json"),
+        response
+            .to_ascii_lowercase()
+            .contains("content-type: application/json"),
         "{response}"
     );
 }

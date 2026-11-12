@@ -216,10 +216,7 @@ pub fn is_loopback_url(url: &str) -> bool {
         authority.split(':').next().unwrap_or("")
     };
     let host = host.to_ascii_lowercase();
-    host == "localhost"
-        || host == "::1"
-        || host == "0.0.0.0"
-        || host.starts_with("127.")
+    host == "localhost" || host == "::1" || host == "0.0.0.0" || host.starts_with("127.")
 }
 
 /// 执行一次 HTTP 往返（同步，只在 worker 线程里调用）。

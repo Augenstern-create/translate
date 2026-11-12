@@ -20,6 +20,16 @@
 - 新增 `crates/translator-http/tests/stress.rs`（默认 `#[ignore]`）：10 000 次
   Mock 压力测试报告 requests/ok/failed/cancelled/queue_full/http_calls/peak_threads/RSS。
 
+### 修复（Windows 实机发现）
+
+- **回环地址强制直连**：系统 `ALL_PROXY` 指向不可用代理时，`127.0.0.1`
+  的请求会被转发并得到"连接被重置"；现在 localhost/127.x/::1/0.0.0.0
+  一律绕过代理（`is_loopback_url` + 单测）。
+- **错误响应不再被 RST 吃掉**：早退的 4xx/5xx 会先排空一小段输入再半关闭，
+  Windows 客户端能读到错误说明（此前只看到 400）。
+- **连接上限拒绝**：同理先排空请求再写 503。
+- **缓存相对路径**按配置文件所在目录解析（此前按 CWD，Windows 上尤其反直觉）。
+
 ### 验证
 
 - 发布包在 Linux 上解压运行通过（中文路径配置 + 中文缓存文件名 + Emoji 输入）。
