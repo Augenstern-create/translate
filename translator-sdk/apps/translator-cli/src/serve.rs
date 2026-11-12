@@ -595,7 +595,19 @@ fn respond_json_inner(
         body = body
     );
     stream.write_all(payload.as_bytes())?;
-    stream.flush()
+    stream.flush()?;
+    // 早退的错误响应往往还没读完客户端请求体：直接关 socket 时 Windows 会发 RST，
+    // 客户端可能只拿到状态码、拿不到错误说明。先排空一小段输入再半关闭。
+    drain_request(stream);
+    let _ = stream.shutdown(std::net::Shutdown::Write);
+    Ok(())
+}
+
+/// 尽力排空已到达的请求数据（有上限），避免关闭时 RST 丢掉已写出的响应。
+fn drain_request(stream: &mut TcpStream) {
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(50)));
+    let mut sink = [0u8; 4096];
+    let _ = stream.read(&mut sink);
 }
 
 /// 页面 CSP：默认全禁，只放行带 nonce 的脚本/样式与同源 fetch。
