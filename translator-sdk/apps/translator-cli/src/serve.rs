@@ -121,6 +121,11 @@ pub fn serve_listener_with(
 /// 连接数超限时立即回复 503 并关闭，不排队、不创建新线程。
 fn reject_busy(mut stream: TcpStream) -> std::io::Result<()> {
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
+    stream.set_read_timeout(Some(Duration::from_millis(100)))?;
+    // 先把请求读掉（有上限）：如果直接关一个还有未读数据的 socket，
+    // Windows 会发 RST，客户端可能连 503 的响应都收不到。
+    let mut sink = [0u8; 4096];
+    let _ = stream.read(&mut sink);
     let body = r#"{"error":"服务繁忙，请稍后重试"}"#;
     let response = format!(
         "HTTP/1.1 503 Service Unavailable\r\ncontent-type: application/json; charset=utf-8\r\ncontent-length: {}\r\nconnection: close\r\ncache-control: no-store\r\n\r\n{}",
@@ -128,7 +133,10 @@ fn reject_busy(mut stream: TcpStream) -> std::io::Result<()> {
         body
     );
     stream.write_all(response.as_bytes())?;
-    stream.flush()
+    stream.flush()?;
+    // 明确关闭写方向，让对端能读到完整响应再断开
+    let _ = stream.shutdown(std::net::Shutdown::Write);
+    Ok(())
 }
 
 struct ServerState {
