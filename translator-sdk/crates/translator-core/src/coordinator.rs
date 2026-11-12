@@ -638,18 +638,31 @@ impl Coordinator {
         let identity = self.cache_identity(&route, options, &source, &req.target);
         let key = CacheKey::new(&work_text, identity);
         if let Some(entry) = self.cache_get(&key) {
-            self.counters.cache_hits.fetch_add(1, Ordering::Relaxed);
-            let mut entry = entry;
-            entry.result.elapsed_ms = started.elapsed().as_millis() as u64;
-            entry.result.warnings.push(TranslationWarning::CacheHit);
-            entry.diagnostics.cache_hit = true;
-            entry.diagnostics.elapsed_ms = entry.result.elapsed_ms;
-            entry.diagnostics.route_reason = format!("{}（命中缓存）", route.reason);
-            entry.diagnostics.protection_strategy = plan.strategy().as_str().to_string();
-            return Ok(TranslateOutput {
-                result: entry.result,
-                diagnostics: entry.diagnostics,
-            });
+            // 缓存（尤其是磁盘载入的条目）在返回前必须重新通过完整性与质量校验：
+            // 文件可能被截断、手改或来自旧版本，不能因为"键匹配"就信任内容。
+            let cached_problem = self.validate_cached(
+                &plan,
+                &entry.result.text,
+                &source,
+                &req.target,
+                options.mode,
+            );
+            if let Some(reason) = cached_problem {
+                self.invalidate_cache(&key, &reason);
+            } else {
+                self.counters.cache_hits.fetch_add(1, Ordering::Relaxed);
+                let mut entry = entry;
+                entry.result.elapsed_ms = started.elapsed().as_millis() as u64;
+                entry.result.warnings.push(TranslationWarning::CacheHit);
+                entry.diagnostics.cache_hit = true;
+                entry.diagnostics.elapsed_ms = entry.result.elapsed_ms;
+                entry.diagnostics.route_reason = format!("{}（命中缓存）", route.reason);
+                entry.diagnostics.protection_strategy = plan.strategy().as_str().to_string();
+                return Ok(TranslateOutput {
+                    result: entry.result,
+                    diagnostics: entry.diagnostics,
+                });
+            }
         }
 
         // 9. 执行（含一次受限重试）
@@ -1105,6 +1118,35 @@ impl Coordinator {
         self.persist_cache();
     }
 
+    /// 缓存条目是否可信：重新跑完整性 + 数字/语言检查。
+    ///
+    /// `None` 表示通过；`Some(原因)` 表示不安全，必须失效重译。
+    fn validate_cached(
+        &self,
+        plan: &ProtectionPlan,
+        text: &str,
+        source: &LanguageTag,
+        target: &LanguageTag,
+        mode: TranslationMode,
+    ) -> Option<String> {
+        let _ = source;
+        let report = quality::check_with_protection(plan, text, target, mode);
+        if report.has_fatal() {
+            return Some(report.fatal_summary());
+        }
+        None
+    }
+
+    /// 丢弃不可信的缓存条目（并同步磁盘文件）。
+    fn invalidate_cache(&self, key: &CacheKey, reason: &str) {
+        if let Ok(mut cache) = self.cache.lock() {
+            if cache.remove(key) {
+                eprintln!("缓存条目未通过完整性校验，已丢弃：{reason}");
+            }
+        }
+        self.persist_cache();
+    }
+
     fn cache_get(&self, key: &CacheKey) -> Option<CacheEntry> {
         self.cache.lock().ok().and_then(|mut c| c.get(key).cloned())
     }
@@ -1532,6 +1574,53 @@ fn hash8(text: &str) -> String {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     text.hash(&mut hasher);
     format!("{:08x}", hasher.finish() as u32)
+}
+
+#[cfg(test)]
+mod cached_validation_tests {
+    use super::*;
+
+    fn plan_for(source: &str) -> ProtectionPlan {
+        ProtectionPlan::prepare(source, &crate::protection::ProtectionPolicy::default())
+            .expect("保护计划")
+    }
+
+    #[test]
+    fn 缓存译文必须重新通过完整性校验() {
+        let c = test_coordinator();
+        let source = "Visit https://example.com/a now.";
+        let plan = plan_for(source);
+        let target = LanguageTag::new("zh-CN").unwrap();
+
+        // 正确译文（URL 保留）→ 通过
+        assert!(c
+            .validate_cached(
+                &plan,
+                "现在访问 https://example.com/a。",
+                &LanguageTag::new("en").unwrap(),
+                &target,
+                TranslationMode::Precise,
+            )
+            .is_none());
+
+        // 丢失受保护内容 → 必须被判为不可信
+        let bad = c.validate_cached(
+            &plan,
+            "现在访问网站。",
+            &LanguageTag::new("en").unwrap(),
+            &target,
+            TranslationMode::Precise,
+        );
+        assert!(bad.is_some(), "丢失 URL 的缓存条目必须失效");
+    }
+
+    fn test_coordinator() -> Coordinator {
+        let mut registry = PluginRegistry::new();
+        registry
+            .register_engine(translator_plugin_api::mocks::MockNmtEngine::new())
+            .expect("注册 mock 引擎失败");
+        Coordinator::new(Arc::new(registry), CoordinatorConfig::default())
+    }
 }
 
 #[cfg(test)]

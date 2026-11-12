@@ -28,7 +28,7 @@ cargo test -p translator-api           # 端到端流水线（脚本化引擎）
 当前基线（Linux，`refactor/online-translation-v1`）：
 
 ```text
-passed = 386   failed = 0   ignored = 4
+passed = 390   failed = 0   ignored = 4
 ```
 
 覆盖的关键场景：
@@ -108,7 +108,9 @@ passed = 386   failed = 0   ignored = 4
 - 段落策略：`Sentence` 三句 → 三次调用、拼接正确；预算 2 时第三句被拒
 - 数字/时间/币种：`两点半`、`九点一刻`、`USD 39.99`、`39.99 EUR`、`0.5 BTC`、`₹500` 均判等价
 - 响应中断：请求已发出后失败最多重试一次，且计入疑似计费
-- 磁盘缓存：写盘后用新实例加载即命中（引擎只被调用一次）；损坏/版本不符的文件被忽略
+- 磁盘缓存：写盘后用新实例加载即命中（引擎只被调用一次）；损坏/版本不符的文件被忽略；
+  条目自校验和被篡改时丢弃；语言标签按磁盘记录恢复（ja→ko 不会被写成 en→zh-CN）；
+  命中缓存但丢失受保护内容的译文会被判失效并重译
 
 **流水线（`translator-api`）**
 
@@ -221,7 +223,7 @@ node browser_check.mjs http://127.0.0.1:18096/
 |---|---|---|
 | 全工作区编译（含测试目标） | `cargo xwin check --workspace --all-targets --target x86_64-pc-windows-msvc` | 通过 |
 | CLI 二进制链接 | `cargo xwin build -p translator-cli --target x86_64-pc-windows-msvc` | 生成 `translator-cli.exe` |
-| 单元 + 集成测试 | Windows 实机 `cargo test --workspace --no-fail-fast` | **386 passed / 0 failed / 4 ignored**（S2 遗留问题补齐后复跑） |
+| 单元 + 集成测试 | Windows 实机 `cargo test --workspace --no-fail-fast` | **390 passed / 0 failed / 4 ignored**（磁盘缓存复查修复后复跑） |
 
 **Windows 端到端（2026-11-12 实测）**
 
@@ -232,6 +234,26 @@ node browser_check.mjs http://127.0.0.1:18096/
 | `serve` 页面 | 200；`Content-Security-Policy` 含 per-response nonce，无 `unsafe-inline`；token 长度 64 |
 | `POST /api/translate`（带令牌+Origin） | 200，`cached=true` |
 | `POST /api/translate`（无令牌） | 403 |
+
+**真实转发站冒烟（2026-11-12）**
+
+通过 OpenAI 兼容转发站（`https://starhub.iepose.cn/v1`，模型 `deepseek-v4.1-flash`）
+用真实密钥跑通主链；密钥只从环境变量 `STARHUB_KEY` 读取，未写入仓库或日志。
+
+| 输入 | 输出 | attempts | HTTP 调用 | 保护 | 质量 |
+|---|---|---|---|---|---|
+| `Hello, world.` | 你好，世界。 | 1 | 1 | marker | 0 issue |
+| `Order #10248 has shipped.` | 订单 #10248 已发货。 | 1 | 1 | marker | 0 issue |
+| `Visit https://example.com/docs for details.` | 访问 https://example.com/docs 了解详情。 | 1 | 1 | marker | 0 issue |
+| `You cannot access the account unless the owner approves it.` | 除非所有者批准，否则你无法访问该账户。 | 1 | 1 | marker | 0 issue |
+| `The price is USD 39.99, a 15% discount, valid until 2026-12-31 at 2:30 pm.` | 价格为 39.99 美元，可享 15% 折扣，有效期至 2026-12-31 下午 2:30。 | 1 | 1 | marker | 0 issue |
+| `If the build fails, ...` | 如果构建失败，管道会停止，并立即通知团队。 | 1 | 1 | marker | 0 issue |
+| 长句（38 词，单句） | 部署流水线会验证每一次提交……（完整） | 1 | 1 | marker | 0 issue |
+| Fast 模式 | 服务器暂时不可用，请稍后再试。 | 1 | 1 | marker | 0 issue |
+| 错误密钥 | `AuthenticationFailed`（HTTP 401），**未重试** | 1 | 1 | — | — |
+
+同一句第二次请求（新进程、开启磁盘缓存）：`cached=true`、`http_calls=0`、
+`warnings=["CacheHit"]`，缓存文件 588 字节。
 
 **仍未做（S4）**
 

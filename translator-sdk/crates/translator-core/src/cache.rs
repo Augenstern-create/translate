@@ -34,6 +34,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
 
+use translator_types::LanguageTag;
 use translator_types::{TextKind, TranslationMode, TranslationResult, TranslationRoute};
 
 use crate::diagnostics::TranslationDiagnostics;
@@ -211,6 +212,27 @@ struct PersistedEntry {
     text: String,
     engine_id: String,
     result_model_id: Option<String>,
+    /// 条目自校验和：文件被截断/手改/跨版本污染时，条目直接失效。
+    checksum: String,
+}
+
+/// 条目校验和：把"键 + 译文 + 引擎"一起哈希。
+///
+/// 只用于发现文件损坏/被修改，不用于安全认证（本地文件没有攻击者模型）。
+fn entry_checksum(
+    text_hash: u64,
+    source: &str,
+    target: &str,
+    engine_id: &str,
+    text: &str,
+) -> String {
+    let mut hasher = DefaultHasher::new();
+    text_hash.hash(&mut hasher);
+    source.hash(&mut hasher);
+    target.hash(&mut hasher);
+    engine_id.hash(&mut hasher);
+    text.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
 }
 
 /// 磁盘缓存文件格式。
@@ -260,6 +282,7 @@ pub struct QueryCache {
     hits: u64,
     inserts: u64,
     evictions: u64,
+    invalidated: u64,
 }
 
 impl QueryCache {
@@ -271,6 +294,7 @@ impl QueryCache {
             hits: 0,
             inserts: 0,
             evictions: 0,
+            invalidated: 0,
         }
     }
 
@@ -354,6 +378,13 @@ impl QueryCache {
                     context_fingerprint: id.context_fingerprint.clone(),
                     privacy_scope: id.privacy_scope.clone(),
                     generation_config_hash: id.generation_config_hash.clone(),
+                    checksum: entry_checksum(
+                        key.text_hash,
+                        &id.source,
+                        &id.target,
+                        &entry.result.engine_id,
+                        &entry.result.text,
+                    ),
                     text: entry.result.text.clone(),
                     engine_id: entry.result.engine_id.clone(),
                     result_model_id: entry.result.model_id.clone(),
@@ -402,6 +433,25 @@ impl QueryCache {
 
         let mut loaded = 0usize;
         for entry in payload.entries.into_iter().take(capacity) {
+            // 1) 自校验：文件被截断/手改/旧格式污染 → 跳过该条目
+            let expected = entry_checksum(
+                entry.text_hash,
+                &entry.source,
+                &entry.target,
+                &entry.engine_id,
+                &entry.text,
+            );
+            if expected != entry.checksum {
+                continue;
+            }
+            // 2) 语言标签必须真实可解析；解析失败说明条目不可信 → 跳过
+            let Ok(result_source) = LanguageTag::new(entry.source.as_str()) else {
+                continue;
+            };
+            let Ok(result_target) = LanguageTag::new(entry.target.as_str()) else {
+                continue;
+            };
+
             let identity = CacheIdentity::new(entry.backend_id, mode_parse(&entry.mode))
                 .with_languages(entry.source, entry.target)
                 .with_model(entry.model_id, entry.model_revision)
@@ -419,16 +469,11 @@ impl QueryCache {
                 text_hash: entry.text_hash,
                 identity,
             };
-            // 语言标签从磁盘恢复时不可信，直接复用中英标签占位；
-            // 真正决定命中与否的是 key（含语言字符串），结果里的标签只用于展示。
-            let source =
-                translator_types::LanguageTag::new("en").expect("常量语言标签 en 一定合法");
-            let target =
-                translator_types::LanguageTag::new("zh-CN").expect("常量语言标签 zh-CN 一定合法");
+            // 语言标签用磁盘记录里的真实值（上面已校验可解析）
             let result = TranslationResult {
                 text: entry.text,
-                source,
-                target,
+                source: result_source,
+                target: result_target,
                 engine_id: entry.engine_id.clone(),
                 model_id: entry.result_model_id,
                 elapsed_ms: 0,
@@ -446,6 +491,16 @@ impl QueryCache {
         (cache, loaded)
     }
 
+    /// 删除一个条目（命中的条目未通过校验时使用）。
+    pub fn remove(&mut self, key: &CacheKey) -> bool {
+        if self.map.remove(key).is_some() {
+            self.order.retain(|existing| existing != key);
+            self.invalidated += 1;
+            return true;
+        }
+        false
+    }
+
     pub fn stats(&self) -> CacheStats {
         CacheStats {
             capacity: self.capacity,
@@ -453,6 +508,7 @@ impl QueryCache {
             hits: self.hits,
             inserts: self.inserts,
             evictions: self.evictions,
+            invalidated: self.invalidated,
         }
     }
 }
@@ -465,6 +521,8 @@ pub struct CacheStats {
     pub hits: u64,
     pub inserts: u64,
     pub evictions: u64,
+    /// 命中但因完整性/校验失败被丢弃的条目数。
+    pub invalidated: u64,
 }
 
 #[cfg(test)]
@@ -616,6 +674,79 @@ mod tests {
         assert_eq!(count, 1);
         let hit = loaded.map.get(&key).expect("同一身份+文本应命中磁盘缓存");
         assert_eq!(hit.result.text, "你好");
+    }
+
+    #[test]
+    fn 磁盘缓存恢复真实语言标签() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.json");
+
+        let mut cache = QueryCache::new(8);
+        let ja = LanguageTag::new("ja").unwrap();
+        let ko = LanguageTag::new("ko").unwrap();
+        let id = identity().with_languages("ja".to_string(), "ko".to_string());
+        let key = CacheKey::new("こんにちは", id);
+        cache.insert(
+            key.clone(),
+            CacheEntry {
+                result: TranslationResult {
+                    text: "안녕하세요".to_string(),
+                    source: ja.clone(),
+                    target: ko.clone(),
+                    engine_id: "mock".to_string(),
+                    model_id: None,
+                    elapsed_ms: 0,
+                    warnings: Vec::new(),
+                },
+                diagnostics: TranslationDiagnostics::minimal("mock".to_string()),
+            },
+        );
+        cache.save_to_file(&path).unwrap();
+
+        let (loaded, count) = QueryCache::load_from_file(&path, 8);
+        assert_eq!(count, 1);
+        let hit = loaded.map.get(&key).expect("应命中");
+        assert_eq!(hit.result.source.as_str(), "ja", "源语言不得被写死");
+        assert_eq!(hit.result.target.as_str(), "ko", "目标语言不得被写死");
+    }
+
+    #[test]
+    fn 被篡改的缓存条目会被跳过() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.json");
+
+        let mut cache = QueryCache::new(8);
+        cache.insert(CacheKey::new("hello", identity()), entry("你好"));
+        cache.save_to_file(&path).unwrap();
+
+        // 手改译文但不更新校验和
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let tampered = raw.replace("你好", "被篡改的译文");
+        assert_ne!(raw, tampered, "文件应包含原文");
+        std::fs::write(&path, tampered).unwrap();
+
+        let (loaded, count) = QueryCache::load_from_file(&path, 8);
+        assert_eq!(count, 0, "校验和不匹配的条目必须被丢弃");
+        assert!(loaded.is_empty());
+    }
+
+    #[test]
+    fn 语言标签非法的条目被跳过() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.json");
+
+        let mut cache = QueryCache::new(8);
+        cache.insert(CacheKey::new("hello", identity()), entry("你好"));
+        cache.save_to_file(&path).unwrap();
+
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let broken = raw.replace("\"target\":\"zh-CN\"", "\"target\":\"not a tag!\"");
+        assert_ne!(raw, broken);
+        std::fs::write(&path, broken).unwrap();
+
+        let (loaded, count) = QueryCache::load_from_file(&path, 8);
+        assert_eq!(count, 0, "语言标签非法的条目必须被丢弃");
+        assert!(loaded.is_empty());
     }
 
     #[test]
