@@ -15,7 +15,7 @@
 | K-13 | 后端 | 流式（SSE）未实现；配置 `stream = true` 会直接报错 | 中 | Accepted（未验证的协议不实现） |
 | K-15 | 后端 | 已在飞行的单次 HTTP 请求无法被 `ureq` 中断；取消保证 Future 立即返回、后续不再重试/切段，且每次尝试都有超时上限 | 低 | Accepted（上游库无中断句柄；等待时间有界） |
 | K-17 | 后端 | 供应商扩展字段差异只能靠 `extra_body`/`thinking_style` 手工配置 | 中 | Accepted |
-| K-19 | 评测 | `fixtures/eval` 的 `reference_zh` 仍为空，没有人工参考译文；dev 集已用真实转发站跑通（`docs/quality-baseline.md`），但没有参考译文就无法算指标、也不应据此调参 | 高 | PENDING_HUMAN |
+| K-19 | 评测 | `fixtures/eval` 的 `reference_zh` 仍为空；dev/smoke 已跑通真实转发站，blind 集（96 条）已建立但未运行。没有人工参考译文就无法算指标、也不应据此调参 | 高 | PENDING_HUMAN |
 | K-20 | 评测 | 已在真实转发站跑过 dev/smoke 两个集（deepseek-v4.1-flash 与 glm-5.3-flash 各 100/100、30/30 通过机器判定）；仍缺 blind 集与真实账单对照 | 中 | 部分完成（S3 继续） |
 | K-21 | 本地模型 | CPU 实测已做（Qwen2.5-1.5B，p50 732 ms / RSS 1.87 GB，smoke 29/30）；**与远程基线的质量对比未做** | 高 | PENDING_HUMAN（缺密钥与人工评分） |
 | K-21b | 本地模型 | 1.5B 模型术语选择不稳定（无约束时会换同义词），长文档需分块（4k 上下文） | 中 | Accepted（靠术语表 + 分块策略） |

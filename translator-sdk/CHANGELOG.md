@@ -2,6 +2,16 @@
 
 ## S3 评测基线（2026-11-12）
 
+### blind 集与费用
+
+- 新增 `fixtures/eval/blind.jsonl`（96 条，16 类，与 dev/smoke 零重叠），
+  **未运行、不参与调参**，只用于人工评分。
+- 新增 `tools/quality-runner/tests/datasets.rs`：数据集结构测试（字段/编号/重复/
+  金额不得进 `must_preserve`/blind 不与 dev 重叠/类别齐全）。
+- 实测费用（账单端点差值）：dev 100 条 deepseek-v4.1-flash +$0.010304、
+  glm-5.3-flash +$0.002824（glm 约便宜 3.6×）；定价表倍率推算与实测不一致，
+  已在 `docs/quality-baseline.md` 说明。
+
 - `quality-runner`：新增 `--glossary-from-dataset`（数据集术语 → 临时术语表 + `Enforce`）、
   `--out-md`（人工评审包）、`latency_p95_ms` / `http_calls` / `content_retries` /
   `tokens_*` / `estimated_cost_usd` 字段；评测请求显式使用 `RemoteOnly`。

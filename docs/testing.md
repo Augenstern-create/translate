@@ -28,7 +28,7 @@ cargo test -p translator-api           # 端到端流水线（脚本化引擎）
 当前基线（Linux，`refactor/online-translation-v1`）：
 
 ```text
-passed = 391   failed = 0   ignored = 4
+passed = 395   failed = 0   ignored = 4
 ```
 
 覆盖的关键场景：
@@ -223,7 +223,7 @@ node browser_check.mjs http://127.0.0.1:18096/
 |---|---|---|
 | 全工作区编译（含测试目标） | `cargo xwin check --workspace --all-targets --target x86_64-pc-windows-msvc` | 通过 |
 | CLI 二进制链接 | `cargo xwin build -p translator-cli --target x86_64-pc-windows-msvc` | 生成 `translator-cli.exe` |
-| 单元 + 集成测试 | Windows 实机 `cargo test --workspace --no-fail-fast` | **391 passed / 0 failed / 4 ignored**（S3 评测基线后复跑） |
+| 单元 + 集成测试 | Windows 实机 `cargo test --workspace --no-fail-fast` | **395 passed / 0 failed / 4 ignored**（S3 blind 集与费用测量后复跑） |
 
 **Windows 端到端（2026-11-12 实测）**
 
@@ -270,6 +270,12 @@ node browser_check.mjs http://127.0.0.1:18096/
 | dev 100 | glm-5.3-flash | 100/100 | 2,817 ms | 5,426 ms |
 | smoke 30 | deepseek-v4.1-flash | 30/30 | 2,567 ms | 3,347 ms |
 | smoke 30 | glm-5.3-flash | 30/30 | 2,699 ms | 5,066 ms |
+
+费用（真实账单端点差值）：dev 100 条 deepseek-v4.1-flash +$0.010304、glm-5.3-flash +$0.002824。
+
+数据集结构测试（`tools/quality-runner/tests/datasets.rs`，4 条）：
+字段完整、id/文本不重复、金额不得进 `must_preserve`、blind 集与 dev/smoke 零重叠、
+blind 覆盖全部 16 个类别。blind 集 96 条已建立但**未运行**，只用于人工评分。
 
 人工评审状态：`PENDING_HUMAN`（评审包见 `docs/eval/`）。
 

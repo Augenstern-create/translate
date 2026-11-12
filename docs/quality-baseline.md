@@ -38,7 +38,33 @@
 glossary 7/7、money 6/6、negation 6/6、paragraph 6/6、passive 6/6、polysemy 6/6、
 question 6/6、reference 7/7、statement 6/6、tech-doc 7/7、tense 6/6、ui 6/6、url 6/6。
 
-### 2.1 必须说明的计量差异
+### 2.1 实测费用（来自转发站账单端点，不是估算）
+
+方法：调用前后各读一次 `GET /v1/dashboard/billing/usage` 的 `total_usage`（单位：美分），
+取差值；两次读取之间没有其它客户端使用该密钥。这是**该站点的真实计费**，
+但只代表这一个转发站、这一天的价格。
+
+| 数据集 | 模型 | 账单增量 | 折算每 1000 次请求 | 混合每百万 token |
+|---|---|---|---|---|
+| dev 100 条 | deepseek-v4.1-flash | +0.010304 USD | **$0.103** | ≈ $0.240 |
+| dev 100 条 | glm-5.3-flash | +0.002824 USD | **$0.028** | ≈ $0.112 |
+| smoke 30 条 | deepseek-v4.1-flash | +0.002918 USD | $0.097 | — |
+| smoke 30 条 | glm-5.3-flash | +0.000586 USD | $0.020 | — |
+
+结论：**glm-5.3-flash 在这个转发站上约便宜 3.6 倍**（同样的 dev 集、同样 100% 通过机器判定）。
+注意这与"输出 token 更少"是两件事——费用差异来自单价与输出计数口径的叠加。
+
+### 2.2 定价表与实测不一致（不要用表算账）
+
+`GET /api/pricing` 给出的倍率（`model_ratio` / `completion_ratio`）按 new-api 常见口径
+（1 倍率 = $2/百万 token）推算，会**低估**：
+deepseek 推算 $0.00782 vs 实测 $0.01030（+32%），
+glm 推算 $0.00066 vs 实测 $0.00282（约 4.3 倍）。
+
+因此本仓库**不硬编码供应商价格**，`quality-runner` 的 `estimated_cost_usd`
+在未配置单价时为 `null`；要做费用对比就用上面的账单差值法。
+
+### 2.3 必须说明的计量差异
 
 `glm-5.3-flash` 报告的输出 token（30 条 smoke 仅 413）明显低于 `deepseek-v4.1-flash`
 （4,420），但两者输出**字符数几乎相同**（639 vs 643）。差异来自服务端的计数口径
@@ -57,6 +83,14 @@ question 6/6、reference 7/7、statement 6/6、tech-doc 7/7、tense 6/6、ui 6/6
 | 运行器只看 Critical 数字问题，币种丢失（Major）不会被发现 | 用例声明数字时，Major 的 `number_missing` / `number_added` / `number_relation_mismatch` 也算失败 |
 | 运行器默认策略是"本地优先、绝不自动回退远程"，评测直接失败 | 显式 `RemoteOnly`；并在报告里注明这是评测用途 |
 | 没有费用/用量维度 | 报告新增 `http_calls`、`content_retries`、`tokens_*`、`estimated_cost_usd`、`latency_p95_ms`，并可输出 Markdown 评审包 |
+
+## 3.1 blind 集已建立（未运行、不得用于调参）
+
+`translator-sdk/fixtures/eval/blind.jsonl`：96 条（16 个类别 × 6），与 dev/smoke 文本零重叠
+（`tools/quality-runner/tests/datasets.rs` 里有断言）。它**没有**被自动化跑过，
+也不会参与任何提示词/规则调整——按照约定，blind 集只用于人工评分。
+
+`reference_zh` 仍全部为 `null`：参考译文需要人写，我没有代替人工撰写。
 
 ## 4. 人工评审材料
 
