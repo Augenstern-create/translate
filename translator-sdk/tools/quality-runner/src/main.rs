@@ -507,6 +507,8 @@ fn evaluate_case(
                 elapsed_ms: elapsed,
                 failures,
                 error: None,
+                dataset_id: case.dataset_id.clone(),
+                document_id: case.document_id.clone(),
                 notes: case.notes.clone(),
             }
         }
@@ -519,6 +521,8 @@ fn evaluate_case(
             elapsed_ms: elapsed,
             failures: vec![format!("翻译失败：{}（{}）", err.message, err.code)],
             error: Some(err.code.as_str().to_string()),
+            dataset_id: case.dataset_id.clone(),
+            document_id: case.document_id.clone(),
             notes: case.notes.clone(),
         },
     };
@@ -768,6 +772,12 @@ struct CategoryStat {
 #[derive(Debug, Serialize)]
 struct CaseResult {
     id: String,
+    /// 数据来源（`wmt24pp` / `ntrex128` / 空表示自建用例）。
+    #[serde(default)]
+    dataset_id: String,
+    /// 文档边界（外部数据集才有）。
+    #[serde(default)]
+    document_id: String,
     category: String,
     ok: bool,
     output: String,

@@ -104,6 +104,40 @@ fn blind_集与开发集不重叠() {
 }
 
 #[test]
+fn 已提交的逐句译文与数据集逐条对齐() {
+    // docs/eval/runs/ 里保存了 bench/test 的完整译文；它们必须与数据集一一对应，
+    // 否则人工评审会看到"缺条目/多条目"的假象。
+    let runs = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../..")
+        .join("docs/eval/runs");
+    let merged = runs.join("bench-test-both-models.jsonl");
+    if !merged.exists() {
+        eprintln!("跳过：{} 不存在", merged.display());
+        return;
+    }
+
+    let dataset: BTreeSet<String> = load("bench/test.jsonl")
+        .iter()
+        .map(|c| c["id"].as_str().unwrap_or("").to_string())
+        .collect();
+    let text = std::fs::read_to_string(&merged).expect("读取合并译文失败");
+    let mut seen = BTreeSet::new();
+    for line in text.lines().filter(|l| !l.trim().is_empty()) {
+        let row: Value = serde_json::from_str(line).expect("合并译文里有非法 JSON");
+        let id = row["id"].as_str().expect("缺少 id").to_string();
+        for field in ["dataset_id", "source", "reference", "ds", "glm"] {
+            assert!(!row[field].is_null(), "{id} 缺少字段 {field}");
+        }
+        assert!(
+            row["ds"]["output"].is_string() && row["glm"]["output"].is_string(),
+            "{id} 的模型输出必须是字符串（允许空串）"
+        );
+        seen.insert(id);
+    }
+    assert_eq!(seen, dataset, "逐句译文的 id 集合必须与数据集完全一致");
+}
+
+#[test]
 fn blind_集覆盖全部类别() {
     let categories: BTreeSet<String> = load("blind.jsonl")
         .iter()

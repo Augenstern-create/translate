@@ -91,7 +91,10 @@ cargo run -q --release -p quality-runner -- \
 ## 6. 数据与复现
 
 - 汇总：`docs/eval/bench-test-summary.md`（由 `scripts/summarize-eval.py` 生成）
-- 完整 JSON（含每句译文）：本地 `/tmp/bench-ds.json`、`/tmp/bench-glm.json`（未入库，体积约 1 MB/份）
+- **逐句完整译文已入库**：`docs/eval/runs/`
+  - `bench-test-deepseek-v4.1-flash.json` / `bench-test-glm-5.3-flash.json`（原始报告）
+  - `bench-test-both-models.jsonl`（逐句对照：原文 + 参考译文 + 两个模型输出）
+  - 生成方式与用法见 `docs/eval/runs/README.md`
 - 数据集与许可证：`docs/eval/DATASETS.md`
 - 账单：转发站 `GET /v1/dashboard/billing/usage` 的调用前后差值（美分）：
   deepseek 64.7008 → 73.6792，glm 73.6792 → 82.7572。

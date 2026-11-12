@@ -20,6 +20,14 @@
 - 新增 `crates/translator-http/tests/stress.rs`（默认 `#[ignore]`）：10 000 次
   Mock 压力测试报告 requests/ok/failed/cancelled/queue_full/http_calls/peak_threads/RSS。
 
+### 评测产物入库
+
+- `docs/eval/runs/`：bench/test 2 213 条的**完整模型译文**（deepseek-v4.1-flash、
+  glm-5.3-flash）与逐句对照 JSONL（原文 + 参考译文 + 两个输出）。
+- 新增 `scripts/merge-eval-runs.py`（确定性合并）与
+  `quality-runner/tests/datasets.rs` 的对齐测试（id 集合必须与数据集完全一致）。
+- `CaseResult` 新增 `dataset_id` / `document_id` 字段，报告自带来源信息。
+
 ### 修复（审查意见，P1 / P2）
 
 - **缓存崩溃恢复**：加载时若主文件缺失或损坏，会校验 `.bak`（格式/版本/条目校验和）
