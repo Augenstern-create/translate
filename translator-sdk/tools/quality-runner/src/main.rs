@@ -331,6 +331,9 @@ fn replay(cases: &[EvalCase], args: &Args) -> Result<u8, String> {
     let mut report = serde_json::json!({
         "dataset": args.dataset.display().to_string(),
         "mode": "replay",
+        // 回放只复算**确定性**核验：语义质量没有评估，不能读成"通过"
+        "status": "not_evaluated",
+        "semantic_evaluation": "not_run",
         "human_review": "PENDING_HUMAN",
         "cases": [],
     });
@@ -356,8 +359,8 @@ fn replay(cases: &[EvalCase], args: &Args) -> Result<u8, String> {
                 .iter()
                 .map(|i| format!("{}:{}", i.kind.as_str(), i.detail))
                 .collect();
-            // 只报告确定性核验结果；语义是否正确由人工判定，这里不设通过/失败。
-            let ok = true;
+            // 只报告确定性核验结果；语义是否正确由人工判定。
+            let status = "diagnostic_only";
             if case.severity == "reference" {
                 eprintln!(
                     "注意：{} 是参考译文问题用例（{}）",
@@ -371,7 +374,7 @@ fn replay(cases: &[EvalCase], args: &Args) -> Result<u8, String> {
                 .push(serde_json::json!({
                     "id": case.id,
                     "variant": label,
-                    "ok": ok,
+                    "status": status,
                     "issues": detected,
                     "output": bad,
                 }));

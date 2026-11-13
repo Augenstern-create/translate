@@ -288,10 +288,7 @@ impl When {
                 return false;
             }
         }
-        if self.is_single_word && !text::looks_like_single_word(text) {
-            return false;
-        }
-        true
+        !self.is_single_word || text::looks_like_single_word(text)
     }
 }
 

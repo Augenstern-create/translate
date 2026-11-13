@@ -1129,10 +1129,31 @@ impl Coordinator {
         target: &LanguageTag,
         mode: TranslationMode,
     ) -> Option<String> {
-        let _ = source;
         let report = quality::check_with_protection(plan, text, target, mode);
         if report.has_fatal() {
             return Some(report.fatal_summary());
+        }
+        // 术语终检必须和正常路径一致：缓存键正确 ≠ 缓存内容满足术语约束。
+        // 这里只做**只读核验**，绝不修改缓存里的译文。
+        if self.config.term_policy.rejects_unmet_strict() {
+            if let Some(glossary) = &self.config.glossary {
+                let verification = glossary.verify(
+                    plan.source(),
+                    text,
+                    source.as_str(),
+                    target.as_str(),
+                    self.config.domain.as_deref(),
+                );
+                if !verification.strict_satisfied() {
+                    let detail: Vec<String> = verification
+                        .violations
+                        .iter()
+                        .filter(|v| v.strict)
+                        .map(|v| v.detail())
+                        .collect();
+                    return Some(format!("缓存译文未满足严格术语：{}", detail.join("；")));
+                }
+            }
         }
         None
     }
@@ -1620,6 +1641,88 @@ mod cached_validation_tests {
             .register_engine(translator_plugin_api::mocks::MockNmtEngine::new())
             .expect("注册 mock 引擎失败");
         Coordinator::new(Arc::new(registry), CoordinatorConfig::default())
+    }
+}
+
+#[cfg(test)]
+mod cached_term_tests {
+    use super::*;
+
+    fn glossary() -> Arc<Glossary> {
+        let json = r#"{
+            "schema_version": 1,
+            "id": "g.test",
+            "version": 1,
+            "entries": [
+                {"id": "t1", "source": "knowledge base", "target": "知识库", "strict": true}
+            ]
+        }"#;
+        Arc::new(Glossary::from_json(json).expect("术语表应可解析"))
+    }
+
+    fn coordinator_with_glossary(policy: TermPolicy) -> Coordinator {
+        let mut registry = PluginRegistry::new();
+        registry
+            .register_engine(translator_plugin_api::mocks::MockNmtEngine::new())
+            .expect("注册 mock 引擎失败");
+        let config = CoordinatorConfig {
+            glossary: Some(glossary()),
+            term_policy: policy,
+            ..CoordinatorConfig::default()
+        };
+        Coordinator::new(Arc::new(registry), config)
+    }
+
+    #[test]
+    fn 缓存命中也要满足严格术语() {
+        let coordinator = coordinator_with_glossary(TermPolicy::Enforce);
+        let source = "Open the knowledge base now.";
+        let plan = ProtectionPlan::prepare(source, &crate::protection::ProtectionPolicy::default())
+            .expect("保护计划");
+        let en = LanguageTag::new("en").unwrap();
+        let zh = LanguageTag::new("zh-CN").unwrap();
+
+        // 缓存里的译文没用到"知识库" → 必须判无效（缓存未命中，重新翻译）
+        let bad = coordinator.validate_cached(
+            &plan,
+            "现在打开资料库。",
+            &en,
+            &zh,
+            TranslationMode::Precise,
+        );
+        assert!(bad.is_some(), "缓存命中不得绕过严格术语");
+
+        // 满足术语的缓存译文 → 有效
+        let good = coordinator.validate_cached(
+            &plan,
+            "现在打开知识库。",
+            &en,
+            &zh,
+            TranslationMode::Precise,
+        );
+        assert!(good.is_none(), "{good:?}");
+    }
+
+    #[test]
+    fn warn_策略下缓存不因术语被丢弃() {
+        let coordinator = coordinator_with_glossary(TermPolicy::Warn);
+        let source = "Open the knowledge base now.";
+        let plan = ProtectionPlan::prepare(source, &crate::protection::ProtectionPolicy::default())
+            .expect("保护计划");
+        let en = LanguageTag::new("en").unwrap();
+        let zh = LanguageTag::new("zh-CN").unwrap();
+        assert!(
+            coordinator
+                .validate_cached(
+                    &plan,
+                    "现在打开资料库。",
+                    &en,
+                    &zh,
+                    TranslationMode::Precise
+                )
+                .is_none(),
+            "Warn 策略只报告，不应丢弃缓存"
+        );
     }
 }
 

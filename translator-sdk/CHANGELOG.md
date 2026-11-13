@@ -20,6 +20,20 @@
 - 新增 `crates/translator-http/tests/stress.rs`（默认 `#[ignore]`）：10 000 次
   Mock 压力测试报告 requests/ok/failed/cancelled/queue_full/http_calls/peak_threads/RSS。
 
+### 护栏复查收尾（S3 纠偏第三轮）
+
+- **金额与币种成对核验**：不再"整段里分别找到数值和币种"就算通过。
+  每个金额在其数值的 ±20 字符窗口内、且**不跨过相邻数值**地查找币种写法，
+  因此 `$10 … €20` 被译成 `10欧元 … 20美元` 会判致命。
+- **币种严格性**：来源是 ISO 代码（`CNY|¥`）时按代码收紧（人民币不接受"日元/JPY"）；
+  裸 `¥` 仍按源文歧义取并集。修掉"元"命中"日元/欧元"的边界问题。
+- **缓存命中同样复核严格术语**：`validate_cached` 增加只读 `Glossary::verify()`，
+  严格术语不满足时缓存条目失效并重译（不修改缓存译文）。
+- **Clippy**：修 `translator-rules/src/lib.rs` 的 `needless_bool`（CI 实际失败点）。
+- **回放报告**：`--replay` 输出 `status: diagnostic_only` 与顶层
+  `status: not_evaluated` / `semantic_evaluation: not_run`，不再用 `ok: true` 暗示通过。
+- 文档清理：删除残留的"未翻译片段自动检测"描述。
+
 ### 护栏收敛（S3 纠偏第二轮）
 
 - **删除** `untranslated_fragments` / `mask_protected` / `suspicious_phrases` /
@@ -37,7 +51,8 @@
 ### 质量流水线方向纠正（S3）
 
 - **删除**基于英文功能词表 + 词数阈值的 `residual_english_fragment`。
-- 新增 `quality/heuristic.rs::untranslated_fragments`：用**保护计划**遮掉 URL/代码/变量，
+- （历史实现，**已在"护栏收敛"中删除**）新增 `quality/heuristic.rs::untranslated_fragments`：
+  用**保护计划**遮掉 URL/代码/变量，
   用**原文对应**（连续 ≥2 个普通英文词在原文里同样出现）判定残留，
   标识符（全大写/含数字/CamelCase/含 `_`-`）与专名标题（原文含大写实词）自动排除。
   由 `check_with_protection` 调用——只在统一终检路径上生效，不新增平行流水线。

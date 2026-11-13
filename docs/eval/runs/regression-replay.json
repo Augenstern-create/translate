@@ -3,29 +3,29 @@
     {
       "id": "regress-440",
       "issues": [],
-      "ok": true,
       "output": "一切都 geared to being a weapon，在 accompanying media 中以 gratuitous effect 展示。",
+      "status": "diagnostic_only",
       "variant": "deepseek"
     },
     {
       "id": "regress-440",
       "issues": [],
-      "ok": true,
       "output": "一切都朝着“武器”的方向设计，并在配套的媒体中被过度夸张地展示出来。",
+      "status": "diagnostic_only",
       "variant": "glm"
     },
     {
       "id": "regress-112",
       "issues": [],
-      "ok": true,
       "output": "象牙白也是如此，以他们自己独特的方式。当象牙白公开自己是非二元性别时，一切都变了。",
+      "status": "diagnostic_only",
       "variant": "glm"
     },
     {
       "id": "regress-ntrex-1",
       "issues": [],
-      "ok": true,
       "output": "威尔士议会议员担心“看起来像木偶”。",
+      "status": "diagnostic_only",
       "variant": "deepseek"
     },
     {
@@ -33,8 +33,8 @@
       "issues": [
         "possible_omission:译文/源文字符比仅 0.18，可能遗漏内容"
       ],
-      "ok": true,
       "output": "明天是个人表演环节，这与之前不同。",
+      "status": "diagnostic_only",
       "variant": "deepseek"
     },
     {
@@ -42,15 +42,15 @@
       "issues": [
         "possible_omission:译文/源文字符比仅 0.17，可能遗漏内容"
       ],
-      "ok": true,
       "output": "明天就是各自上台表演的环节了……",
+      "status": "diagnostic_only",
       "variant": "glm"
     },
     {
       "id": "regress-611",
       "issues": [],
-      "ok": true,
       "output": "最后只剩把座椅装回去了。",
+      "status": "diagnostic_only",
       "variant": "glm"
     },
     {
@@ -58,19 +58,21 @@
       "issues": [
         "conditional_dropped:源文有条件关系，译文没有条件标记"
       ],
-      "ok": true,
       "output": "……确保你的账单在你资金不足的前提下也能得到支付。",
+      "status": "diagnostic_only",
       "variant": "reference_original"
     },
     {
       "id": "regress-ntrex-1012",
       "issues": [],
-      "ok": true,
       "output": "……对我们民主党是否仍能维系的考验。",
+      "status": "diagnostic_only",
       "variant": "reference_original"
     }
   ],
   "dataset": "fixtures/eval/regression.jsonl",
   "human_review": "PENDING_HUMAN",
-  "mode": "replay"
+  "mode": "replay",
+  "semantic_evaluation": "not_run",
+  "status": "not_evaluated"
 }

@@ -602,24 +602,27 @@ pub fn check(source: &str, output: &str) -> NumberCheck {
                 let value_ok = token
                     .value
                     .is_some_and(|v| value_present(v, &output_values, output));
-                let currency_ok = token
-                    .currency
-                    .as_deref()
-                    .is_some_and(|sym| output.contains(sym) || currency_word_present(sym, output));
-                // 金额是**确定性能判定**的：数值丢失或币种被丢/换都直接判致命。
-                // （数量词、序数仍只报 Major——那些存在多种合法写法。）
+                // 金额与币种必须**成对**出现：数值和币种分开在译文里各出现一次不算通过
+                // （否则 `$10 … €20` 被译成 `10欧元 … 20美元` 仍会漏过检查）。
+                let units = currency_units(token.currency.as_deref());
+                let paired_ok = token
+                    .value
+                    .is_some_and(|v| paired_currency_present(v, &units, output));
                 if !value_ok {
                     check.issues.push(QualityIssue::critical(
                         QualityIssueKind::NumberMissing,
                         format!("金额 {} 的数值未在译文中找到", token.raw),
                     ));
-                } else if !currency_ok {
+                } else if !paired_ok {
                     check.issues.push(QualityIssue::critical(
                         QualityIssueKind::NumberMissing,
-                        format!("金额 {} 的币种在译文中丢失或被替换", token.raw),
+                        format!(
+                            "金额 {} 的币种与其数值不再相邻（可能被交换或替换）",
+                            token.raw
+                        ),
                     ));
                 }
-                value_ok
+                value_ok && paired_ok
             }
             NumberKind::Percent => {
                 let value_ok = token
@@ -871,31 +874,198 @@ fn currency_code_after(chars: &[char], from: usize) -> Option<(&'static str, &'s
     currency_code(&code)
 }
 
-/// 译文里是否出现了该币种（符号或中文/代码写法）。
-fn currency_word_present(symbol: &str, output: &str) -> bool {
-    // 复合写法：`USD|$`（来自代码分支）
-    if let Some((code, sym)) = symbol.split_once('|') {
-        return currency_word_present(sym, output) || output.contains(code);
+/// 某个金额允许的本地化写法。
+///
+/// 来源是 **ISO 代码**（`CNY|¥`）时按代码收紧：人民币不能用"日元/JPY"顶替；
+/// 来源只是符号（`¥`）时无法区分 CNY/JPY，取并集（这是源文本身的歧义）。
+fn currency_units(currency: Option<&str>) -> Vec<&'static str> {
+    let Some(currency) = currency else {
+        return Vec::new();
+    };
+    if let Some((code, _symbol)) = currency.split_once('|') {
+        return match code {
+            "USD" => vec!["美元", "美金", "USD", "刀"],
+            "EUR" => vec!["欧元", "EUR"],
+            "GBP" => vec!["英镑", "GBP"],
+            "CNY" => vec!["人民币", "CNY", "RMB", "元", "块"],
+            "JPY" => vec!["日元", "JPY"],
+            "INR" => vec!["卢比", "INR"],
+            "RUB" => vec!["卢布", "RUB"],
+            "KRW" => vec!["韩元", "KRW"],
+            "TRY" => vec!["里拉", "TRY"],
+            "BTC" => vec!["比特币", "BTC"],
+            "ETH" => vec!["以太", "以太坊", "ETH"],
+            _ => vec![],
+        };
     }
-    match symbol {
-        // 注意：**不能**把裸 "元" 当作美元——"欧元/日元/港元" 里都含 "元"，
-        // 那会把"币种被换掉"误判成通过（实测缺陷）。
-        "$" => ["美元", "美金", "USD", "刀"]
-            .iter()
-            .any(|w| output.contains(w)),
-        "€" => ["欧元", "EUR"].iter().any(|w| output.contains(w)),
-        "£" => ["英镑", "GBP"].iter().any(|w| output.contains(w)),
-        "¥" => ["元", "人民币", "日元", "CNY", "JPY", "RMB"]
-            .iter()
-            .any(|w| output.contains(w)),
-        "₹" => ["卢比", "INR"].iter().any(|w| output.contains(w)),
-        "₽" => ["卢布", "RUB"].iter().any(|w| output.contains(w)),
-        "₩" => ["韩元", "KRW"].iter().any(|w| output.contains(w)),
-        "₺" => ["里拉", "TRY"].iter().any(|w| output.contains(w)),
-        "₿" => ["比特币", "BTC"].iter().any(|w| output.contains(w)),
-        "Ξ" => ["以太", "以太坊", "ETH"].iter().any(|w| output.contains(w)),
-        _ => false,
+    match currency {
+        "$" => vec!["美元", "美金", "USD", "刀"],
+        "€" => vec!["欧元", "EUR"],
+        "£" => vec!["英镑", "GBP"],
+        // 裸 `¥` 在源文里就是歧义：人民币与日元都算
+        "¥" => vec!["元", "人民币", "日元", "CNY", "JPY", "RMB"],
+        "₹" => vec!["卢比", "INR"],
+        "₽" => vec!["卢布", "RUB"],
+        "₩" => vec!["韩元", "KRW"],
+        "₺" => vec!["里拉", "TRY"],
+        "₿" => vec!["比特币", "BTC"],
+        "Ξ" => vec!["以太", "以太坊", "ETH"],
+        _ => vec![],
     }
+}
+
+/// 金额与币种是否**成对**出现：数值的邻近窗口里必须有该币种的写法。
+///
+/// 窗口取 ±20 字符：足够容纳"售价为 39.99，以美元结算"这类正常语序，
+/// 又不会让同一句里的两个不同金额互相"借"币种。
+fn paired_currency_present(value: f64, units: &[&str], output: &str) -> bool {
+    if units.is_empty() {
+        return false;
+    }
+    const WINDOW: usize = 20;
+    let chars: Vec<char> = output.chars().collect();
+    let boundaries = all_number_positions(output);
+    for start in value_positions(output, value) {
+        // 窗口不能跨过**另一个数值**：否则 "$10 … €20" 的两个币种会互相"借"用
+        let left_limit = boundaries
+            .iter()
+            .filter(|pos| **pos < start)
+            .max()
+            .map(|pos| {
+                start
+                    .saturating_sub(start - pos)
+                    .max(start.saturating_sub(WINDOW))
+            })
+            .unwrap_or_else(|| start.saturating_sub(WINDOW));
+        let right_limit = boundaries
+            .iter()
+            .filter(|pos| **pos > start)
+            .min()
+            .map(|pos| (*pos).min(start + WINDOW))
+            .unwrap_or_else(|| (start + WINDOW).min(chars.len()));
+        let from = left_limit.min(start);
+        let to = right_limit.clamp(from, chars.len());
+        let window: String = chars[from..to].iter().collect();
+        if units.iter().any(|unit| unit_present(&window, unit)) {
+            return true;
+        }
+    }
+    false
+}
+
+/// 币种写法是否**独立**出现（避免 "元" 命中 "日元/欧元" 里的 "元"）。
+fn unit_present(window: &str, unit: &str) -> bool {
+    if unit != "元" {
+        return window.contains(unit);
+    }
+    let chars: Vec<char> = window.chars().collect();
+    for (index, ch) in chars.iter().enumerate() {
+        if *ch != '元' {
+            continue;
+        }
+        let previous = index.checked_sub(1).and_then(|i| chars.get(i)).copied();
+        let is_other_currency = matches!(
+            previous,
+            Some('日' | '欧' | '美' | '港' | '台' | '澳' | '加' | '韩' | '新' | '英' | '卢' | '里')
+        );
+        if !is_other_currency {
+            return true;
+        }
+    }
+    false
+}
+
+/// 译文里所有数值（阿拉伯/中文）的字符位置，用于划分"金额的作用域"。
+fn all_number_positions(output: &str) -> Vec<usize> {
+    let chars: Vec<char> = output.chars().collect();
+    let mut positions = Vec::new();
+    let mut i = 0usize;
+    while i < chars.len() {
+        let c = chars[i];
+        if c.is_ascii_digit() {
+            positions.push(i);
+            while i < chars.len()
+                && (chars[i].is_ascii_digit() || chars[i] == ',' || chars[i] == '.')
+            {
+                i += 1;
+            }
+            continue;
+        }
+        if is_chinese_number_char(c) {
+            positions.push(i);
+            while i < chars.len() && is_chinese_number_char(chars[i]) {
+                i += 1;
+            }
+            continue;
+        }
+        i += 1;
+    }
+    positions
+}
+
+/// 数值在译文里的**字符位置**（支持阿拉伯数字与中文数字）。
+fn value_positions(output: &str, value: f64) -> Vec<usize> {
+    let chars: Vec<char> = output.chars().collect();
+    let mut positions = Vec::new();
+    let mut i = 0usize;
+    while i < chars.len() {
+        let c = chars[i];
+        if c.is_ascii_digit() {
+            let start = i;
+            let mut j = i;
+            while j < chars.len()
+                && (chars[j].is_ascii_digit() || chars[j] == ',' || chars[j] == '.')
+            {
+                j += 1;
+            }
+            let raw: String = chars[start..j].iter().collect();
+            let cleaned = raw.replace(',', "");
+            if let Ok(parsed) = cleaned.trim_end_matches('.').parse::<f64>() {
+                if approx_eq(parsed, value) {
+                    positions.push(start);
+                }
+            }
+            i = j;
+            continue;
+        }
+        if is_chinese_number_char(c) {
+            let start = i;
+            let mut j = i;
+            while j < chars.len() && is_chinese_number_char(chars[j]) {
+                j += 1;
+            }
+            let raw: String = chars[start..j].iter().collect();
+            if parse_chinese_number(&raw).is_some_and(|v| approx_eq(v, value)) {
+                positions.push(start);
+            }
+            i = j;
+            continue;
+        }
+        i += 1;
+    }
+    positions
+}
+
+fn is_chinese_number_char(c: char) -> bool {
+    matches!(
+        c,
+        '零' | '一'
+            | '二'
+            | '三'
+            | '四'
+            | '五'
+            | '六'
+            | '七'
+            | '八'
+            | '九'
+            | '十'
+            | '百'
+            | '千'
+            | '万'
+            | '亿'
+            | '两'
+            | '半'
+    )
 }
 
 // ============================================================
@@ -1201,6 +1371,49 @@ mod tests {
             .iter()
             .any(|i| i.kind == QualityIssueKind::NumberMissing));
         assert!(!missing.has_fatal(), "普通数量丢失不该致命");
+    }
+
+    #[test]
+    fn 两笔金额的币种被交换会致命() {
+        // 真实缺陷：`$10 … €20` 译成 `10欧元 … 20美元`，旧实现按整段搜索会放行
+        let swapped = check(
+            "The first item costs $10, and the second costs €20.",
+            "第一件商品售价10欧元，第二件售价20美元。",
+        );
+        assert!(
+            swapped.has_fatal(),
+            "币种被交换必须致命：{:?}",
+            swapped.issues
+        );
+        assert!(
+            swapped.issues.iter().any(|i| i.detail.contains("不再相邻")),
+            "{:?}",
+            swapped.issues
+        );
+
+        // 正确译文：每笔金额与自己的币种相邻
+        let ok = check(
+            "The first item costs $10, and the second costs €20.",
+            "第一件商品售价10美元，第二件售价20欧元。",
+        );
+        assert!(!ok.has_fatal(), "{:?}", ok.issues);
+
+        // 币种写在句子后半句（仍相邻）也算通过
+        let trailing = check("It costs $39.99 today.", "今天的价格是 39.99，按美元结算。");
+        assert!(!trailing.has_fatal(), "{:?}", trailing.issues);
+    }
+
+    #[test]
+    fn 人民币与日元不会互相顶替() {
+        // 源文用 ISO 代码时，币种必须严格对应
+        let cny = check("It costs CNY 100.", "价格是 100 日元。");
+        assert!(cny.has_fatal(), "{:?}", cny.issues);
+        let jpy = check("It costs JPY 100.", "价格是 100 元人民币。");
+        assert!(jpy.has_fatal(), "{:?}", jpy.issues);
+
+        // 源文只有 `¥` 时无法区分，两者都接受
+        let ambiguous = check("It costs ¥100.", "价格是 100 元。");
+        assert!(!ambiguous.has_fatal(), "{:?}", ambiguous.issues);
     }
 
     #[test]

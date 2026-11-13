@@ -72,7 +72,8 @@ cargo run -q --release -p quality-runner -- \
   --jobs 2 --out /tmp/regress.json
 ```
 
-- 机器判定只覆盖 `no_residual_english`（保护计划 + 原文对应）与 `forbidden_phrases`（人工确认的漏译片段，数据驱动）；
+- **语义质量没有自动判定**：SDK 只做确定性核验（受保护内容/数字/术语），
+  报告里不再有 `expected_checks` / `forbidden_phrases` 这类语义断言；
 - `severity = reference` 的用例不会判模型失败（它们是参考译文问题）；
 - 其余用例的输出需要人读，报告里的 `severity` 字段标明严重级别。
 
