@@ -20,6 +20,19 @@
 - 新增 `crates/translator-http/tests/stress.rs`（默认 `#[ignore]`）：10 000 次
   Mock 压力测试报告 requests/ok/failed/cancelled/queue_full/http_calls/peak_threads/RSS。
 
+### 质量流水线方向纠正（S3）
+
+- **删除**基于英文功能词表 + 词数阈值的 `residual_english_fragment`。
+- 新增 `quality/heuristic.rs::untranslated_fragments`：用**保护计划**遮掉 URL/代码/变量，
+  用**原文对应**（连续 ≥2 个普通英文词在原文里同样出现）判定残留，
+  标识符（全大写/含数字/CamelCase/含 `_`-`）与专名标题（原文含大写实词）自动排除。
+  由 `check_with_protection` 调用——只在统一终检路径上生效，不新增平行流水线。
+- `quality-runner --replay`：用人工记录的真实坏译文复跑终检（零费用、不调模型），
+  数据里 `forbidden_phrases` 命中才要求检出，避免"规则漏检 = 用例通过"的自证。
+- 新增 8 条测试（2 词残留命中、URL/代码不误报、品牌不误报、专名标题不误报、
+  原文没有的英文不报、终检级正反测试）。
+- 复跑报告：`docs/eval/runs/regression-replay.json`（9 条变体全部符合预期）。
+
 ### 质量回归集（人工审阅反馈）
 
 - 新增 `fixtures/eval/regression.jsonl`（7 条）：未翻译英文片段、人物实体一致性、

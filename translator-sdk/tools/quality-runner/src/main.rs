@@ -55,6 +55,10 @@ fn run() -> Result<u8, String> {
         return Err(format!("数据集为空：{}", args.dataset.display()));
     }
 
+    if args.replay {
+        return replay(&cases, &args);
+    }
+
     let cases = match args.limit {
         Some(limit) => cases.into_iter().take(limit).collect(),
         None => cases,
@@ -319,6 +323,76 @@ fn escape_table(text: &str) -> String {
     text.replace('|', "\\|").replace('\n', " ")
 }
 
+/// 回放模式：用 SDK 的终检复核"已知错误译文"，验证检查器本身是否有效。
+///
+/// 这是**正反测试**：提示词/模型会变，但"这段真实的坏译文必须被报出来"不变。
+/// 不调用任何模型，零费用。
+fn replay(cases: &[EvalCase], args: &Args) -> Result<u8, String> {
+    let mut report = serde_json::json!({
+        "dataset": args.dataset.display().to_string(),
+        "mode": "replay",
+        "human_review": "PENDING_HUMAN",
+        "cases": [],
+    });
+    let mut failed = 0usize;
+
+    for case in cases {
+        let Ok(plan) = translator_core::protection::ProtectionPlan::prepare(
+            case.source_text(),
+            &translator_core::protection::ProtectionPolicy::default(),
+        ) else {
+            continue;
+        };
+        let target = LanguageTag::new(&case.target_lang).map_err(|e| e.message)?;
+        for (label, bad) in &case.known_bad {
+            let quality = translator_core::quality::check_with_protection(
+                &plan,
+                bad,
+                &target,
+                TranslationMode::Precise,
+            );
+            let detected: Vec<String> = quality
+                .issues
+                .iter()
+                .map(|i| format!("{}:{}", i.kind.as_str(), i.detail))
+                .collect();
+            // 期望由数据决定：这个"坏译文"里确实含禁用短语时，必须被检出；
+            // 不含（例如同一用例的另一个模型译文是正确的）时不要求检出。
+            let expects_detection = case
+                .forbidden_phrases
+                .iter()
+                .any(|phrase| bad.to_lowercase().contains(&phrase.to_lowercase()));
+            let hit = detected.iter().any(|d| d.starts_with("untranslated:"));
+            let ok = if expects_detection { hit } else { true };
+            if !ok {
+                failed += 1;
+            }
+            report["cases"]
+                .as_array_mut()
+                .expect("cases")
+                .push(serde_json::json!({
+                    "id": case.id,
+                    "variant": label,
+                    "expected_detection": expects_detection,
+                    "detected_untranslated": hit,
+                    "ok": ok,
+                    "issues": detected,
+                    "output": bad,
+                }));
+        }
+    }
+
+    let text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
+    std::fs::write(&args.out, text).map_err(|e| format!("写入报告失败：{e}"))?;
+    println!(
+        "回放完成：{} 条变体，未按预期检出 {} 条；报告写入 {}",
+        report["cases"].as_array().map(|a| a.len()).unwrap_or(0),
+        failed,
+        args.out.display()
+    );
+    Ok(if failed == 0 { EXIT_OK } else { EXIT_FAIL })
+}
+
 /// 在给定 translator 上跑一遍数据集，产出报告（不做 I/O）。
 fn evaluate(cases: &[EvalCase], translator: &Translator, args: &Args) -> Result<Report, String> {
     let mut latencies: Vec<u64> = Vec::new();
@@ -461,6 +535,13 @@ fn evaluate_case(
                         .collect()
                 })
                 .unwrap_or_default();
+            // 回归集：数据驱动的禁用短语（不依赖 SDK 启发式，避免自证正确）
+            for phrase in &case.forbidden_phrases {
+                if result.text.to_lowercase().contains(&phrase.to_lowercase()) {
+                    failures.push(format!("译文中残留未翻译片段：{phrase}"));
+                }
+            }
+
             // 回归集：译文中残留未翻译英文片段（机器可判定）
             if case
                 .expected_checks
@@ -630,6 +711,13 @@ struct EvalCase {
     /// 参考译文本身的问题说明（有值时不把模型判失败）。
     #[serde(default)]
     reference_issue: Option<String>,
+    /// 回归集：人工审阅时记录的"已知错误译文"（label → 译文），用于 `--replay`。
+    #[serde(default)]
+    known_bad: std::collections::BTreeMap<String, String>,
+    /// 回归集：**不允许**出现在译文里的原文片段（人工审阅确认的漏译）。
+    /// 这是数据驱动的检查，独立于 SDK 的启发式，避免"规则漏检 = 用例通过"。
+    #[serde(default)]
+    forbidden_phrases: Vec<String>,
 }
 
 /// 把数据集里声明的术语对写成临时术语表（JSON），用于 `Enforce` 评测。
@@ -837,6 +925,8 @@ struct Args {
     compare: Option<String>,
     /// 并发执行的用例数（默认 1；远程后端建议 4）。
     jobs: usize,
+    /// 回放模式：不调用模型，直接用 SDK 终检复核用例里的 `known_bad` 译文。
+    replay: bool,
     config: Option<PathBuf>,
     mock: bool,
     mode: TranslationMode,
@@ -855,6 +945,7 @@ impl Args {
         let mut glossary_from_dataset = false;
         let mut compare: Option<String> = None;
         let mut jobs: usize = 1;
+        let mut replay = false;
 
         let mut i = 0;
         while i < args.len() {
@@ -909,6 +1000,10 @@ impl Args {
                     compare = Some(next("--compare")?);
                     i += 2;
                 }
+                "--replay" => {
+                    replay = true;
+                    i += 1;
+                }
                 "--jobs" => {
                     jobs = next("--jobs")?
                         .parse()
@@ -933,6 +1028,7 @@ impl Args {
             glossary_from_dataset,
             compare,
             jobs,
+            replay,
             config,
             mock,
             mode,

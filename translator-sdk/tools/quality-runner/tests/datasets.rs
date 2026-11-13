@@ -121,6 +121,11 @@ fn 回归集字段与严重级别合法() {
             let name = check.as_str().unwrap_or("");
             assert!(allowed_checks.contains(&name), "{id} 未知检查项：{name}");
         }
+        // 禁用短语必须是字符串数组（数据驱动的漏译检查）
+        assert!(
+            case["forbidden_phrases"].as_array().is_some(),
+            "{id} 的 forbidden_phrases 必须是数组"
+        );
         // 参考译文有问题的用例必须写明问题，否则会被误判成模型失败
         if severity == "reference" {
             assert!(

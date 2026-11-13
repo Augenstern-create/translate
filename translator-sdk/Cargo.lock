@@ -340,6 +340,7 @@ dependencies = [
  "serde_json",
  "toml",
  "translator-api",
+ "translator-core",
  "translator-http",
  "translator-plugin-api",
  "translator-types",

@@ -68,15 +68,6 @@ pub fn check(source: &str, output: &str, target: &LanguageTag, report: &mut Qual
         ));
     }
 
-    if target.as_str().starts_with("zh") {
-        if let Some(fragment) = residual_english_fragment(output) {
-            report.issues.push(QualityIssue::major(
-                QualityIssueKind::Untranslated,
-                format!("译文中残留未翻译的英文片段：{fragment}"),
-            ));
-        }
-    }
-
     if source.trim().eq_ignore_ascii_case(output.trim()) && source.split_whitespace().count() >= 2 {
         report.issues.push(QualityIssue::major(
             QualityIssueKind::Untranslated,
@@ -94,72 +85,6 @@ pub fn check(source: &str, output: &str, target: &LanguageTag, report: &mut Qual
 /// - 至少 1 个**小写**内容词（长度 ≥4）——排除 `The Lord of the Rings` 这类专名标题。
 ///
 /// 命中时只报 Major（不判致命）：这是启发式，任务是"让人看见"，不是自动拒稿。
-fn residual_english_fragment(output: &str) -> Option<String> {
-    const FUNCTION_WORDS: [&str; 34] = [
-        "the", "a", "an", "of", "to", "and", "or", "is", "are", "was", "were", "be", "being",
-        "been", "in", "on", "at", "for", "with", "that", "this", "it", "its", "as", "by", "from",
-        "not", "you", "we", "they", "he", "she", "but", "if",
-    ];
-
-    // 把文本切成 (单词, 与前一个单词之间是否只隔空格)。
-    // 中文与标点都会打断"连续英文段"——但被打断前的单词要保留，
-    // 否则 `geared to being a weapon，在…` 里的 weapon 会把整段吞掉。
-    let mut tokens: Vec<(String, bool)> = Vec::new();
-    let mut current = String::new();
-    let mut spacer_only = true;
-    for ch in output.chars() {
-        let is_word_char = ch.is_ascii_alphanumeric() || ch == '\'' || ch == '-';
-        if is_word_char {
-            current.push(ch);
-            continue;
-        }
-        if !current.is_empty() {
-            tokens.push((std::mem::take(&mut current), spacer_only));
-        }
-        spacer_only = ch.is_whitespace();
-    }
-    if !current.is_empty() {
-        tokens.push((current, spacer_only));
-    }
-
-    let mut run: Vec<String> = Vec::new();
-    let mut candidate: Option<String> = None;
-    let evaluate = |run: &mut Vec<String>, candidate: &mut Option<String>| {
-        if candidate.is_none() && run.len() >= 5 {
-            let funcs = run
-                .iter()
-                .filter(|w| FUNCTION_WORDS.contains(&w.to_lowercase().as_str()))
-                .count();
-            let lower_content = run.iter().any(|w| {
-                w.chars().next().is_some_and(|c| c.is_ascii_lowercase())
-                    && w.len() >= 4
-                    && !FUNCTION_WORDS.contains(&w.to_lowercase().as_str())
-            });
-            if funcs >= 2 && lower_content {
-                *candidate = Some(run.join(" "));
-            }
-        }
-        run.clear();
-    };
-
-    for (word, spaced) in tokens {
-        if word
-            .chars()
-            .all(|c| c.is_ascii_alphabetic() || c == '\'' || c == '-')
-        {
-            if !spaced {
-                evaluate(&mut run, &mut candidate);
-            }
-            run.push(word);
-        } else {
-            // 含数字的 token（iPhone 15、PA-28）打断连续段但不参与判断
-            evaluate(&mut run, &mut candidate);
-        }
-    }
-    evaluate(&mut run, &mut candidate);
-    candidate
-}
-
 /// 分段策略下对**单个片段**做保守的合理性检查。
 ///
 /// 分段回退的结构完整性由保护模块保证，但"模型对这一段答非所问"没有任何
@@ -392,61 +317,6 @@ mod tests {
     }
 
     #[test]
-    fn 未翻译的英文片段会被报告() {
-        let zh = LanguageTag::new("zh-Hans").unwrap();
-
-        // 真实案例（wmt24pp-440）：模型留下了整段英文
-        let mut report = QualityReport::default();
-        check(
-            "Everything is geared to being a weapon, displayed in accompanying media with gratuitous effect.",
-            "一切都 geared to being a weapon，在 accompanying media 中以 gratuitous effect 展示。",
-            &zh,
-            &mut report,
-        );
-        assert!(
-            report
-                .issues
-                .iter()
-                .any(|i| i.kind == QualityIssueKind::Untranslated),
-            "{:?}",
-            report.issues
-        );
-
-        // 品牌/人名不算残留
-        let mut ok = QualityReport::default();
-        check(
-            "Buy the iPhone 15 Pro Max now.",
-            "现在就购买 iPhone 15 Pro Max。",
-            &zh,
-            &mut ok,
-        );
-        assert!(
-            !ok.issues
-                .iter()
-                .any(|i| i.kind == QualityIssueKind::Untranslated),
-            "{:?}",
-            ok.issues
-        );
-
-        // 专名标题不算残留（全是功能词或大写开头）
-        let mut title = QualityReport::default();
-        check(
-            "The film is The Lord of the Rings.",
-            "这部电影是 The Lord of the Rings。",
-            &zh,
-            &mut title,
-        );
-        assert!(
-            !title
-                .issues
-                .iter()
-                .any(|i| i.kind == QualityIssueKind::Untranslated),
-            "{:?}",
-            title.issues
-        );
-    }
-
-    #[test]
     fn 片段合理性检查只拦明显异常() {
         let zh = LanguageTag::new("zh-Hans").unwrap();
         // 正常译文不拦
@@ -469,5 +339,219 @@ mod tests {
             .issues
             .iter()
             .any(|i| i.kind == QualityIssueKind::PossibleOmission));
+    }
+}
+
+// ============================================================
+// 未翻译片段：基于"保护计划 + 原文对应"的判断（不使用英文词表）
+// ============================================================
+
+/// 译文中"整段英文没有翻译"的可疑片段。
+///
+/// # 判定依据（全部来自前处理与原文，不用功能词表、不设词数阈值）
+///
+/// 1. 先把**受保护内容**（URL/代码/模板变量/路径/编号……）从译文里遮掉：
+///    这些内容本来就该原样出现，不能算"未翻译"；
+/// 2. 按形态识别**标识符**：全大写缩写、含数字、CamelCase、含 `_`/`-` → 合理保留；
+/// 3. 剩下的连续普通英文词（≥2 个）如果**在原文里以同样的顺序连续出现**，
+///    说明模型把这一段原文照搬了 → 报可疑；
+/// 4. 但若该短语在原文里含大写开头的实词（`The Lord of the Rings`）
+///    或全大写（`Machine Learning`），按专名/术语处理，不报。
+///
+/// 命中只报 Major（疑似问题）：无法确定语义时不得修改译文，交给人或重试流程。
+pub fn untranslated_fragments(source: &str, protected: &[String], restored: &str) -> Vec<String> {
+    let scrubbed = mask_protected(restored, protected);
+    suspicious_phrases(&scrubbed, source)
+}
+
+/// 把受保护内容的**每一次出现**替换成空格，保留字节长度以便后续定位。
+fn mask_protected(text: &str, protected: &[String]) -> String {
+    let mut chars: Vec<char> = text.chars().collect();
+    for original in protected {
+        if original.trim().is_empty() {
+            continue;
+        }
+        let needle: Vec<char> = original.chars().collect();
+        if needle.len() > chars.len() {
+            continue;
+        }
+        let mut start = 0usize;
+        while start + needle.len() <= chars.len() {
+            if chars[start..start + needle.len()] == needle[..] {
+                for slot in &mut chars[start..start + needle.len()] {
+                    *slot = ' ';
+                }
+                start += needle.len();
+            } else {
+                start += 1;
+            }
+        }
+    }
+    chars.into_iter().collect()
+}
+
+/// 找出"连续 ≥2 个普通英文词，且在原文里按同样顺序出现"的短语。
+fn suspicious_phrases(scrubbed: &str, source: &str) -> Vec<String> {
+    // 先把文本切成"词"，再按**仅由空白分隔**聚成连续短语。
+    let mut runs: Vec<Vec<String>> = Vec::new();
+    let mut current: Vec<String> = Vec::new();
+    let mut word = String::new();
+
+    for ch in scrubbed.chars() {
+        let is_word_char = ch.is_ascii_alphanumeric() || ch == '\'' || ch == '-' || ch == '_';
+        if is_word_char {
+            word.push(ch);
+            continue;
+        }
+        if !word.is_empty() {
+            current.push(std::mem::take(&mut word));
+        }
+        if !ch.is_whitespace() && !current.is_empty() {
+            // 标点/中文打断连续短语
+            runs.push(std::mem::take(&mut current));
+        }
+    }
+    if !word.is_empty() {
+        current.push(word);
+    }
+    if !current.is_empty() {
+        runs.push(current);
+    }
+
+    let lower_source = source.to_lowercase();
+    let mut found: Vec<String> = Vec::new();
+    for words in runs {
+        if words.len() < 2 {
+            continue;
+        }
+        if words.iter().any(|w| is_identifier(w)) {
+            continue;
+        }
+        let phrase = words.join(" ");
+        if !lower_source.contains(&phrase.to_lowercase()) {
+            continue;
+        }
+        if phrase_is_proper_noun(source, &words) {
+            continue;
+        }
+        if !found.contains(&phrase) {
+            found.push(phrase);
+        }
+        if found.len() >= 3 {
+            break;
+        }
+    }
+    found
+}
+
+/// 形态上像标识符的英文 token（缩写/带数字/CamelCase/含下划线或连字符）。
+fn is_identifier(word: &str) -> bool {
+    if word.chars().any(|c| c.is_ascii_digit()) || word.contains('_') || word.contains('-') {
+        return true;
+    }
+    let letters: Vec<char> = word.chars().collect();
+    if letters.len() >= 2 && letters.iter().all(|c| c.is_ascii_uppercase()) {
+        return true;
+    }
+    // CamelCase：小写后跟大写
+    letters
+        .windows(2)
+        .any(|w| w[0].is_ascii_lowercase() && w[1].is_ascii_uppercase())
+}
+
+/// 原文里这个词组是否带专名/标题特征（实词以大写开头，或整词全大写）。
+fn phrase_is_proper_noun(source: &str, words: &[String]) -> bool {
+    let lowered = source.to_lowercase();
+    let phrase = words.join(" ").to_lowercase();
+    let Some(pos) = lowered.find(&phrase) else {
+        return false;
+    };
+    let original: Vec<char> = source.chars().collect();
+    // 用字符偏移换算（原文可能含多字节字符）
+    let byte_to_char = |byte: usize| source[..byte].chars().count();
+    let start = byte_to_char(pos);
+    let mut cursor = start;
+    for word in words {
+        let len = word.chars().count();
+        let slice: String = original[cursor..(cursor + len).min(original.len())]
+            .iter()
+            .collect();
+        let first = slice.chars().next().unwrap_or(' ');
+        let all_upper = slice
+            .chars()
+            .filter(|c| c.is_ascii_alphabetic())
+            .all(|c| c.is_ascii_uppercase());
+        let is_content = len >= 4;
+        if (is_content && first.is_ascii_uppercase()) || all_upper {
+            return true;
+        }
+        cursor += len + 1; // 空格
+    }
+    false
+}
+
+#[cfg(test)]
+mod untranslated_tests {
+    use super::*;
+    use crate::protection::{ProtectionPlan, ProtectionPolicy};
+
+    fn plan(source: &str) -> ProtectionPlan {
+        ProtectionPlan::prepare(source, &ProtectionPolicy::default()).expect("保护计划")
+    }
+
+    fn fragments_with(source: &str, output: &str) -> Vec<String> {
+        let plan = plan(source);
+        let protected: Vec<String> = plan.spans().iter().map(|s| s.original.clone()).collect();
+        untranslated_fragments(plan.source(), &protected, output)
+    }
+
+    #[test]
+    fn 两词英文残留会被发现() {
+        // 真实缺陷：2 个词的短语没翻译（旧的"≥5 词 + 功能词表"实现抓不到）
+        let source = "Everything is geared to being a weapon, displayed in accompanying media with gratuitous effect.";
+        let output = "一切都以成为武器为导向，并在 accompanying media 中以无谓的效果加以展示。";
+        let found = fragments_with(source, output);
+        assert!(
+            found.iter().any(|f| f.contains("accompanying media")),
+            "应发现 2 词残留：{found:?}"
+        );
+    }
+
+    #[test]
+    fn 受保护内容不算未翻译() {
+        let source = "Open https://example.com/docs and run `cargo build` now.";
+        let plan = plan(source);
+        let protected: Vec<String> = plan.spans().iter().map(|s| s.original.clone()).collect();
+        // 正常译文：URL/代码被贴回
+        let output = "现在打开 https://example.com/docs 并运行 `cargo build`。";
+        assert!(untranslated_fragments(plan.source(), &protected, output).is_empty());
+    }
+
+    #[test]
+    fn 品牌与技术标识符不算未翻译() {
+        let source = "Buy the iPhone 15 Pro Max and install Python via the API.";
+        let plan = plan(source);
+        let protected: Vec<String> = plan.spans().iter().map(|s| s.original.clone()).collect();
+        let output = "购买 iPhone 15 Pro Max，并通过 API 安装 Python。";
+        assert!(untranslated_fragments(plan.source(), &protected, output).is_empty());
+    }
+
+    #[test]
+    fn 专名标题不算未翻译() {
+        let source = "The film is The Lord of the Rings and the budget is large.";
+        let plan = plan(source);
+        let protected: Vec<String> = plan.spans().iter().map(|s| s.original.clone()).collect();
+        let output = "这部电影是 The Lord of the Rings，预算很大。";
+        assert!(untranslated_fragments(plan.source(), &protected, output).is_empty());
+    }
+
+    #[test]
+    fn 普通短语在原文里没有时不报() {
+        // 译文里出现了原文没有的英文（比如模型自己加的）→ 不属于"未翻译"
+        let source = "这个系统运行稳定。";
+        let plan = plan(source);
+        let protected: Vec<String> = plan.spans().iter().map(|s| s.original.clone()).collect();
+        let output = "这个系统运行稳定，performance is good。";
+        assert!(untranslated_fragments(plan.source(), &protected, output).is_empty());
     }
 }

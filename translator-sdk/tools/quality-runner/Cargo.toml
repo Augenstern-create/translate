@@ -15,6 +15,7 @@ path = "src/main.rs"
 translator-api = { workspace = true, features = ["mocks"] }
 translator-http.workspace = true
 translator-types.workspace = true
+translator-core.workspace = true  # --replay：直接用 SDK 的终检复算"已知错误输出"
 translator-plugin-api = { workspace = true, features = ["mocks"] }
 serde.workspace = true
 serde_json.workspace = true
