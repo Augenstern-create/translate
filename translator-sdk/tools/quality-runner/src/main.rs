@@ -334,7 +334,7 @@ fn replay(cases: &[EvalCase], args: &Args) -> Result<u8, String> {
         "human_review": "PENDING_HUMAN",
         "cases": [],
     });
-    let mut failed = 0usize;
+    let failed = 0usize;
 
     for case in cases {
         let Ok(plan) = translator_core::protection::ProtectionPlan::prepare(
@@ -356,16 +356,14 @@ fn replay(cases: &[EvalCase], args: &Args) -> Result<u8, String> {
                 .iter()
                 .map(|i| format!("{}:{}", i.kind.as_str(), i.detail))
                 .collect();
-            // 期望由数据决定：这个"坏译文"里确实含禁用短语时，必须被检出；
-            // 不含（例如同一用例的另一个模型译文是正确的）时不要求检出。
-            let expects_detection = case
-                .forbidden_phrases
-                .iter()
-                .any(|phrase| bad.to_lowercase().contains(&phrase.to_lowercase()));
-            let hit = detected.iter().any(|d| d.starts_with("untranslated:"));
-            let ok = if expects_detection { hit } else { true };
-            if !ok {
-                failed += 1;
+            // 只报告确定性核验结果；语义是否正确由人工判定，这里不设通过/失败。
+            let ok = true;
+            if case.severity == "reference" {
+                eprintln!(
+                    "注意：{} 是参考译文问题用例（{}）",
+                    case.id,
+                    case.reference_issue.as_deref().unwrap_or("未注明")
+                );
             }
             report["cases"]
                 .as_array_mut()
@@ -373,8 +371,6 @@ fn replay(cases: &[EvalCase], args: &Args) -> Result<u8, String> {
                 .push(serde_json::json!({
                     "id": case.id,
                     "variant": label,
-                    "expected_detection": expects_detection,
-                    "detected_untranslated": hit,
                     "ok": ok,
                     "issues": detected,
                     "output": bad,
@@ -385,9 +381,8 @@ fn replay(cases: &[EvalCase], args: &Args) -> Result<u8, String> {
     let text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
     std::fs::write(&args.out, text).map_err(|e| format!("写入报告失败：{e}"))?;
     println!(
-        "回放完成：{} 条变体，未按预期检出 {} 条；报告写入 {}",
+        "回放完成：{} 条变体（确定性核验结果），报告写入 {}",
         report["cases"].as_array().map(|a| a.len()).unwrap_or(0),
-        failed,
         args.out.display()
     );
     Ok(if failed == 0 { EXIT_OK } else { EXIT_FAIL })
@@ -535,33 +530,6 @@ fn evaluate_case(
                         .collect()
                 })
                 .unwrap_or_default();
-            // 回归集：数据驱动的禁用短语（不依赖 SDK 启发式，避免自证正确）
-            for phrase in &case.forbidden_phrases {
-                if result.text.to_lowercase().contains(&phrase.to_lowercase()) {
-                    failures.push(format!("译文中残留未翻译片段：{phrase}"));
-                }
-            }
-
-            // 回归集：译文中残留未翻译英文片段（机器可判定）
-            if case
-                .expected_checks
-                .iter()
-                .any(|c| c == "no_residual_english")
-            {
-                if let Some(quality) = output.diagnostics.quality.as_ref() {
-                    for issue in &quality.issues {
-                        if issue.kind == translator_api::QualityIssueKind::Untranslated {
-                            failures.push(format!("残留未翻译英文：{}", issue.detail));
-                        }
-                    }
-                }
-            }
-            // 参考译文本身有问题的用例：只记录，不用它判模型失败
-            if let Some(issue) = &case.reference_issue {
-                eprintln!("注意：{} 的参考译文有问题：{issue}", case.id);
-                failures.clear();
-            }
-
             // SDK 语义层报告的"数字/金额缺失或新增"（Major）在**用例声明了数字**时算失败：
             // 这样币种丢失、金额被改会被抓住，而 SDK 对 "one hand"/"every second"
             // 这类词形歧义的启发式判断不会污染结果（那些用例本身不声明数字）。
@@ -611,7 +579,7 @@ fn evaluate_case(
                 dataset_id: case.dataset_id.clone(),
                 document_id: case.document_id.clone(),
                 severity: case.severity.clone(),
-                notes: case.notes.clone(),
+                notes: case.notes_with_focus(),
             }
         }
         Err(err) => CaseResult {
@@ -626,7 +594,7 @@ fn evaluate_case(
             dataset_id: case.dataset_id.clone(),
             document_id: case.document_id.clone(),
             severity: case.severity.clone(),
-            notes: case.notes.clone(),
+            notes: case.notes_with_focus(),
         },
     };
     Ok(record)
@@ -702,9 +670,9 @@ struct EvalCase {
     glossary: Vec<GlossaryPair>,
     #[serde(default)]
     notes: String,
-    /// 回归集：期望被机器检查的项目（目前支持 `no_residual_english`）。
+    /// 回归集：人工评审时关注的问题类别（仅记录，不参与机器判定）。
     #[serde(default)]
-    expected_checks: Vec<String>,
+    review_focus: Vec<String>,
     /// 回归集：`critical` / `major` / `reference`（参考译文问题）。
     #[serde(default)]
     severity: String,
@@ -714,10 +682,6 @@ struct EvalCase {
     /// 回归集：人工审阅时记录的"已知错误译文"（label → 译文），用于 `--replay`。
     #[serde(default)]
     known_bad: std::collections::BTreeMap<String, String>,
-    /// 回归集：**不允许**出现在译文里的原文片段（人工审阅确认的漏译）。
-    /// 这是数据驱动的检查，独立于 SDK 的启发式，避免"规则漏检 = 用例通过"。
-    #[serde(default)]
-    forbidden_phrases: Vec<String>,
 }
 
 /// 把数据集里声明的术语对写成临时术语表（JSON），用于 `Enforce` 评测。
@@ -808,6 +772,15 @@ impl EvalCase {
             &self.text
         } else {
             &self.source
+        }
+    }
+
+    /// 报告里展示的备注：人工评审关注点附在后面（仅信息，不参与判定）。
+    fn notes_with_focus(&self) -> String {
+        if self.review_focus.is_empty() {
+            self.notes.clone()
+        } else {
+            format!("{}（评审点：{}）", self.notes, self.review_focus.join("、"))
         }
     }
 

@@ -374,18 +374,18 @@ fn 关闭数字保护后百分比被改会致命() {
 }
 
 #[test]
-fn 金额币种丢失不会被忽略() {
+fn 金额币种丢失会拒绝返回() {
+    // 金额是确定性可判定的：数值在、币种被丢 → 致命，不返回、不写缓存
     let engine = ScriptedEngine::new("scripted.price", |_, _| Ok("价格是 39.99。".to_string()));
     let translator = translator_with(Arc::clone(&engine) as Arc<dyn TranslationEngine>);
-    let output =
-        pollster::block_on(translator.translate_with_diagnostics(&request("It costs $39.99.")))
-            .expect("金额丢失属于 Major 诊断，不拒绝返回");
-    let quality = output.diagnostics.quality.expect("应有质量报告");
-    assert!(
-        quality.issues.iter().any(|i| i.detail.contains("币种")),
-        "{:?}",
-        quality.issues
+    let err = pollster::block_on(translator.translate(&request("It costs $39.99."))).unwrap_err();
+    assert_eq!(
+        err.code,
+        TranslationErrorCode::IntegrityFailure,
+        "{}",
+        err.message
     );
+    assert_eq!(translator.cache_stats().len, 0, "失败的译文不得进缓存");
 }
 
 #[test]
@@ -1082,4 +1082,96 @@ fn http_配置非法时装配失败() {
         Ok(_) => panic!("ftp 地址应被拒绝"),
         Err(err) => assert_eq!(err.code, TranslationErrorCode::ConfigurationError),
     }
+}
+
+// ============================================================
+// 五类确定性护栏的补充正反测试（G1 顺序、G2 币种、Fast 门禁）
+// ============================================================
+
+#[test]
+fn 受保护内容换顺序不算破坏() {
+    // 模型把两个受保护片段的顺序调换，但标记与数量都完整：
+    // 保护层按标记位置还原，这是**合法**的，不应判失败。
+    let engine = ScriptedEngine::new("scripted.swap", |job, _| {
+        let text = job.text.to_string();
+        let markers: Vec<&str> = text
+            .split(|c: char| c.is_whitespace() || c == ',' || c == '。')
+            .filter(|token| token.starts_with('\u{27E6}'))
+            .collect();
+        if markers.len() == 2 {
+            return Ok(format!("先 {} 再 {}。", markers[1], markers[0]));
+        }
+        Ok(text)
+    });
+    let translator = translator_with(Arc::clone(&engine) as Arc<dyn TranslationEngine>);
+    let output = pollster::block_on(translator.translate(&request(
+        "Send it to https://a.example.com and https://b.example.com now.",
+    )))
+    .expect("换顺序不应失败");
+    assert!(output.text.contains("https://a.example.com"));
+    assert!(output.text.contains("https://b.example.com"));
+}
+
+#[test]
+fn 币种被替换会致命() {
+    // 美元 → 欧元：数值还在，但币种被改，属于确定性破坏
+    let engine = ScriptedEngine::new("scripted.currency", |job, _| {
+        let text = job.text.replace("$", "€");
+        Ok(text)
+    });
+    let translator = translator_with(Arc::clone(&engine) as Arc<dyn TranslationEngine>);
+    let err =
+        pollster::block_on(translator.translate(&request("It costs $39.99 today."))).unwrap_err();
+    assert_eq!(
+        err.code,
+        TranslationErrorCode::IntegrityFailure,
+        "{}",
+        err.message
+    );
+}
+
+#[test]
+fn fast_模式同样执行确定性门禁() {
+    // Fast 跳过语义启发式，但**不能**跳过数字/编号完整性
+    // 模型把受保护片段多吐了一份：完整性门禁必须在 Fast 模式下同样生效
+    let engine = ScriptedEngine::new("scripted.dup", |job, _| {
+        let text = job.text.to_string();
+        let marker: Option<String> = text
+            .split(|c: char| c.is_whitespace() || c == '，' || c == '。' || c == ',')
+            .find(|token| token.starts_with('\u{27E6}'))
+            .map(str::to_string);
+        match marker {
+            Some(marker) => Ok(format!("{marker} 和 {marker}。")),
+            None => Ok(text),
+        }
+    });
+    let translator = translator_with(Arc::clone(&engine) as Arc<dyn TranslationEngine>);
+    let mut options = translator.default_options().clone();
+    options.mode = TranslationMode::Fast;
+    let err = pollster::block_on(
+        translator.translate_with_options(&request("Visit https://example.com/a today."), &options),
+    )
+    .unwrap_err();
+    assert_eq!(
+        err.code,
+        TranslationErrorCode::IntegrityFailure,
+        "{}",
+        err.message
+    );
+}
+
+#[test]
+fn 汇率与千分位写法不被误拒() {
+    // 合法表达：`1,250` 写成 `1250`、`$39.99` 写成 `39.99 美元` 都应通过
+    let engine = ScriptedEngine::new("scripted.localized", |job, _| {
+        if job.text.contains("1250") || job.text.contains("1,250") {
+            Ok("价格为 1250 美元。".to_string())
+        } else {
+            Ok(job.text.to_string())
+        }
+    });
+    let translator = translator_with(Arc::clone(&engine) as Arc<dyn TranslationEngine>);
+    let output = pollster::block_on(translator.translate(&request("The total is $1,250.")))
+        .expect("合法本地化表达应通过");
+    assert!(output.text.contains("1250"));
 }

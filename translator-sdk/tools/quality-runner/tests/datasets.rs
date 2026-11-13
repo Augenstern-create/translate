@@ -99,13 +99,6 @@ fn 金额不应放进逐字保留项() {
 
 #[test]
 fn 回归集字段与严重级别合法() {
-    let allowed_checks = [
-        "no_residual_english",
-        "entity_consistency",
-        "context_word_sense",
-        "detail_fidelity",
-        "reference_quality",
-    ];
     for case in load("regression.jsonl") {
         let id = case["id"].as_str().unwrap_or("?");
         let severity = case["severity"].as_str().unwrap_or("");
@@ -113,18 +106,10 @@ fn 回归集字段与严重级别合法() {
             matches!(severity, "critical" | "major" | "reference"),
             "{id} 的 severity 非法：{severity}"
         );
-        let checks = case["expected_checks"]
-            .as_array()
-            .expect("expected_checks 必须是数组");
-        assert!(!checks.is_empty(), "{id} 至少要声明一个检查项");
-        for check in checks {
-            let name = check.as_str().unwrap_or("");
-            assert!(allowed_checks.contains(&name), "{id} 未知检查项：{name}");
-        }
-        // 禁用短语必须是字符串数组（数据驱动的漏译检查）
+        // 评审关注点只是标签，不参与机器判定；但必须是数组
         assert!(
-            case["forbidden_phrases"].as_array().is_some(),
-            "{id} 的 forbidden_phrases 必须是数组"
+            case["review_focus"].as_array().is_some(),
+            "{id} 的 review_focus 必须是数组"
         );
         // 参考译文有问题的用例必须写明问题，否则会被误判成模型失败
         if severity == "reference" {
@@ -137,6 +122,11 @@ fn 回归集字段与严重级别合法() {
             case["reference_zh"].is_string()
                 && !case["reference_zh"].as_str().unwrap_or("").is_empty(),
             "{id} 必须有参考译文（回归集不是自建空参考用例）"
+        );
+        // 回归集不得携带"语义自动判定"的断言字段
+        assert!(
+            case["expected_checks"].is_null() && case["forbidden_phrases"].is_null(),
+            "{id} 不得再带 expected_checks / forbidden_phrases（语义质量不进入硬门禁）"
         );
     }
 }

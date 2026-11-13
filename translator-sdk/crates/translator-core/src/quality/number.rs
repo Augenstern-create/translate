@@ -606,15 +606,17 @@ pub fn check(source: &str, output: &str) -> NumberCheck {
                     .currency
                     .as_deref()
                     .is_some_and(|sym| output.contains(sym) || currency_word_present(sym, output));
+                // 金额是**确定性能判定**的：数值丢失或币种被丢/换都直接判致命。
+                // （数量词、序数仍只报 Major——那些存在多种合法写法。）
                 if !value_ok {
-                    check.issues.push(QualityIssue::major(
+                    check.issues.push(QualityIssue::critical(
                         QualityIssueKind::NumberMissing,
                         format!("金额 {} 的数值未在译文中找到", token.raw),
                     ));
                 } else if !currency_ok {
-                    check.issues.push(QualityIssue::major(
+                    check.issues.push(QualityIssue::critical(
                         QualityIssueKind::NumberMissing,
-                        format!("金额 {} 的币种在译文中丢失", token.raw),
+                        format!("金额 {} 的币种在译文中丢失或被替换", token.raw),
                     ));
                 }
                 value_ok
@@ -876,7 +878,9 @@ fn currency_word_present(symbol: &str, output: &str) -> bool {
         return currency_word_present(sym, output) || output.contains(code);
     }
     match symbol {
-        "$" => ["美元", "美金", "USD", "刀", "元", "块"]
+        // 注意：**不能**把裸 "元" 当作美元——"欧元/日元/港元" 里都含 "元"，
+        // 那会把"币种被换掉"误判成通过（实测缺陷）。
+        "$" => ["美元", "美金", "USD", "刀"]
             .iter()
             .any(|w| output.contains(w)),
         "€" => ["欧元", "EUR"].iter().any(|w| output.contains(w)),
@@ -1210,6 +1214,10 @@ mod tests {
             .issues
             .iter()
             .any(|i| i.detail.contains("币种")));
+        assert!(lost_currency.has_fatal(), "金额丢币种必须致命");
+
+        let swapped = check("It costs $39.99.", "价格是 39.99 欧元。");
+        assert!(swapped.has_fatal(), "币种被换成别的币种必须致命");
 
         let wrong_value = check("It costs $39.99.", "价格是 93.99 美元。");
         assert!(wrong_value

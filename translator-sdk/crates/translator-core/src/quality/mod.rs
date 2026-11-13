@@ -75,21 +75,6 @@ pub fn check_with_protection(
     let mut report = check(plan.source(), restored, target, mode);
     integrity::check_protected(plan, restored, &mut report);
 
-    // 未翻译片段：只在这里做——需要**保护计划**（哪些英文本来就该原样保留）
-    // 与**原文对应**，而不是靠英文词表猜。空输出时没有意义，跳过。
-    if mode.is_precise() && !report.has_fatal() {
-        let protected: Vec<String> = plan
-            .spans()
-            .iter()
-            .map(|span| span.original.clone())
-            .collect();
-        for phrase in heuristic::untranslated_fragments(plan.source(), &protected, restored) {
-            report.issues.push(QualityIssue::major(
-                QualityIssueKind::Untranslated,
-                format!("疑似未翻译的英文片段：{phrase}（原文中同样出现）"),
-            ));
-        }
-    }
     report
 }
 
@@ -320,72 +305,5 @@ mod tests {
         );
         let summary = r.summary();
         assert!(!summary.contains("secret@example.com"), "{summary}");
-    }
-}
-
-#[cfg(test)]
-mod untranslated_plan_tests {
-    use super::*;
-    use crate::protection::{ProtectionPlan, ProtectionPolicy};
-    use translator_types::LanguageTag;
-
-    fn plan(source: &str) -> ProtectionPlan {
-        ProtectionPlan::prepare(source, &ProtectionPolicy::default()).expect("保护计划")
-    }
-
-    #[test]
-    fn 终检会报告残留英文片段() {
-        let source =
-            "Everything is geared to being a weapon, displayed in accompanying media with gratuitous effect.";
-        let plan = plan(source);
-        let target = LanguageTag::new("zh-Hans").unwrap();
-        // 真实的坏译文：两个片段没翻译
-        let bad = "一切都 geared to being a weapon，在 accompanying media 中以无谓的效果加以展示。";
-        let report = check_with_protection(&plan, bad, &target, TranslationMode::Precise);
-        let hits: Vec<&str> = report
-            .issues
-            .iter()
-            .filter(|i| i.kind == QualityIssueKind::Untranslated)
-            .map(|i| i.detail.as_str())
-            .collect();
-        assert!(
-            hits.iter().any(|d| d.contains("accompanying media")),
-            "应报告 2 词残留：{hits:?}"
-        );
-    }
-
-    #[test]
-    fn 正常译文不会被误报() {
-        let source =
-            "Everything is geared to being a weapon, displayed in accompanying media with gratuitous effect.";
-        let plan = plan(source);
-        let target = LanguageTag::new("zh-Hans").unwrap();
-        let good = "一切都朝着“武器”的方向设计，并在配套的媒体中被过度夸张地展示出来。";
-        let report = check_with_protection(&plan, good, &target, TranslationMode::Precise);
-        assert!(
-            !report
-                .issues
-                .iter()
-                .any(|i| i.kind == QualityIssueKind::Untranslated),
-            "{:?}",
-            report.issues
-        );
-    }
-
-    #[test]
-    fn url_与代码保留不算未翻译() {
-        let source = "Open https://example.com/docs and run `cargo build` before the meeting.";
-        let plan = plan(source);
-        let target = LanguageTag::new("zh-Hans").unwrap();
-        let output = "开会前请打开 https://example.com/docs 并运行 `cargo build`。";
-        let report = check_with_protection(&plan, output, &target, TranslationMode::Precise);
-        assert!(
-            !report
-                .issues
-                .iter()
-                .any(|i| i.kind == QualityIssueKind::Untranslated),
-            "{:?}",
-            report.issues
-        );
     }
 }

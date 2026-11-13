@@ -20,6 +20,20 @@
 - 新增 `crates/translator-http/tests/stress.rs`（默认 `#[ignore]`）：10 000 次
   Mock 压力测试报告 requests/ok/failed/cancelled/queue_full/http_calls/peak_threads/RSS。
 
+### 护栏收敛（S3 纠偏第二轮）
+
+- **删除** `untranslated_fragments` / `mask_protected` / `suspicious_phrases` /
+  `is_identifier` / `phrase_is_proper_noun` 及终检调用——不再做第三种漏译检测算法。
+- `quality-runner` 去掉 `expected_checks` / `forbidden_phrases` 硬断言；
+  `--replay` 只输出确定性核验结果，不再对语义给通过/失败。
+- `regression.jsonl` 保留 7 条真实案例，字段改为 `review_focus` 等**纯记录**语义。
+- **修复确定性缺陷**（G2）：金额币种被丢/被换此前只报 Major，现在**致命**；
+  同时修掉 `$` 接受裸"元"导致"欧元被当成美元"的误判。
+- 新增 4 条护栏补测：受保护内容换顺序不算破坏、币种被替换致命、Fast 模式仍执行
+  确定性门禁（重复受保护内容）、汇率/千分位写法不被误拒。
+- 新增 `docs/guardrails.md`：五类护栏 ↔ 模块/API、主链数据流、核验清单载体、
+  每条输出路径的终检位置、删除清单、护栏覆盖不到的语义问题。
+
 ### 质量流水线方向纠正（S3）
 
 - **删除**基于英文功能词表 + 词数阈值的 `residual_english_fragment`。

@@ -1,21 +1,13 @@
 {
   "cases": [
     {
-      "detected_untranslated": true,
-      "expected_detection": true,
       "id": "regress-440",
-      "issues": [
-        "untranslated:疑似未翻译的英文片段：geared to being a weapon（原文中同样出现）",
-        "untranslated:疑似未翻译的英文片段：accompanying media（原文中同样出现）",
-        "untranslated:疑似未翻译的英文片段：gratuitous effect（原文中同样出现）"
-      ],
+      "issues": [],
       "ok": true,
       "output": "一切都 geared to being a weapon，在 accompanying media 中以 gratuitous effect 展示。",
       "variant": "deepseek"
     },
     {
-      "detected_untranslated": false,
-      "expected_detection": false,
       "id": "regress-440",
       "issues": [],
       "ok": true,
@@ -23,8 +15,6 @@
       "variant": "glm"
     },
     {
-      "detected_untranslated": false,
-      "expected_detection": false,
       "id": "regress-112",
       "issues": [],
       "ok": true,
@@ -32,8 +22,6 @@
       "variant": "glm"
     },
     {
-      "detected_untranslated": false,
-      "expected_detection": false,
       "id": "regress-ntrex-1",
       "issues": [],
       "ok": true,
@@ -41,8 +29,6 @@
       "variant": "deepseek"
     },
     {
-      "detected_untranslated": false,
-      "expected_detection": false,
       "id": "regress-ntrex-1195",
       "issues": [
         "possible_omission:译文/源文字符比仅 0.18，可能遗漏内容"
@@ -52,8 +38,6 @@
       "variant": "deepseek"
     },
     {
-      "detected_untranslated": false,
-      "expected_detection": false,
       "id": "regress-ntrex-1195",
       "issues": [
         "possible_omission:译文/源文字符比仅 0.17，可能遗漏内容"
@@ -63,8 +47,6 @@
       "variant": "glm"
     },
     {
-      "detected_untranslated": false,
-      "expected_detection": false,
       "id": "regress-611",
       "issues": [],
       "ok": true,
@@ -72,8 +54,6 @@
       "variant": "glm"
     },
     {
-      "detected_untranslated": false,
-      "expected_detection": false,
       "id": "regress-ntrex-1569",
       "issues": [
         "conditional_dropped:源文有条件关系，译文没有条件标记"
@@ -83,8 +63,6 @@
       "variant": "reference_original"
     },
     {
-      "detected_untranslated": false,
-      "expected_detection": false,
       "id": "regress-ntrex-1012",
       "issues": [],
       "ok": true,
